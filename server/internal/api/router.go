@@ -30,6 +30,16 @@ import (
 //	GET    /api/v1/groups/{groupId}    → get group
 //	PUT    /api/v1/groups/{groupId}    → update group
 //	DELETE /api/v1/groups/{groupId}    → delete group
+//	GET    /api/v1/filters             → list filters
+//	POST   /api/v1/filters             → create filter
+//	GET    /api/v1/filters/{filterId}  → get filter
+//	PUT    /api/v1/filters/{filterId}  → update filter
+//	DELETE /api/v1/filters/{filterId}  → delete filter
+//	GET    /api/v1/listeners               → list listeners
+//	POST   /api/v1/listeners               → create listener
+//	GET    /api/v1/listeners/{listenerId}  → get listener
+//	PUT    /api/v1/listeners/{listenerId}  → update listener
+//	DELETE /api/v1/listeners/{listenerId}  → delete listener
 //	GET    /api/v1/docs/               → Swagger UI
 //	GET    /api/v1/docs/doc.json       → OpenAPI spec (JSON)
 func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
@@ -53,6 +63,20 @@ func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/groups/{groupId}", deps.GetGroup)
 	mux.HandleFunc("PUT /api/v1/groups/{groupId}", deps.UpdateGroup)
 	mux.HandleFunc("DELETE /api/v1/groups/{groupId}", deps.DeleteGroup)
+
+	// Filter endpoints
+	mux.HandleFunc("GET /api/v1/filters", deps.ListFilters)
+	mux.HandleFunc("POST /api/v1/filters", deps.CreateFilter)
+	mux.HandleFunc("GET /api/v1/filters/{filterId}", deps.GetFilter)
+	mux.HandleFunc("PUT /api/v1/filters/{filterId}", deps.UpdateFilter)
+	mux.HandleFunc("DELETE /api/v1/filters/{filterId}", deps.DeleteFilter)
+
+	// Listener endpoints
+	mux.HandleFunc("GET /api/v1/listeners", deps.ListListeners)
+	mux.HandleFunc("POST /api/v1/listeners", deps.CreateListener)
+	mux.HandleFunc("GET /api/v1/listeners/{listenerId}", deps.GetListener)
+	mux.HandleFunc("PUT /api/v1/listeners/{listenerId}", deps.UpdateListener)
+	mux.HandleFunc("DELETE /api/v1/listeners/{listenerId}", deps.DeleteListener)
 
 	// Swagger UI — static assets (HTML, JS, CSS). http-swagger/v2 reads the spec
 	// URL from the config; the actual JSON is served by the handler below.

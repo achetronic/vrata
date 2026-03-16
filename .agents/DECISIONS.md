@@ -163,3 +163,64 @@ and forced redundant matcher definitions whenever a route appeared in more than 
 back to `Route`. Do not return routes nested under group endpoints — routes and groups must
 remain separate resources at both the API level (`/api/v1/routes`, `/api/v1/groups`) and the
 storage level (two flat buckets in bbolt).
+
+---
+
+## Filter as independent first-class entity (not embedded in Listener)
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+A `Filter` is a standalone entity stored and managed independently of any `Listener`.
+A `Listener` references filters by their IDs (`FilterIDs []string`). The xDS builder
+looks up each referenced filter and builds the corresponding Envoy HTTP filter object.
+
+**Reasoning**: Consistent with the Route/Group separation pattern already established.
+A filter (JWT config, ext_authz endpoint, CORS policy) is reusable across multiple
+listeners — embedding it would force duplication. Storing filters independently also
+makes partial updates (changing a JWT JWKS URI) atomic and auditable without
+touching the listener configuration.
+
+**Do not**: Embed filter configs directly inside `Listener`. Do not add a `ListenerID`
+field to `Filter`. Filters and Listeners must remain separate resources at both API
+level (`/api/v1/filters`, `/api/v1/listeners`) and storage level (separate bbolt buckets).
+
+---
+
+## FilterOverrides on both Route and RouteGroup, with Route-wins merge semantics
+
+**Date**: 2026-03-16
+**Status**: Implemented (models done; xDS per_filter_config wiring is TODO)
+
+Both `Route` and `RouteGroup` carry a `FilterOverrides map[string]FilterOverride` field,
+keyed by filter ID. When building xDS per_filter_config for a route, the merge order is:
+RouteGroup overrides are the base; Route overrides win on key collision (more specific wins).
+
+**Reasoning**: Allows per-route granularity (disable JWT for a specific health check route)
+and per-group default overrides (a group can set a common CORS override for all its routes)
+without duplicating override config. Routes being more specific than groups is an obvious
+hierarchical rule that matches Envoy's own per_filter_config semantics.
+
+**Do not**: Invert the merge direction (group wins over route). Do not remove
+`FilterOverrides` from `RouteGroup` — group-level overrides are intentional. Do not
+flat-replace: always merge (group base + route delta).
+
+---
+
+## TLS termination modeled but deferred from xDS builder
+
+**Date**: 2026-03-16
+**Status**: Decided — modeling done, xDS wiring deferred
+
+`model.Listener` carries an optional `TLS *ListenerTLS` field (cert/key paths, min
+protocol version). The struct is fully defined and persisted but the xDS builder does
+not yet wire it into Envoy's `DownstreamTlsContext`.
+
+**Reasoning**: TLS termination belongs in the Listener by nature (it is the network
+entry point that terminates the connection). Modeling it now avoids future API breakage.
+Implementation is deferred because the dev environment does not need TLS and the
+external cert/key distribution mechanism (file mount vs SDS) needs to be decided first.
+
+**Do not**: Move TLS config to a separate entity. Do not implement TLS wiring in the
+xDS builder until the cert delivery mechanism is decided. Do not remove `TLS` from
+the model — the field must persist in the API and storage even while unimplemented.

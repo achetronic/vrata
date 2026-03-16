@@ -1,5 +1,6 @@
 // Package store defines the persistence interface used by Rutoso to read and
-// write routes and route groups, and to subscribe to state change events.
+// write routes, route groups, filters, and listeners, and to subscribe to
+// state change events.
 package store
 
 import (
@@ -31,6 +32,12 @@ const (
 
 	// ResourceRoute refers to a Route resource.
 	ResourceRoute ResourceType = "route"
+
+	// ResourceFilter refers to a Filter resource.
+	ResourceFilter ResourceType = "filter"
+
+	// ResourceListener refers to a Listener resource.
+	ResourceListener ResourceType = "listener"
 )
 
 // StoreEvent is emitted by the store whenever the state changes.
@@ -39,7 +46,7 @@ type StoreEvent struct {
 	// Type indicates whether the resource was created, updated, or deleted.
 	Type EventType
 
-	// Resource indicates whether a group or a route changed.
+	// Resource indicates which resource type changed.
 	Resource ResourceType
 
 	// ID is the identifier of the affected resource.
@@ -81,6 +88,38 @@ type Store interface {
 	// DeleteGroup removes the group with the given ID.
 	// Returns model.ErrNotFound if the group does not exist.
 	DeleteGroup(ctx context.Context, id string) error
+
+	// --- Filters ---
+
+	// ListFilters returns all filters. The returned slice is never nil.
+	ListFilters(ctx context.Context) ([]model.Filter, error)
+
+	// GetFilter returns the filter with the given ID.
+	// Returns model.ErrNotFound if no such filter exists.
+	GetFilter(ctx context.Context, id string) (model.Filter, error)
+
+	// SaveFilter creates or replaces the filter identified by filter.ID.
+	SaveFilter(ctx context.Context, f model.Filter) error
+
+	// DeleteFilter removes the filter with the given ID.
+	// Returns model.ErrNotFound if the filter does not exist.
+	DeleteFilter(ctx context.Context, id string) error
+
+	// --- Listeners ---
+
+	// ListListeners returns all listeners. The returned slice is never nil.
+	ListListeners(ctx context.Context) ([]model.Listener, error)
+
+	// GetListener returns the listener with the given ID.
+	// Returns model.ErrNotFound if no such listener exists.
+	GetListener(ctx context.Context, id string) (model.Listener, error)
+
+	// SaveListener creates or replaces the listener identified by listener.ID.
+	SaveListener(ctx context.Context, l model.Listener) error
+
+	// DeleteListener removes the listener with the given ID.
+	// Returns model.ErrNotFound if the listener does not exist.
+	DeleteListener(ctx context.Context, id string) error
 
 	// --- Subscriptions ---
 

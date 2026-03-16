@@ -18,6 +18,12 @@ type Route struct {
 	// Weights across all backends should sum to 100 when more than one backend
 	// is defined. If only one backend is provided its weight is ignored.
 	Backends []Backend `json:"backends" yaml:"backends"`
+
+	// FilterOverrides carries per-route overrides for filters registered on
+	// the listener. The map key is the Filter ID. When both the route's group
+	// and the route itself carry an override for the same filter, the route
+	// override wins entirely (more specific takes precedence).
+	FilterOverrides map[string]FilterOverride `json:"filterOverrides,omitempty" yaml:"filterOverrides,omitempty"`
 }
 
 // Backend represents a single upstream destination for a route.

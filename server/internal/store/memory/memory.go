@@ -16,9 +16,11 @@ import (
 
 // Store is an in-memory, thread-safe implementation of store.Store.
 type Store struct {
-	mu     sync.RWMutex
-	routes map[string]model.Route      // keyed by route ID
-	groups map[string]model.RouteGroup // keyed by group ID
+	mu      sync.RWMutex
+	routes   map[string]model.Route      // keyed by route ID
+	groups   map[string]model.RouteGroup // keyed by group ID
+	filters  map[string]model.Filter     // keyed by filter ID
+	listeners map[string]model.Listener  // keyed by listener ID
 
 	subsMu sync.Mutex
 	subs   []chan store.StoreEvent
@@ -27,8 +29,10 @@ type Store struct {
 // New creates an empty in-memory Store.
 func New() *Store {
 	return &Store{
-		routes: make(map[string]model.Route),
-		groups: make(map[string]model.RouteGroup),
+		routes:    make(map[string]model.Route),
+		groups:    make(map[string]model.RouteGroup),
+		filters:   make(map[string]model.Filter),
+		listeners: make(map[string]model.Listener),
 	}
 }
 
@@ -131,6 +135,108 @@ func (s *Store) DeleteGroup(_ context.Context, id string) error {
 	}
 	delete(s.groups, id)
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceGroup, ID: id})
+	return nil
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Filter operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListFilters returns all filters in insertion-independent order.
+func (s *Store) ListFilters(_ context.Context) ([]model.Filter, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]model.Filter, 0, len(s.filters))
+	for _, f := range s.filters {
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+// GetFilter returns the filter with the given ID, or model.ErrNotFound.
+func (s *Store) GetFilter(_ context.Context, id string) (model.Filter, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	f, ok := s.filters[id]
+	if !ok {
+		return model.Filter{}, fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
+	}
+	return f, nil
+}
+
+// SaveFilter creates or replaces the filter identified by filter.ID.
+func (s *Store) SaveFilter(_ context.Context, f model.Filter) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.filters[f.ID] = f
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceFilter, ID: f.ID})
+	return nil
+}
+
+// DeleteFilter removes the filter with the given ID.
+func (s *Store) DeleteFilter(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.filters[id]; !ok {
+		return fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
+	}
+	delete(s.filters, id)
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceFilter, ID: id})
+	return nil
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Listener operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListListeners returns all listeners in insertion-independent order.
+func (s *Store) ListListeners(_ context.Context) ([]model.Listener, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]model.Listener, 0, len(s.listeners))
+	for _, l := range s.listeners {
+		out = append(out, l)
+	}
+	return out, nil
+}
+
+// GetListener returns the listener with the given ID, or model.ErrNotFound.
+func (s *Store) GetListener(_ context.Context, id string) (model.Listener, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	l, ok := s.listeners[id]
+	if !ok {
+		return model.Listener{}, fmt.Errorf("listener %q: %w", id, model.ErrNotFound)
+	}
+	return l, nil
+}
+
+// SaveListener creates or replaces the listener identified by listener.ID.
+func (s *Store) SaveListener(_ context.Context, l model.Listener) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.listeners[l.ID] = l
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceListener, ID: l.ID})
+	return nil
+}
+
+// DeleteListener removes the listener with the given ID.
+func (s *Store) DeleteListener(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.listeners[id]; !ok {
+		return fmt.Errorf("listener %q: %w", id, model.ErrNotFound)
+	}
+	delete(s.listeners, id)
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceListener, ID: id})
 	return nil
 }
 

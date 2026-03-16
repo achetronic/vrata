@@ -74,9 +74,19 @@ func (gw *Gateway) Run(ctx context.Context) error {
 	}
 }
 
-// rebuild fetches all groups and routes from the store, builds a fresh xDS snapshot,
+// rebuild fetches all resources from the store, builds a fresh xDS snapshot,
 // and pushes it to every Envoy node ID currently tracked in the cache.
 func (gw *Gateway) rebuild(ctx context.Context) error {
+	listeners, err := gw.deps.Store.ListListeners(ctx)
+	if err != nil {
+		return fmt.Errorf("listing listeners: %w", err)
+	}
+
+	filters, err := gw.deps.Store.ListFilters(ctx)
+	if err != nil {
+		return fmt.Errorf("listing filters: %w", err)
+	}
+
 	groups, err := gw.deps.Store.ListGroups(ctx)
 	if err != nil {
 		return fmt.Errorf("listing groups: %w", err)
@@ -88,7 +98,7 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	}
 
 	version := gw.deps.NextVersion()
-	snap, err := xds.BuildSnapshot(version, groups, routes)
+	snap, err := xds.BuildSnapshot(version, listeners, filters, groups, routes)
 	if err != nil {
 		return fmt.Errorf("building snapshot: %w", err)
 	}
@@ -106,6 +116,8 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 
 	gw.deps.Logger.Info("gateway: snapshot pushed",
 		slog.String("version", version),
+		slog.Int("listeners", len(listeners)),
+		slog.Int("filters", len(filters)),
 		slog.Int("groups", len(groups)),
 		slog.Int("routes", len(routes)),
 		slog.Int("nodes", len(gw.deps.Cache.GetStatusKeys())),

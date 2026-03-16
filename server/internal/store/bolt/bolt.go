@@ -15,8 +15,10 @@ import (
 )
 
 const (
-	bucketRoutes = "routes"
-	bucketGroups = "groups"
+	bucketRoutes    = "routes"
+	bucketGroups    = "groups"
+	bucketFilters   = "filters"
+	bucketListeners = "listeners"
 )
 
 // Store wraps a bbolt database and exposes CRUD operations for routes and groups.
@@ -37,7 +39,7 @@ func New(path string) (*Store, error) {
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, name := range []string{bucketRoutes, bucketGroups} {
+		for _, name := range []string{bucketRoutes, bucketGroups, bucketFilters, bucketListeners} {
 			if _, err := tx.CreateBucketIfNotExists([]byte(name)); err != nil {
 				return fmt.Errorf("creating bucket %q: %w", name, err)
 			}
@@ -211,6 +213,164 @@ func (s *Store) DeleteGroup(_ context.Context, id string) error {
 			return fmt.Errorf("deleting group %q: %w", id, err)
 		}
 		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceGroup, ID: id})
+		return nil
+	})
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Filter operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListFilters returns all filters stored in the database.
+func (s *Store) ListFilters(_ context.Context) ([]model.Filter, error) {
+	var filters []model.Filter
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketFilters))
+		return b.ForEach(func(_, v []byte) error {
+			var f model.Filter
+			if err := json.Unmarshal(v, &f); err != nil {
+				return fmt.Errorf("unmarshalling filter: %w", err)
+			}
+			filters = append(filters, f)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing filters: %w", err)
+	}
+
+	if filters == nil {
+		filters = []model.Filter{}
+	}
+	return filters, nil
+}
+
+// GetFilter returns the filter with the given ID, or model.ErrNotFound if absent.
+func (s *Store) GetFilter(_ context.Context, id string) (model.Filter, error) {
+	var filter model.Filter
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketFilters))
+		v := b.Get([]byte(id))
+		if v == nil {
+			return fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
+		}
+		return json.Unmarshal(v, &filter)
+	})
+	if err != nil {
+		return model.Filter{}, err
+	}
+	return filter, nil
+}
+
+// SaveFilter creates or replaces the filter with filter.ID as key.
+func (s *Store) SaveFilter(_ context.Context, filter model.Filter) error {
+	data, err := json.Marshal(filter)
+	if err != nil {
+		return fmt.Errorf("marshalling filter: %w", err)
+	}
+
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketFilters))
+		if err := b.Put([]byte(filter.ID), data); err != nil {
+			return fmt.Errorf("saving filter %q: %w", filter.ID, err)
+		}
+		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceFilter, ID: filter.ID})
+		return nil
+	})
+}
+
+// DeleteFilter removes the filter with the given ID.
+func (s *Store) DeleteFilter(_ context.Context, id string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketFilters))
+		if b.Get([]byte(id)) == nil {
+			return fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
+		}
+		if err := b.Delete([]byte(id)); err != nil {
+			return fmt.Errorf("deleting filter %q: %w", id, err)
+		}
+		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceFilter, ID: id})
+		return nil
+	})
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Listener operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListListeners returns all listeners stored in the database.
+func (s *Store) ListListeners(_ context.Context) ([]model.Listener, error) {
+	var listeners []model.Listener
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketListeners))
+		return b.ForEach(func(_, v []byte) error {
+			var l model.Listener
+			if err := json.Unmarshal(v, &l); err != nil {
+				return fmt.Errorf("unmarshalling listener: %w", err)
+			}
+			listeners = append(listeners, l)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing listeners: %w", err)
+	}
+
+	if listeners == nil {
+		listeners = []model.Listener{}
+	}
+	return listeners, nil
+}
+
+// GetListener returns the listener with the given ID, or model.ErrNotFound if absent.
+func (s *Store) GetListener(_ context.Context, id string) (model.Listener, error) {
+	var listener model.Listener
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketListeners))
+		v := b.Get([]byte(id))
+		if v == nil {
+			return fmt.Errorf("listener %q: %w", id, model.ErrNotFound)
+		}
+		return json.Unmarshal(v, &listener)
+	})
+	if err != nil {
+		return model.Listener{}, err
+	}
+	return listener, nil
+}
+
+// SaveListener creates or replaces the listener with listener.ID as key.
+func (s *Store) SaveListener(_ context.Context, listener model.Listener) error {
+	data, err := json.Marshal(listener)
+	if err != nil {
+		return fmt.Errorf("marshalling listener: %w", err)
+	}
+
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketListeners))
+		if err := b.Put([]byte(listener.ID), data); err != nil {
+			return fmt.Errorf("saving listener %q: %w", listener.ID, err)
+		}
+		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceListener, ID: listener.ID})
+		return nil
+	})
+}
+
+// DeleteListener removes the listener with the given ID.
+func (s *Store) DeleteListener(_ context.Context, id string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketListeners))
+		if b.Get([]byte(id)) == nil {
+			return fmt.Errorf("listener %q: %w", id, model.ErrNotFound)
+		}
+		if err := b.Delete([]byte(id)); err != nil {
+			return fmt.Errorf("deleting listener %q: %w", id, err)
+		}
+		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceListener, ID: id})
 		return nil
 	})
 }

@@ -53,6 +53,12 @@ type RouteGroup struct {
 
 	// Headers are appended to each referenced route's own header matchers.
 	Headers []HeaderMatcher `json:"headers,omitempty" yaml:"headers,omitempty"`
+
+	// FilterOverrides carries per-group overrides for filters registered on
+	// the listener. The map key is the Filter ID. These overrides apply to all
+	// routes in the group. If a route also carries an override for the same
+	// filter, the route override wins entirely.
+	FilterOverrides map[string]FilterOverride `json:"filterOverrides,omitempty" yaml:"filterOverrides,omitempty"`
 }
 
 // HeaderMatcher describes a condition on a single HTTP request header.

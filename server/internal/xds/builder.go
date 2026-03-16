@@ -24,20 +24,29 @@ import (
 	"github.com/achetronic/rutoso/internal/model"
 )
 
-// BuildSnapshot converts groups and routes into a complete Envoy xDS Snapshot.
+// BuildSnapshot converts listeners, filters, groups and routes into a complete
+// Envoy xDS Snapshot.
 //
-// For each group, the referenced routes are resolved by ID. The group's extra
-// matchers (PathPrefix, Hostnames, Headers) are merged on top of each route's
-// own matchers before building the Envoy virtual host.
+// Each model.Listener produces one Envoy Listener. Filters referenced by
+// FilterIDs are resolved and their configs are wired into the HCM filter chain
+// in declaration order (router filter is always appended last).
+//
+// When no listeners are stored, a default listener on 0.0.0.0:80 is generated
+// automatically so the xDS server always emits a valid snapshot.
 //
 // One Cluster + ClusterLoadAssignment is generated per unique Backend name.
-// All virtual hosts share a single RouteConfiguration, referenced by a single
-// Listener on port 80.
-func BuildSnapshot(version string, groups []model.RouteGroup, routes []model.Route) (*cachev3.Snapshot, error) {
+// All virtual hosts share a single RouteConfiguration.
+func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters []model.Filter, groups []model.RouteGroup, routes []model.Route) (*cachev3.Snapshot, error) {
 	// Build a lookup map so we can resolve route IDs in O(1).
 	routeByID := make(map[string]model.Route, len(routes))
 	for _, r := range routes {
 		routeByID[r.ID] = r
+	}
+
+	// Build a lookup map for filters so the listener builder can resolve them.
+	filterByID := make(map[string]model.Filter, len(modelFilters))
+	for _, f := range modelFilters {
+		filterByID[f.ID] = f
 	}
 
 	var (
@@ -75,17 +84,36 @@ func BuildSnapshot(version string, groups []model.RouteGroup, routes []model.Rou
 		VirtualHosts: vhosts,
 	}
 
-	// Single Listener on 0.0.0.0:80 using the HTTP connection manager.
-	listener, err := buildListener(routeConfig.Name)
-	if err != nil {
-		return nil, fmt.Errorf("building listener: %w", err)
+	// Build one Envoy Listener per model.Listener stored in the database.
+	// If none are stored yet, fall back to a default listener on port 80 so
+	// the dev environment keeps working out of the box.
+	var envoyListeners []types.Resource
+	if len(modelListeners) == 0 {
+		defaultListener, err := buildListenerFromModel(model.Listener{
+			ID:      "rutoso_default",
+			Name:    "default",
+			Address: "0.0.0.0",
+			Port:    80,
+		}, filterByID, routeConfig.Name)
+		if err != nil {
+			return nil, fmt.Errorf("building default listener: %w", err)
+		}
+		envoyListeners = append(envoyListeners, defaultListener)
+	} else {
+		for _, ml := range modelListeners {
+			el, err := buildListenerFromModel(ml, filterByID, routeConfig.Name)
+			if err != nil {
+				return nil, fmt.Errorf("building listener %q: %w", ml.ID, err)
+			}
+			envoyListeners = append(envoyListeners, el)
+		}
 	}
 
 	snap, err := cachev3.NewSnapshot(version, map[resourcev3.Type][]types.Resource{
 		resourcev3.ClusterType:  clusters,
 		resourcev3.EndpointType: endpoints,
 		resourcev3.RouteType:    {routeConfig},
-		resourcev3.ListenerType: {listener},
+		resourcev3.ListenerType: envoyListeners,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("creating xds snapshot: %w", err)
@@ -312,12 +340,50 @@ func buildEndpoint(b model.Backend) *endpointv3.ClusterLoadAssignment {
 	}
 }
 
-// buildListener creates the Envoy Listener that uses the HTTP Connection Manager
-// filter and references the given RouteConfiguration by name (RDS).
-func buildListener(routeConfigName string) (*listenerv3.Listener, error) {
+// buildListenerFromModel creates an Envoy Listener from a model.Listener.
+// It resolves the filter IDs against the provided map and wires each filter
+// into the HCM pipeline in declaration order. The router filter is always
+// appended as the last HTTP filter.
+//
+// TLS config is stored in model.Listener.TLS but is NOT yet applied here;
+// DownstreamTlsContext generation is deferred to a future iteration.
+func buildListenerFromModel(ml model.Listener, filterByID map[string]model.Filter, routeConfigName string) (*listenerv3.Listener, error) {
 	router, err := anypb.New(&routerv3.Router{})
 	if err != nil {
 		return nil, fmt.Errorf("marshalling router filter: %w", err)
+	}
+
+	// Start with the router filter; prepend resolved HTTP filters before it.
+	httpFilters := []*hcmv3.HttpFilter{
+		{
+			Name:       "envoy.filters.http.router",
+			ConfigType: &hcmv3.HttpFilter_TypedConfig{TypedConfig: router},
+		},
+	}
+
+	// Resolve filter IDs in reverse so we can prepend each resolved filter
+	// in declaration order using a simple append-then-reverse approach.
+	var resolved []*hcmv3.HttpFilter
+	for _, fid := range ml.FilterIDs {
+		f, ok := filterByID[fid]
+		if !ok {
+			// Unknown filter ID — skip gracefully; do not crash the snapshot.
+			continue
+		}
+		hf, err := buildHTTPFilter(f)
+		if err != nil {
+			return nil, fmt.Errorf("building filter %q: %w", fid, err)
+		}
+		if hf != nil {
+			resolved = append(resolved, hf)
+		}
+	}
+	// Prepend resolved filters before the router.
+	httpFilters = append(resolved, httpFilters...)
+
+	addr := ml.Address
+	if addr == "" {
+		addr = "0.0.0.0"
 	}
 
 	hcm := &hcmv3.HttpConnectionManager{
@@ -330,12 +396,7 @@ func buildListener(routeConfigName string) (*listenerv3.Listener, error) {
 				RouteConfigName: routeConfigName,
 			},
 		},
-		HttpFilters: []*hcmv3.HttpFilter{
-			{
-				Name:       "envoy.filters.http.router",
-				ConfigType: &hcmv3.HttpFilter_TypedConfig{TypedConfig: router},
-			},
-		},
+		HttpFilters: httpFilters,
 	}
 
 	hcmAny, err := anypb.New(hcm)
@@ -344,13 +405,13 @@ func buildListener(routeConfigName string) (*listenerv3.Listener, error) {
 	}
 
 	return &listenerv3.Listener{
-		Name: "rutoso_listener",
+		Name: ml.ID,
 		Address: &corev3.Address{
 			Address: &corev3.Address_SocketAddress{
 				SocketAddress: &corev3.SocketAddress{
-					Address: "0.0.0.0",
+					Address: addr,
 					PortSpecifier: &corev3.SocketAddress_PortValue{
-						PortValue: 80,
+						PortValue: ml.Port,
 					},
 				},
 			},
@@ -366,6 +427,48 @@ func buildListener(routeConfigName string) (*listenerv3.Listener, error) {
 			},
 		},
 	}, nil
+}
+
+// buildHTTPFilter converts a model.Filter into an Envoy HttpFilter proto.
+// Returns nil when the filter type is recognised but has no config (no-op).
+// Returns an error only when marshalling fails.
+//
+// NOTE: CORS, JWT, ExtAuthz, and ExtProc full config generation is stubbed here.
+// The filter is registered in the HCM pipeline with an empty typed config so
+// Envoy knows it exists. Per-route overrides will reference these filter names.
+// Full config generation will be wired in a follow-up iteration.
+func buildHTTPFilter(f model.Filter) (*hcmv3.HttpFilter, error) {
+	switch f.Type {
+	case model.FilterTypeCORS:
+		// CORS filter with empty config — Envoy applies global defaults.
+		// Full CORSConfig mapping is deferred.
+		return &hcmv3.HttpFilter{
+			Name: "envoy.filters.http.cors",
+		}, nil
+
+	case model.FilterTypeJWT:
+		// JWT authn filter stub — registered so per-route overrides are valid.
+		// Full JWTConfig mapping is deferred.
+		return &hcmv3.HttpFilter{
+			Name: "envoy.filters.http.jwt_authn",
+		}, nil
+
+	case model.FilterTypeExtAuthz:
+		// ext_authz filter stub.
+		return &hcmv3.HttpFilter{
+			Name: "envoy.filters.http.ext_authz",
+		}, nil
+
+	case model.FilterTypeExtProc:
+		// ext_proc filter stub.
+		return &hcmv3.HttpFilter{
+			Name: "envoy.filters.http.ext_proc",
+		}, nil
+
+	default:
+		// Unknown filter type — skip without error.
+		return nil, nil
+	}
 }
 
 // contains reports whether s appears in the slice.

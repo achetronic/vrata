@@ -1,324 +1,211 @@
 {
-"openapi": "3.1.0",
 "info": {
+        "description": "REST API control plane for Envoy proxies. Manage route groups and routes;\nchanges are pushed to all connected Envoy instances via xDS in real time.",
+        "title": "Rutoso API",
         "contact": {
             "name": "Rutoso project",
             "url": "https://github.com/achetronic/rutoso"
         },
-        "description": "REST API control plane for Envoy proxies. Manage route groups and routes;\nchanges are pushed to all connected Envoy instances via xDS in real time.",
         "license": {
             "name": "Apache 2.0",
             "url": "https://www.apache.org/licenses/LICENSE-2.0"
         },
-        "title": "Rutoso API",
         "version": "1.0"
     },
-"components": {
-        "schemas": {
-            "model.Backend": {
-                "properties": {
-                    "host": {
-                        "description": "Host is the upstream hostname or IP address.",
-                        "type": "string"
-                    },
-                    "name": {
-                        "description": "Name is a unique identifier for this backend within the route.\nIt maps to an Envoy cluster name.",
-                        "type": "string"
-                    },
-                    "port": {
-                        "description": "Port is the upstream TCP port.",
-                        "type": "integer"
-                    },
-                    "tls": {
-                        "description": "TLS indicates whether the connection to the upstream should use TLS.",
-                        "type": "boolean"
-                    },
-                    "weight": {
-                        "description": "Weight controls what percentage of traffic is sent to this backend\nwhen multiple backends are defined. Values across all backends in a\nroute must sum to 100.",
-                        "type": "integer"
-                    }
-                },
-                "type": "object"
-            },
-            "model.HeaderMatcher": {
-                "properties": {
-                    "name": {
-                        "description": "Name is the header name (case-insensitive).",
-                        "type": "string"
-                    },
-                    "regex": {
-                        "description": "Regex indicates that Value should be treated as a regular expression.",
-                        "type": "boolean"
-                    },
-                    "value": {
-                        "description": "Value is the exact value the header must have.\nIf empty, only the presence of the header is checked.",
-                        "type": "string"
-                    }
-                },
-                "type": "object"
-            },
-            "model.MatchRule": {
-                "description": "Match defines the conditions that a request must satisfy.",
-                "properties": {
-                    "headers": {
-                        "description": "Headers are request header matchers that must all match.",
-                        "items": {
-                            "$ref": "#/components/schemas/model.HeaderMatcher"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
-                    "hostnames": {
-                        "description": "Hostnames restricts the match to specific virtual host names.\nAn empty slice matches all virtual hosts.",
-                        "items": {
-                            "type": "string"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
-                    "methods": {
-                        "description": "Methods lists the HTTP methods this rule applies to.\nAn empty slice matches all methods.",
-                        "items": {
-                            "type": "string"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
-                    "path": {
-                        "description": "Path is the exact path that must match.",
-                        "type": "string"
-                    },
-                    "pathPrefix": {
-                        "description": "PathPrefix is a prefix that the request path must start with.\nMutually exclusive with Path and PathRegex.",
-                        "type": "string"
-                    },
-                    "pathRegex": {
-                        "description": "PathRegex is a regular expression the request path must match.\nMutually exclusive with Path and PathPrefix.",
-                        "type": "string"
-                    },
-                    "ports": {
-                        "description": "Ports restricts the match to specific listener ports.",
-                        "items": {
-                            "type": "integer"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
-                    "queryParams": {
-                        "description": "QueryParams are query parameter matchers that must all match.",
-                        "items": {
-                            "$ref": "#/components/schemas/model.QueryParamMatcher"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    }
-                },
-                "type": "object"
-            },
-            "model.QueryParamMatcher": {
-                "properties": {
-                    "name": {
-                        "description": "Name is the query parameter name.",
-                        "type": "string"
-                    },
-                    "regex": {
-                        "description": "Regex indicates that Value should be treated as a regular expression.",
-                        "type": "boolean"
-                    },
-                    "value": {
-                        "description": "Value is the exact value the parameter must have.",
-                        "type": "string"
-                    }
-                },
-                "type": "object"
-            },
-            "model.Route": {
-                "properties": {
-                    "backends": {
-                        "description": "Backends lists the upstream destinations for this route.\nWeights across all backends should sum to 100 when more than one backend\nis defined. If only one backend is provided its weight is ignored.",
-                        "items": {
-                            "$ref": "#/components/schemas/model.Backend"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
-                    "id": {
-                        "description": "ID is the unique identifier of the route.",
-                        "type": "string"
-                    },
-                    "match": {
-                        "$ref": "#/components/schemas/model.MatchRule"
-                    },
-                    "name": {
-                        "description": "Name is a human-readable label for the route.",
-                        "type": "string"
-                    }
-                },
-                "type": "object"
-            },
-            "model.RouteGroup": {
-                "properties": {
-                    "headers": {
-                        "description": "Headers are appended to each referenced route's own header matchers.",
-                        "items": {
-                            "$ref": "#/components/schemas/model.HeaderMatcher"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
-                    "hostnames": {
-                        "description": "Hostnames are merged (union) with each referenced route's own hostnames.\nAn empty slice means only the route's own hostnames apply.",
-                        "items": {
-                            "type": "string"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
-                    "id": {
-                        "description": "ID is the unique identifier of the group.",
-                        "type": "string"
-                    },
-                    "name": {
-                        "description": "Name is a human-readable label for the group.",
-                        "type": "string"
-                    },
-                    "pathPrefix": {
-                        "description": "PathPrefix is prepended to the path/pathPrefix of every referenced route.",
-                        "type": "string"
-                    },
-                    "routeIds": {
-                        "description": "RouteIDs lists the IDs of the routes that belong to this group.\nRoutes are independent entities and may be referenced by multiple groups.",
-                        "items": {
-                            "type": "string"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    }
-                },
-                "type": "object"
-            },
-            "respond.ErrorBody": {
-                "properties": {
-                    "error": {
-                        "description": "Error contains a human-readable description of what went wrong.",
-                        "example": "group \"abc\" not found",
-                        "type": "string"
-                    }
-                },
-                "type": "object"
-            }
-        }
-    },
-"externalDocs": {
-        "description": "",
-        "url": ""
-    },
+"schemes": [
+        "http",
+        "https"
+    ],
+"swagger": "2.0",
+"host": "localhost:8080",
+"basePath": "/",
 "paths": {
-        "/groups": {
+        "/filters": {
             "get": {
-                "description": "Returns the full list of route groups.",
+                "description": "Returns the full list of filters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filters"
+                ],
+                "summary": "List filters",
                 "responses": {
                     "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "items": {
-                                        "$ref": "#/components/schemas/model.RouteGroup"
-                                    },
-                                    "type": "array"
-                                }
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.Filter"
                             }
-                        },
-                        "description": "OK"
+                        }
                     },
                     "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
                     }
-                },
-                "summary": "List groups",
-                "tags": [
-                    "groups"
-                ]
+                }
             },
             "post": {
-                "description": "Creates a new group referencing existing routes by ID.",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/model.RouteGroup",
-                                        "summary": "group",
-                                        "description": "Group definition"
-                                    }
-                                ]
-                            }
-                        }
-                    },
-                    "description": "Group definition",
-                    "required": true
-                },
-                "responses": {
-                    "201": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.RouteGroup"
-                                }
-                            }
-                        },
-                        "description": "Created"
-                    },
-                    "400": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Bad Request"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Create a group",
+                "description": "Creates a new HTTP filter entity.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
-                    "groups"
-                ]
-            }
-        },
-        "/groups/{groupId}": {
-            "delete": {
-                "description": "Deletes the group with the given ID.",
+                    "filters"
+                ],
+                "summary": "Create a filter",
                 "parameters": [
                     {
-                        "description": "Group ID",
-                        "in": "path",
-                        "name": "groupId",
+                        "description": "Filter definition",
+                        "name": "filter",
+                        "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/model.Filter"
                         }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Filter"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/filters/{filterId}": {
+            "get": {
+                "description": "Returns the filter with the given ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filters"
+                ],
+                "summary": "Get a filter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter ID",
+                        "name": "filterId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Filter"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replaces the filter with the given ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filters"
+                ],
+                "summary": "Update a filter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter ID",
+                        "name": "filterId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated filter definition",
+                        "name": "filter",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Filter"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Filter"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the filter with the given ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "filters"
+                ],
+                "summary": "Delete a filter",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter ID",
+                        "name": "filterId",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -326,267 +213,620 @@
                         "description": "No Content"
                     },
                     "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
                     },
                     "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
                     }
-                },
-                "summary": "Delete a group",
+                }
+            }
+        },
+        "/groups": {
+            "get": {
+                "description": "Returns the full list of route groups.",
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "groups"
-                ]
+                ],
+                "summary": "List groups",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.RouteGroup"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
             },
-            "get": {
-                "description": "Returns the group with the given ID.",
+            "post": {
+                "description": "Creates a new group referencing existing routes by ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "groups"
+                ],
+                "summary": "Create a group",
                 "parameters": [
                     {
-                        "description": "Group ID",
-                        "in": "path",
-                        "name": "groupId",
+                        "description": "Group definition",
+                        "name": "group",
+                        "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/model.RouteGroup"
                         }
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.RouteGroup"
-                                }
-                            }
-                        },
-                        "description": "OK"
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.RouteGroup"
+                        }
                     },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
                     },
                     "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
                     }
-                },
-                "summary": "Get a group",
+                }
+            }
+        },
+        "/groups/{groupId}": {
+            "get": {
+                "description": "Returns the group with the given ID.",
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "groups"
-                ]
+                ],
+                "summary": "Get a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "groupId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.RouteGroup"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
             },
             "put": {
                 "description": "Replaces the group with the given ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "groups"
+                ],
+                "summary": "Update a group",
                 "parameters": [
                     {
+                        "type": "string",
                         "description": "Group ID",
-                        "in": "path",
                         "name": "groupId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated group definition",
+                        "name": "group",
+                        "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/model.RouteGroup"
                         }
                     }
                 ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/model.RouteGroup",
-                                        "summary": "group",
-                                        "description": "Updated group definition"
-                                    }
-                                ]
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.RouteGroup"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the group with the given ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "groups"
+                ],
+                "summary": "Delete a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "groupId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/listeners": {
+            "get": {
+                "description": "Returns the full list of listeners.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "listeners"
+                ],
+                "summary": "List listeners",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.Listener"
                             }
                         }
                     },
-                    "description": "Updated group definition",
-                    "required": true
-                },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new Envoy listener entity.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "listeners"
+                ],
+                "summary": "Create a listener",
+                "parameters": [
+                    {
+                        "description": "Listener definition",
+                        "name": "listener",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Listener"
+                        }
+                    }
+                ],
                 "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.RouteGroup"
-                                }
-                            }
-                        },
-                        "description": "OK"
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Listener"
+                        }
                     },
                     "400": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Bad Request"
-                    },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
                     },
                     "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
                     }
-                },
-                "summary": "Update a group",
+                }
+            }
+        },
+        "/listeners/{listenerId}": {
+            "get": {
+                "description": "Returns the listener with the given ID.",
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
-                    "groups"
-                ]
+                    "listeners"
+                ],
+                "summary": "Get a listener",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Listener ID",
+                        "name": "listenerId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Listener"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replaces the listener with the given ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "listeners"
+                ],
+                "summary": "Update a listener",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Listener ID",
+                        "name": "listenerId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated listener definition",
+                        "name": "listener",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Listener"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Listener"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the listener with the given ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "listeners"
+                ],
+                "summary": "Delete a listener",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Listener ID",
+                        "name": "listenerId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
             }
         },
         "/routes": {
             "get": {
                 "description": "Returns the full list of routes.",
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "items": {
-                                        "$ref": "#/components/schemas/model.Route"
-                                    },
-                                    "type": "array"
-                                }
-                            }
-                        },
-                        "description": "OK"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "List routes",
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "routes"
-                ]
+                ],
+                "summary": "List routes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.Route"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
             },
             "post": {
                 "description": "Creates a new independent route.",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/model.Route",
-                                        "summary": "route",
-                                        "description": "Route definition"
-                                    }
-                                ]
-                            }
-                        }
-                    },
-                    "description": "Route definition",
-                    "required": true
-                },
-                "responses": {
-                    "201": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.Route"
-                                }
-                            }
-                        },
-                        "description": "Created"
-                    },
-                    "400": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Bad Request"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Create a route",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
                 "tags": [
                     "routes"
-                ]
+                ],
+                "summary": "Create a route",
+                "parameters": [
+                    {
+                        "description": "Route definition",
+                        "name": "route",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Route"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Route"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
             }
         },
         "/routes/{routeId}": {
-            "delete": {
-                "description": "Deletes the route with the given ID.",
+            "get": {
+                "description": "Returns the route with the given ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "routes"
+                ],
+                "summary": "Get a route",
                 "parameters": [
                     {
+                        "type": "string",
                         "description": "Route ID",
-                        "in": "path",
                         "name": "routeId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Route"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replaces the route with the given ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "routes"
+                ],
+                "summary": "Update a route",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Route ID",
+                        "name": "routeId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Updated route definition",
+                        "name": "route",
+                        "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/model.Route"
                         }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Route"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the route with the given ID.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "routes"
+                ],
+                "summary": "Delete a route",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Route ID",
+                        "name": "routeId",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -594,166 +834,616 @@
                         "description": "No Content"
                     },
                     "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Delete a route",
-                "tags": [
-                    "routes"
-                ]
-            },
-            "get": {
-                "description": "Returns the route with the given ID.",
-                "parameters": [
-                    {
-                        "description": "Route ID",
-                        "in": "path",
-                        "name": "routeId",
-                        "required": true,
+                        "description": "Not Found",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/respond.ErrorBody"
                         }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.Route"
-                                }
-                            }
-                        },
-                        "description": "OK"
-                    },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
                     },
                     "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Get a route",
-                "tags": [
-                    "routes"
-                ]
-            },
-            "put": {
-                "description": "Replaces the route with the given ID.",
-                "parameters": [
-                    {
-                        "description": "Route ID",
-                        "in": "path",
-                        "name": "routeId",
-                        "required": true,
+                        "description": "Internal Server Error",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/respond.ErrorBody"
                         }
                     }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/model.Route",
-                                        "summary": "route",
-                                        "description": "Updated route definition"
-                                    }
-                                ]
-                            }
-                        }
-                    },
-                    "description": "Updated route definition",
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.Route"
-                                }
-                            }
-                        },
-                        "description": "OK"
-                    },
-                    "400": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Bad Request"
-                    },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Update a route",
-                "tags": [
-                    "routes"
-                ]
+                }
             }
         }
     },
-"servers": [
-        {
-            "url": "localhost:8080/"
+"definitions": {
+        "model.Backend": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "description": "Host is the upstream hostname or IP address.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is a unique identifier for this backend within the route.\nIt maps to an Envoy cluster name.",
+                    "type": "string"
+                },
+                "port": {
+                    "description": "Port is the upstream TCP port.",
+                    "type": "integer"
+                },
+                "tls": {
+                    "description": "TLS indicates whether the connection to the upstream should use TLS.",
+                    "type": "boolean"
+                },
+                "weight": {
+                    "description": "Weight controls what percentage of traffic is sent to this backend\nwhen multiple backends are defined. Values across all backends in a\nroute must sum to 100.",
+                    "type": "integer"
+                }
+            }
+        },
+        "model.CORSConfig": {
+            "type": "object",
+            "properties": {
+                "allowCredentials": {
+                    "description": "AllowCredentials indicates whether the request can include user credentials.",
+                    "type": "boolean"
+                },
+                "allowHeaders": {
+                    "description": "AllowHeaders lists the request headers allowed in CORS requests.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowMethods": {
+                    "description": "AllowMethods lists the HTTP methods allowed in CORS requests.\nExample: [\"GET\", \"POST\", \"OPTIONS\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "allowOrigins": {
+                    "description": "AllowOrigins lists the allowed origin patterns.\nEach entry is matched as an exact string or a regex if Regex is true.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.CORSOrigin"
+                    }
+                },
+                "exposeHeaders": {
+                    "description": "ExposeHeaders lists the response headers the browser is allowed to access.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "maxAge": {
+                    "description": "MaxAge sets the preflight cache duration in seconds.\nMaps to the Access-Control-Max-Age response header.",
+                    "type": "integer"
+                }
+            }
+        },
+        "model.CORSOrigin": {
+            "type": "object",
+            "properties": {
+                "regex": {
+                    "description": "Regex indicates that Value should be treated as a regular expression.",
+                    "type": "boolean"
+                },
+                "value": {
+                    "description": "Value is the origin string or regex pattern.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.ExtAuthzConfig": {
+            "type": "object",
+            "properties": {
+                "failureModeAllow": {
+                    "description": "FailureModeAllow controls what happens when the authz service is\nunreachable. If true, requests are allowed through (fail-open).\nDefault is false (fail-closed).",
+                    "type": "boolean"
+                },
+                "grpcService": {
+                    "description": "GRPCService is the address of the gRPC authorisation service\n(e.g. \"authz.default.svc.cluster.local:50051\").\nMutually exclusive with HTTPService.",
+                    "type": "string"
+                },
+                "httpService": {
+                    "description": "HTTPService is the URL of the HTTP authorisation service\n(e.g. \"http://opa.default.svc.cluster.local:8181/v1/authz\").\nMutually exclusive with GRPCService.",
+                    "type": "string"
+                },
+                "includeRequestBodyInCheck": {
+                    "description": "IncludeRequestBodyInCheck forwards the request body to the authz service.",
+                    "type": "boolean"
+                },
+                "timeout": {
+                    "description": "Timeout is the authorisation request deadline (e.g. \"5s\", \"500ms\").",
+                    "type": "string"
+                }
+            }
+        },
+        "model.ExtProcConfig": {
+            "type": "object",
+            "properties": {
+                "grpcService": {
+                    "description": "GRPCService is the address of the gRPC processing service\n(e.g. \"ext-proc.default.svc.cluster.local:9000\").",
+                    "type": "string"
+                },
+                "processingMode": {
+                    "description": "ProcessingMode controls which parts of the HTTP transaction are sent to\nthe external processor.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcMode"
+                        }
+                    ]
+                },
+                "timeout": {
+                    "description": "Timeout is the processing request deadline (e.g. \"2s\").",
+                    "type": "string"
+                }
+            }
+        },
+        "model.ExtProcMode": {
+            "type": "object",
+            "properties": {
+                "requestBodyMode": {
+                    "description": "RequestBodyMode controls processing of the request body.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcPhase"
+                        }
+                    ]
+                },
+                "requestHeaderMode": {
+                    "description": "RequestHeaderMode controls processing of request headers.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcPhase"
+                        }
+                    ]
+                },
+                "responseBodyMode": {
+                    "description": "ResponseBodyMode controls processing of the response body.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcPhase"
+                        }
+                    ]
+                },
+                "responseHeaderMode": {
+                    "description": "ResponseHeaderMode controls processing of response headers.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcPhase"
+                        }
+                    ]
+                }
+            }
+        },
+        "model.ExtProcPhase": {
+            "type": "string",
+            "enum": [
+                "SKIP",
+                "SEND",
+                "BUFFERED"
+            ],
+            "x-enum-varnames": [
+                "ExtProcPhaseSkip",
+                "ExtProcPhaseSend",
+                "ExtProcPhaseBuffered"
+            ]
+        },
+        "model.Filter": {
+            "type": "object",
+            "properties": {
+                "cors": {
+                    "description": "CORS holds the CORS filter configuration. Set when Type == \"cors\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.CORSConfig"
+                        }
+                    ]
+                },
+                "extAuthz": {
+                    "description": "ExtAuthz holds the external authorisation filter configuration.\nSet when Type == \"extAuthz\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtAuthzConfig"
+                        }
+                    ]
+                },
+                "extProc": {
+                    "description": "ExtProc holds the external processing filter configuration.\nSet when Type == \"extProc\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcConfig"
+                        }
+                    ]
+                },
+                "id": {
+                    "description": "ID is the unique identifier of the filter.",
+                    "type": "string"
+                },
+                "jwt": {
+                    "description": "JWT holds the JWT authn filter configuration. Set when Type == \"jwt\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.JWTConfig"
+                        }
+                    ]
+                },
+                "name": {
+                    "description": "Name is a human-readable label for the filter.",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "Type identifies which Envoy HTTP filter this entity configures.\nExactly one of the Config* fields below must match this type.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.FilterType"
+                        }
+                    ]
+                }
+            }
+        },
+        "model.FilterOverride": {
+            "type": "object",
+            "properties": {
+                "disabled": {
+                    "description": "Disabled completely disables the filter for this route/group.\nWhen true, no other field is evaluated.",
+                    "type": "boolean"
+                },
+                "extAuthzContextExtensions": {
+                    "description": "ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.\nOnly meaningful when the referenced filter is of type \"extAuthz\".",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "extProcMode": {
+                    "description": "ExtProcMode overrides the processing mode for this route/group.\nOnly meaningful when the referenced filter is of type \"extProc\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcMode"
+                        }
+                    ]
+                },
+                "jwtProvider": {
+                    "description": "JWTProvider selects a specific JWT provider by name (instead of requiring all).\nOnly meaningful when the referenced filter is of type \"jwt\".",
+                    "type": "string"
+                }
+            }
+        },
+        "model.FilterType": {
+            "type": "string",
+            "enum": [
+                "cors",
+                "jwt",
+                "extAuthz",
+                "extProc"
+            ],
+            "x-enum-varnames": [
+                "FilterTypeCORS",
+                "FilterTypeJWT",
+                "FilterTypeExtAuthz",
+                "FilterTypeExtProc"
+            ]
+        },
+        "model.HeaderMatcher": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name is the header name (case-insensitive).",
+                    "type": "string"
+                },
+                "regex": {
+                    "description": "Regex indicates that Value should be treated as a regular expression.",
+                    "type": "boolean"
+                },
+                "value": {
+                    "description": "Value is the exact value the header must have.\nIf empty, only the presence of the header is checked.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.JWTClaimHeader": {
+            "type": "object",
+            "properties": {
+                "claim": {
+                    "description": "Claim is the JWT claim name (e.g. \"sub\", \"email\").",
+                    "type": "string"
+                },
+                "header": {
+                    "description": "Header is the request header name that receives the claim value.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.JWTConfig": {
+            "type": "object",
+            "properties": {
+                "providers": {
+                    "description": "Providers is a map of provider name to JWTProvider configuration.\nThe map key is referenced from per-route overrides to select a specific\nprovider (or disable authentication for that route).",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/model.JWTProvider"
+                    }
+                },
+                "rules": {
+                    "description": "Rules defines which request paths require JWT validation and which\nprovider to apply. If empty, all paths are validated by all providers.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.JWTRule"
+                    }
+                }
+            }
+        },
+        "model.JWTProvider": {
+            "type": "object",
+            "properties": {
+                "audiences": {
+                    "description": "Audiences lists the expected \"aud\" claim values. If empty, audience\nvalidation is skipped.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "claimToHeaders": {
+                    "description": "ClaimToHeaders maps JWT claim names to upstream request header names.\nThe claim value is set as the header value before forwarding.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.JWTClaimHeader"
+                    }
+                },
+                "forwardJwt": {
+                    "description": "ForwardJWT indicates whether the original Authorization header should be\nforwarded to the upstream after successful validation.",
+                    "type": "boolean"
+                },
+                "issuer": {
+                    "description": "Issuer is the expected value of the \"iss\" claim.",
+                    "type": "string"
+                },
+                "jwksInline": {
+                    "description": "JWKsInline is a literal JSON Web Key Set document.\nMutually exclusive with JWKsURI.",
+                    "type": "string"
+                },
+                "jwksUri": {
+                    "description": "JWKsURI is the URL from which the JSON Web Key Set is fetched.\nMutually exclusive with JWKsInline.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.JWTRule": {
+            "type": "object",
+            "properties": {
+                "allowMissing": {
+                    "description": "AllowMissing allows requests without a JWT token to pass through.\nUseful for public endpoints that coexist in the same listener.",
+                    "type": "boolean"
+                },
+                "match": {
+                    "description": "Match is the path prefix this rule applies to.",
+                    "type": "string"
+                },
+                "requires": {
+                    "description": "Requires lists the provider names that must validate the request.\nAll listed providers must succeed (AND semantics).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "model.Listener": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "description": "Address is the IP address the listener binds to.\nDefaults to \"0.0.0.0\" if empty.",
+                    "type": "string"
+                },
+                "filterIds": {
+                    "description": "FilterIDs lists the IDs of Filter entities to activate on this listener,\nin evaluation order. The router filter is always added last automatically.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "description": "ID is the unique identifier of the listener.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is a human-readable label for the listener.",
+                    "type": "string"
+                },
+                "port": {
+                    "description": "Port is the TCP port the listener binds to.",
+                    "type": "integer"
+                },
+                "tls": {
+                    "description": "TLS holds optional TLS termination configuration.\nWhen nil, the listener operates in plaintext mode.\nNOTE: TLS support is modelled here but not yet implemented in the xDS\nbuilder. The field is accepted and stored; it has no effect until the\nbuilder is updated to emit a DownstreamTlsContext.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ListenerTLS"
+                        }
+                    ]
+                }
+            }
+        },
+        "model.ListenerTLS": {
+            "type": "object",
+            "properties": {
+                "certPath": {
+                    "description": "CertPath is the path to the PEM-encoded TLS certificate file.",
+                    "type": "string"
+                },
+                "keyPath": {
+                    "description": "KeyPath is the path to the PEM-encoded private key file.",
+                    "type": "string"
+                },
+                "maxVersion": {
+                    "description": "MaxVersion is the maximum TLS protocol version to accept.\nAccepted values: same as MinVersion. If empty, no upper bound is set.",
+                    "type": "string"
+                },
+                "minVersion": {
+                    "description": "MinVersion is the minimum TLS protocol version to accept.\nAccepted values: \"TLSv1_0\", \"TLSv1_1\", \"TLSv1_2\", \"TLSv1_3\".\nDefaults to \"TLSv1_2\" if empty.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.MatchRule": {
+            "type": "object",
+            "properties": {
+                "headers": {
+                    "description": "Headers are request header matchers that must all match.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.HeaderMatcher"
+                    }
+                },
+                "hostnames": {
+                    "description": "Hostnames restricts the match to specific virtual host names.\nAn empty slice matches all virtual hosts.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "methods": {
+                    "description": "Methods lists the HTTP methods this rule applies to.\nAn empty slice matches all methods.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "path": {
+                    "description": "Path is the exact path that must match.",
+                    "type": "string"
+                },
+                "pathPrefix": {
+                    "description": "PathPrefix is a prefix that the request path must start with.\nMutually exclusive with Path and PathRegex.",
+                    "type": "string"
+                },
+                "pathRegex": {
+                    "description": "PathRegex is a regular expression the request path must match.\nMutually exclusive with Path and PathPrefix.",
+                    "type": "string"
+                },
+                "ports": {
+                    "description": "Ports restricts the match to specific listener ports.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "queryParams": {
+                    "description": "QueryParams are query parameter matchers that must all match.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.QueryParamMatcher"
+                    }
+                }
+            }
+        },
+        "model.QueryParamMatcher": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name is the query parameter name.",
+                    "type": "string"
+                },
+                "regex": {
+                    "description": "Regex indicates that Value should be treated as a regular expression.",
+                    "type": "boolean"
+                },
+                "value": {
+                    "description": "Value is the exact value the parameter must have.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.Route": {
+            "type": "object",
+            "properties": {
+                "backends": {
+                    "description": "Backends lists the upstream destinations for this route.\nWeights across all backends should sum to 100 when more than one backend\nis defined. If only one backend is provided its weight is ignored.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Backend"
+                    }
+                },
+                "filterOverrides": {
+                    "description": "FilterOverrides carries per-route overrides for filters registered on\nthe listener. The map key is the Filter ID. When both the route's group\nand the route itself carry an override for the same filter, the route\noverride wins entirely (more specific takes precedence).",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/model.FilterOverride"
+                    }
+                },
+                "id": {
+                    "description": "ID is the unique identifier of the route.",
+                    "type": "string"
+                },
+                "match": {
+                    "description": "Match defines the conditions that a request must satisfy.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.MatchRule"
+                        }
+                    ]
+                },
+                "name": {
+                    "description": "Name is a human-readable label for the route.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.RouteGroup": {
+            "type": "object",
+            "properties": {
+                "filterOverrides": {
+                    "description": "FilterOverrides carries per-group overrides for filters registered on\nthe listener. The map key is the Filter ID. These overrides apply to all\nroutes in the group. If a route also carries an override for the same\nfilter, the route override wins entirely.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/model.FilterOverride"
+                    }
+                },
+                "headers": {
+                    "description": "Headers are appended to each referenced route's own header matchers.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.HeaderMatcher"
+                    }
+                },
+                "hostnames": {
+                    "description": "Hostnames are merged (union) with each referenced route's own hostnames.\nAn empty slice means only the route's own hostnames apply.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "description": "ID is the unique identifier of the group.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is a human-readable label for the group.",
+                    "type": "string"
+                },
+                "pathPrefix": {
+                    "description": "PathPrefix is prepended literally to the path/pathPrefix/pathRegex of\nevery referenced route. Mutually exclusive with PathRegex.",
+                    "type": "string"
+                },
+                "pathRegex": {
+                    "description": "PathRegex is a RE2 regular expression that defines the group's path\nnamespace. It is composed with the route's own path specifier according\nto the rules described above. Mutually exclusive with PathPrefix.",
+                    "type": "string"
+                },
+                "routeIds": {
+                    "description": "RouteIDs lists the IDs of the routes that belong to this group.\nRoutes are independent entities and may be referenced by multiple groups.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "respond.ErrorBody": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "description": "Error contains a human-readable description of what went wrong.",
+                    "type": "string",
+                    "example": "group \"abc\" not found"
+                }
+            }
         }
-    ]
+    }
 }

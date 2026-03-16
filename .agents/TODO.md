@@ -10,40 +10,29 @@ _(nothing)_
 - [ ] Add authentication to the REST API
 - [ ] Write unit and integration tests
 - [ ] HA storage: document shared-volume / Litestream pattern for multi-replica deployments
-- [ ] Update `ARCHITECTURE.md` to reflect `model` package as canonical type home (separate from `gateway`)
+- [ ] Update `ARCHITECTURE.md` to reflect current package structure
 
-### Listener — first-class entity
-Currently hardcoded in `xds/builder.go` (port 80, no filters, no TLS). Make it a
-managed entity with full CRUD, store persistence, and xDS push.
+### xDS builder — wire actual Envoy HTTP filter objects
+Filters are stored and referenced from Listeners, but the builder does not yet
+turn `FilterIDs` into real Envoy HTTP filter objects.
 
-- [ ] Define `model.Listener` — address, port, and HTTP filter chain config:
-  - `id`, `name`
-  - `address` (default `0.0.0.0`), `port`
-  - `filters []ListenerFilter` — ordered list of HTTP filters to activate:
-    - `cors` — allowed origins, methods, headers, expose headers, max age
-    - `jwt` — list of providers (name, issuer, JWKS URI/inline, audiences,
-      forward token, claim-to-header mappings)
-    - `ext_authz` — gRPC or HTTP endpoint, timeout, include/exclude headers,
-      failure mode (allow/deny), per-route override support
-    - `ext_proc` — gRPC endpoint, processing mode (request/response
-      headers/body/trailers), timeout, mutation rules
-  - `tls` (optional) — TLS termination config: cert/key paths or SDS source,
-    min/max protocol version, cipher suites
-- [ ] Add `Listener` CRUD to `store.Store` interface
-- [ ] Implement in `store/bolt` — new `listeners` bucket
-- [ ] Implement in `store/memory`
-- [ ] Add REST handlers: `GET/POST /api/v1/listeners`,
-  `GET/PUT/DELETE /api/v1/listeners/{listenerId}`
-- [ ] Update `gateway.Rebuild()` to fetch listeners from store and pass to builder
-- [ ] Update `xds/builder.go` — generate one Envoy Listener per `model.Listener`;
-  build the HCM filter chain from `listener.Filters` in declared order;
-  wire per-route filter config from Route/Group policies (see below)
-- [ ] Per-route filter config — routes and groups can carry overrides for filters
-  registered in the listener:
-  - `cors` override per route (allowed origins, methods)
-  - `jwt` override per route (disable, or pick specific provider)
-  - `ext_authz` override per route (disable, add context extensions)
-  - `ext_proc` override per route (disable, override processing mode)
+- [ ] In `xds/builder.go`, for each `filterID` in `listener.FilterIDs`, look up the filter
+  in the filters slice passed to `BuildSnapshot`
+- [ ] Build the corresponding `envoy_listener.Filter` based on `filter.Type`:
+  - `cors` → `envoy.filters.http.cors`
+  - `jwt` → `envoy.filters.http.jwt_authn`
+  - `ext_authz` → `envoy.filters.http.ext_authz`
+  - `ext_proc` → `envoy.filters.http.ext_proc`
+- [ ] Append to the filter chain before the router filter (order: CORS → JWT → ext_authz → ext_proc → router)
+
+### xDS builder — FilterOverrides merge logic (per_filter_config)
+- [ ] When building a route's xDS representation, merge `RouteGroup.FilterOverrides` (base)
+  with `Route.FilterOverrides` (wins on collision) to produce `per_filter_config`
+- [ ] Serialize each override into the appropriate Envoy typed config proto
+
+### TLS termination in xDS builder
+- [ ] Decide cert delivery mechanism: file mount (static `certPath`/`keyPath`) vs SDS
+- [ ] Wire `model.Listener.TLS` into Envoy's `DownstreamTlsContext` in the builder
 
 ### Cluster — first-class entity
 Currently auto-generated from `Backend.Host`/`Backend.Port` with no configurability.
@@ -99,7 +88,7 @@ Make it a managed entity so upstream TLS, circuit breaking, and retries are cont
 - [x] `go build ./...` and `go vet ./...` pass with zero errors
 - [x] Rename API paths: `/api/v1/route-groups` → `/api/v1/groups`, nested routes kept under `/{groupId}/routes`
 - [x] Implement persistent store: bbolt (`store/bolt`), single-file DB, full `Store` interface, `--store-path` flag
-- [x] OpenAPI docs: swag-go v2 annotations on all 10 handlers, `docs/` generated, Swagger UI at `/api/v1/docs/`
+- [x] OpenAPI docs: swag-go v2 annotations on all handlers, `docs/` generated, Swagger UI at `/api/v1/docs/`
 - [x] **Data model redesign**: Routes promoted to independent first-class entities
   - `model/route.go`: Route no longer has GroupID; added `Ports []uint32` and `QueryParams []QueryParamMatcher` to MatchRule
   - `model/group.go`: RouteGroup now holds `RouteIDs []string` (references) instead of embedded routes; added group-level matchers (`PathPrefix`, `Hostnames`, `Headers`)
@@ -117,3 +106,16 @@ Make it a managed entity so upstream TLS, circuit breaking, and retries are cont
   - Group PathRegex + route Path/PathPrefix → `(?:group)(?:QuoteMeta(literal))` safe composition
   - Group PathRegex + no route path → group regex is the full match
   - All cases documented in `buildRouteMatch` with ASCII tables
+- [x] **Filter entity** — Filter as independent first-class entity (consistent with Route/Group pattern)
+  - `model/filter.go`: `Filter`, `FilterConfig`, `FilterType`, `JWTConfig`, `ExtAuthzConfig`, `ExtProcConfig`, `CORSConfig`, `FilterOverride`
+  - `model/listener.go`: `Listener` with `FilterIDs []string` and `TLS *ListenerTLS`
+  - `model/route.go`, `model/group.go`: `FilterOverrides map[string]FilterOverride` added to both
+  - `store/store.go`: `SaveFilter`, `GetFilter`, `ListFilters`, `DeleteFilter`, `SaveListener`, `GetListener`, `ListListeners`, `DeleteListener` added to interface
+  - `store/bolt/bolt.go`: `filters` and `listeners` buckets, all 8 new CRUD methods implemented
+  - `store/memory/memory.go`: implemented all 8 new methods; added `filters` and `listeners` maps to struct
+  - `handlers/filters.go`, `handlers/listeners.go`: full CRUD handlers with swag annotations
+  - `router.go`: `/api/v1/filters` and `/api/v1/listeners` routes registered
+  - `gateway/gateway.go`: `Rebuild()` fetches listeners and filters from store, passes to builder
+  - `xds/builder.go`: `BuildSnapshot(version, listeners, filters, groups, routes)` new signature; builds real Envoy Listener per `model.Listener`; fallback to hardcoded `rutoso_listener 0.0.0.0:80` if no listeners in store
+  - Swagger docs regenerated via `make docs`
+  - `go build ./...` and `go vet ./...` pass clean
