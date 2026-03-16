@@ -1030,6 +1030,29 @@ info:
   title: Rutoso API
   version: "1.0"
 paths:
+  /debug/xds/snapshot:
+    get:
+      description: Returns the last xDS snapshot pushed by Rutoso, serialised with
+        protojson.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Get xDS snapshot
+      tags:
+      - debug
   /destinations:
     get:
       description: Returns the full list of destinations.

@@ -29,9 +29,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+
 	"github.com/achetronic/rutoso/internal/api"
 	"github.com/achetronic/rutoso/internal/config"
 	"github.com/achetronic/rutoso/internal/gateway"
+	k8swatcher "github.com/achetronic/rutoso/internal/k8s"
 	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
 	"github.com/achetronic/rutoso/internal/xds"
 )
@@ -78,12 +83,21 @@ func run() error {
 	gw := gateway.New(gateway.Dependencies{
 		Store:       st,
 		Cache:       xdsSrv.Cache(),
+		XDSServer:   xdsSrv,
 		Logger:      logger,
 		NextVersion: xdsSrv.NextVersion,
 	})
 
+	// Kubernetes client (in-cluster, fallback to ~/.kube/config).
+	k8sClient, err := buildK8sClient()
+	if err != nil {
+		logger.Warn("k8s watcher disabled: could not build k8s client",
+			slog.String("error", err.Error()),
+		)
+	}
+
 	// HTTP REST API.
-	router := api.NewRouter(st, logger)
+	router := api.NewRouter(st, xdsSrv, logger)
 	httpSrv := &http.Server{
 		Addr:    cfg.Server.Address,
 		Handler: router,
@@ -92,14 +106,30 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Run all three components concurrently.
-	errCh := make(chan error, 3)
+	// Run all components concurrently.
+	errCh := make(chan error, 4)
 
 	go func() {
 		if err := gw.Run(ctx); err != nil {
 			errCh <- fmt.Errorf("gateway: %w", err)
 		}
 	}()
+
+	if k8sClient != nil {
+		k8sWatch := k8swatcher.New(k8swatcher.Dependencies{
+			Store:     st,
+			Cache:     xdsSrv.Cache(),
+			XDSServer: xdsSrv,
+			Client:  k8sClient,
+			Logger:  logger,
+			Rebuild: gw.Rebuild,
+		})
+		go func() {
+			if err := k8sWatch.Run(ctx); err != nil {
+				errCh <- fmt.Errorf("k8s watcher: %w", err)
+			}
+		}()
+	}
 
 	go func() {
 		if err := xdsSrv.Serve(ctx, cfg.XDS.Address); err != nil {
@@ -122,6 +152,26 @@ func run() error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+// buildK8sClient creates a Kubernetes client. It tries in-cluster config first,
+// then falls back to the default kubeconfig (~/.kube/config).
+func buildK8sClient() (kubernetes.Interface, error) {
+	cfg, err := rest.InClusterConfig()
+	if err != nil {
+		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+		cfg, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+			loadingRules, &clientcmd.ConfigOverrides{},
+		).ClientConfig()
+		if err != nil {
+			return nil, fmt.Errorf("building k8s client config: %w", err)
+		}
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating k8s client: %w", err)
+	}
+	return client, nil
 }
 
 // buildLogger creates an slog.Logger based on the log configuration.

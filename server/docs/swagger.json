@@ -20,6 +20,39 @@
 "host": "localhost:8080",
 "basePath": "/",
 "paths": {
+        "/debug/xds/snapshot": {
+            "get": {
+                "description": "Returns the last xDS snapshot pushed by Rutoso, serialised with protojson.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "debug"
+                ],
+                "summary": "Get xDS snapshot",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
         "/destinations": {
             "get": {
                 "description": "Returns the full list of destinations.",

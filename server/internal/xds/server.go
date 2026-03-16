@@ -11,20 +11,20 @@ import (
 	"sync/atomic"
 
 	core "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
+	discoveryv3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	serverv3 "github.com/envoyproxy/go-control-plane/pkg/server/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-
-	discoverygrpc "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
 )
 
 // Server wraps the go-control-plane gRPC xDS server and its snapshot cache.
 type Server struct {
-	cache   cachev3.SnapshotCache
-	grpc    *grpc.Server
-	logger  *slog.Logger
-	version atomic.Uint64
+	cache          cachev3.SnapshotCache
+	grpc           *grpc.Server
+	logger         *slog.Logger
+	version        atomic.Uint64
+	lastSnapshot   cachev3.ResourceSnapshot
 }
 
 // nodeHash implements cachev3.NodeHash. It uses the node ID as the cache key
@@ -41,25 +41,62 @@ func (nodeHash) ID(node *core.Node) string {
 
 // New creates a new xDS Server. The gRPC server is not started until Serve is called.
 func New(logger *slog.Logger) *Server {
-	cache := cachev3.NewSnapshotCache(false, nodeHash{}, nil)
+	s := &Server{logger: logger}
+
+	s.cache = cachev3.NewSnapshotCache(false, nodeHash{}, nil)
+
+	cb := &serverv3.CallbackFuncs{
+		StreamRequestFunc: func(streamID int64, req *discoveryv3.DiscoveryRequest) error {
+			if req.Node == nil || req.Node.Id == "" {
+				return nil
+			}
+			nodeID := req.Node.Id
+			if _, err := s.cache.GetSnapshot(nodeID); err != nil {
+				// Node has no snapshot yet — push the last known one if available.
+				if s.lastSnapshot != nil {
+					if setErr := s.cache.SetSnapshot(context.Background(), nodeID, s.lastSnapshot); setErr != nil {
+						logger.Warn("xds: failed to set snapshot for new node",
+							slog.String("nodeId", nodeID),
+							slog.String("error", setErr.Error()),
+						)
+					} else {
+						logger.Info("xds: pushed snapshot to new node",
+							slog.String("nodeId", nodeID),
+						)
+					}
+				}
+			}
+			return nil
+		},
+	}
 
 	grpcServer := grpc.NewServer()
-	xdsSrv := serverv3.NewServer(context.Background(), cache, nil)
+	xdsSrv := serverv3.NewServer(context.Background(), s.cache, cb)
 
-	discoverygrpc.RegisterAggregatedDiscoveryServiceServer(grpcServer, xdsSrv)
+	discoveryv3.RegisterAggregatedDiscoveryServiceServer(grpcServer, xdsSrv)
 	reflection.Register(grpcServer)
 
-	return &Server{
-		cache:  cache,
-		grpc:   grpcServer,
-		logger: logger,
-	}
+	s.grpc = grpcServer
+	return s
 }
 
 // Cache returns the underlying snapshot cache so the gateway layer can push
 // updated snapshots directly.
 func (s *Server) Cache() cachev3.SnapshotCache {
 	return s.cache
+}
+
+// Snapshot returns the last snapshot built by the gateway, regardless of
+// whether any Envoy node has connected yet. Returns nil if no snapshot has
+// been pushed yet.
+func (s *Server) Snapshot() cachev3.ResourceSnapshot {
+	return s.lastSnapshot
+}
+
+// SetLastSnapshot stores the most recently built snapshot for debug retrieval.
+// Called by the gateway after every successful rebuild.
+func (s *Server) SetLastSnapshot(snap cachev3.ResourceSnapshot) {
+	s.lastSnapshot = snap
 }
 
 // NextVersion returns a monotonically incrementing version string for snapshots.

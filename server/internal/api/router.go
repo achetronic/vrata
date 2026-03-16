@@ -12,6 +12,7 @@ import (
 	"github.com/achetronic/rutoso/internal/api/handlers"
 	"github.com/achetronic/rutoso/internal/api/middleware"
 	"github.com/achetronic/rutoso/internal/store"
+	"github.com/achetronic/rutoso/internal/xds"
 )
 
 // NewRouter creates and returns the root http.Handler for the Rutoso REST API.
@@ -45,14 +46,16 @@ import (
 //	GET    /api/v1/destinations/{destinationId}    → get destination
 //	PUT    /api/v1/destinations/{destinationId}    → update destination
 //	DELETE /api/v1/destinations/{destinationId}    → delete destination
+//	GET    /api/v1/debug/xds/snapshot              → current xDS snapshot
 //	GET    /api/v1/docs/               → Swagger UI
 //	GET    /api/v1/docs/doc.json       → OpenAPI spec (JSON)
-func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
+func NewRouter(st store.Store, xdsSrv *xds.Server, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
 	deps := &handlers.Dependencies{
-		Store:  st,
-		Logger: logger,
+		Store:     st,
+		XDSServer: xdsSrv,
+		Logger:    logger,
 	}
 
 	// Route endpoints
@@ -89,6 +92,9 @@ func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/destinations/{destinationId}", deps.GetDestination)
 	mux.HandleFunc("PUT /api/v1/destinations/{destinationId}", deps.UpdateDestination)
 	mux.HandleFunc("DELETE /api/v1/destinations/{destinationId}", deps.DeleteDestination)
+
+	// Debug endpoints
+	mux.HandleFunc("GET /api/v1/debug/xds/snapshot", deps.GetXDSSnapshot)
 
 	// Swagger UI — static assets (HTML, JS, CSS). http-swagger/v2 reads the spec
 	// URL from the config; the actual JSON is served by the handler below.

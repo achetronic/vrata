@@ -438,6 +438,40 @@ Envoy proto field names.
 `retry_on: "5xx,reset"` or `prefix_rewrite`. Semantic naming also insulates the
 API from Envoy internal restructuring across versions.
 
-**Do not**: Expose Envoy's raw `retry_on` string format in the API. Do not add
-`prefixRewrite`, `regexRewrite`, `hostRewriteLiteral`, or `autoHostRewrite` as
-top-level fields on `Route`. All translation stays in the xDS builder.
+## k8s EndpointSlice watcher is non-fatal and opt-in via kubeconfig
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+The Kubernetes EndpointSlice watcher (`internal/k8s`) is started only when a valid
+k8s client can be built (in-cluster config, or `~/.kube/config` fallback). If neither
+is available the watcher is silently disabled and Rutoso continues running without EDS.
+
+**Reasoning**: Rutoso must be usable outside of Kubernetes (local dev, bare-metal) without
+requiring a kubeconfig to be present. Making the watcher optional with a graceful fallback
+avoids a hard startup dependency on the cluster API.
+
+**Do not**: Make the k8s client a required dependency. Do not crash or refuse to start if
+no kubeconfig is found. Do not attempt to start the watcher with a nil client.
+
+---
+
+## k8s watcher triggers gateway Rebuild — no separate EDS update path
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+When an EndpointSlice event fires, the watcher calls `gateway.Gateway.Rebuild(ctx)` —
+the same full-snapshot rebuild the gateway uses for store events. There is no separate
+EDS-only push path.
+
+**Reasoning**: go-control-plane's `SnapshotCache` requires a complete, consistent snapshot.
+Partial updates (EDS resources only) would leave the snapshot in an inconsistent version
+state. The full rebuild is cheap enough (reads bbolt, builds protos in memory) and keeps
+a single code path for all snapshot mutations.
+
+**Do not**: Implement a partial EDS update that patches only `ClusterLoadAssignment`
+resources in the last snapshot. Do not bypass `gateway.rebuild` to write directly to the
+snapshot cache from the watcher.
+
+---

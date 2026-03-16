@@ -16,9 +16,10 @@ import (
 
 // Dependencies holds the external collaborators required by the Gateway.
 type Dependencies struct {
-	Store  store.Store
-	Cache  cachev3.SnapshotCache
-	Logger *slog.Logger
+	Store     store.Store
+	Cache     cachev3.SnapshotCache
+	XDSServer *xds.Server
+	Logger    *slog.Logger
 
 	// NextVersion is called to obtain a monotonically increasing version string
 	// for each new snapshot. Typically backed by xds.Server.NextVersion.
@@ -33,6 +34,12 @@ type Gateway struct {
 // New creates a new Gateway.
 func New(deps Dependencies) *Gateway {
 	return &Gateway{deps: deps}
+}
+
+// Rebuild is a public wrapper around rebuild, allowing external components
+// (e.g. the k8s EndpointSlice watcher) to trigger a full xDS snapshot rebuild.
+func (gw *Gateway) Rebuild(ctx context.Context) error {
+	return gw.rebuild(ctx)
 }
 
 // Run starts the event loop. It blocks until ctx is cancelled, then returns nil.
@@ -107,6 +114,9 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("building snapshot: %w", err)
 	}
+
+	// Store the snapshot for debug retrieval regardless of connected nodes.
+	gw.deps.XDSServer.SetLastSnapshot(snap)
 
 	// Push to all known node IDs. A node is "known" once it sends its first
 	// discovery request; until then there is nothing to update.

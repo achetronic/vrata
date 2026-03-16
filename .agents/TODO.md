@@ -121,3 +121,20 @@ DONE — all route action fields implemented. See Done section below.
   - `handlers/routes.go`: `validateRouteAction` checks `route.Forward != nil`
   - `go build ./...` and `go vet ./...` pass clean
   - Swagger docs regenerated via `make docs`
+
+- [x] **Debug endpoint: GET /api/v1/debug/xds/snapshot**
+  - `xds/server.go`: `Snapshot()` method — returns `map[string]cachev3.ResourceSnapshot` keyed by Envoy node ID
+  - `handlers/debug.go`: `GetXDSSnapshot` serialises each resource with `protojson`; response is `nodeID → resourceType → []resource`
+  - `handlers/deps.go`: `XDSServer *xds.Server` added to `Dependencies`
+  - `api/router.go`: `NewRouter` updated to accept `*xds.Server`; route registered
+  - `cmd/rutoso/main.go`: `NewRouter` call updated to pass `xdsSrv`
+  - `go build ./...` and `go vet ./...` pass clean
+  - Swagger docs regenerated via `make docs`
+
+- [x] **Kubernetes EndpointSlice watcher** (`internal/k8s/watcher.go`)
+  - `k8s.io/client-go`, `k8s.io/api`, `k8s.io/apimachinery` added to `go.mod`; `go mod tidy` applied
+  - `internal/k8s/watcher.go`: `Watcher` struct with `Dependencies` (Store, Client, Logger, Rebuild func); `Run` subscribes to store, reconciles on Destination events; `reconcileWatches` diffs active informers vs desired EDS Destinations; `watchEndpointSlices` starts a per-service `SharedInformerFactory` filtered by `kubernetes.io/service-name` label; calls `Rebuild` on add/update/delete
+  - `parseFQDN` extracts service+namespace from `<svc>.<ns>.svc.cluster.local` host field
+  - `gateway/gateway.go`: `Rebuild(ctx) error` public method added as wrapper around `rebuild`
+  - `cmd/rutoso/main.go`: `buildK8sClient()` tries in-cluster config then `~/.kube/config`; watcher instantiated and started in goroutine if client available; k8s failure is non-fatal (logged as Warn, watcher disabled)
+  - `go build ./...` and `go vet ./...` pass clean
