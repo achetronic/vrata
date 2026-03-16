@@ -37,6 +37,15 @@ HOST_IP ?= $(shell docker network inspect kind 2>/dev/null | grep '"Gateway"' | 
 ## docs: regenerate OpenAPI docs from handler annotations (requires swag v2 in PATH)
 docs:
 	$(SWAG) init $(SWAG_FLAGS)
+	@# swag v2 emits 'openapi' and 'info' after 'components' — Swagger UI rejects that.
+	@# Reorder: bring openapi + info to the top.
+	@python3 -c "
+import json
+with open('$(SERVER_DIR)/docs/swagger.json') as f: spec = json.load(f)
+ordered = {'openapi': spec.pop('openapi'), 'info': spec.pop('info')}
+ordered.update(spec)
+with open('$(SERVER_DIR)/docs/swagger.json', 'w') as f: json.dump(ordered, f, indent=4)
+"
 
 ## build: compile the binary into ./bin/rutoso
 build:

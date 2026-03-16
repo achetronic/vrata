@@ -1,4 +1,18 @@
 {
+    "openapi": "3.1.0",
+    "info": {
+        "contact": {
+            "name": "Rutoso project",
+            "url": "https://github.com/achetronic/rutoso"
+        },
+        "description": "REST API control plane for Envoy proxies. Manage route groups and routes;\nchanges are pushed to all connected Envoy instances via xDS in real time.",
+        "license": {
+            "name": "Apache 2.0",
+            "url": "https://www.apache.org/licenses/LICENSE-2.0"
+        },
+        "title": "Rutoso API",
+        "version": "1.0"
+    },
     "components": {
         "schemas": {
             "model.Backend": {
@@ -194,19 +208,6 @@
                 "type": "object"
             }
         }
-    },
-    "info": {
-        "contact": {
-            "name": "Rutoso project",
-            "url": "https://github.com/achetronic/rutoso"
-        },
-        "description": "REST API control plane for Envoy proxies. Manage route groups and routes;\nchanges are pushed to all connected Envoy instances via xDS in real time.",
-        "license": {
-            "name": "Apache 2.0",
-            "url": "https://www.apache.org/licenses/LICENSE-2.0"
-        },
-        "title": "Rutoso API",
-        "version": "1.0"
     },
     "externalDocs": {
         "description": "",
@@ -750,7 +751,6 @@
             }
         }
     },
-    "openapi": "3.1.0",
     "servers": [
         {
             "url": "localhost:8080/"
