@@ -99,29 +99,13 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters
 		VirtualHosts: vhosts,
 	}
 
-	// Build one Envoy Listener per model.Listener stored in the database.
-	// If none are stored yet, fall back to a default listener on port 80 so
-	// the dev environment keeps working out of the box.
 	var envoyListeners []types.Resource
-	if len(modelListeners) == 0 {
-		defaultListener, err := buildListenerFromModel(model.Listener{
-			ID:      "rutoso_default",
-			Name:    "default",
-			Address: "0.0.0.0",
-			Port:    80,
-		}, filterByID, routeConfig.Name)
+	for _, ml := range modelListeners {
+		el, err := buildListenerFromModel(ml, filterByID, routeConfig.Name)
 		if err != nil {
-			return nil, fmt.Errorf("building default listener: %w", err)
+			return nil, fmt.Errorf("building listener %q: %w", ml.ID, err)
 		}
-		envoyListeners = append(envoyListeners, defaultListener)
-	} else {
-		for _, ml := range modelListeners {
-			el, err := buildListenerFromModel(ml, filterByID, routeConfig.Name)
-			if err != nil {
-				return nil, fmt.Errorf("building listener %q: %w", ml.ID, err)
-			}
-			envoyListeners = append(envoyListeners, el)
-		}
+		envoyListeners = append(envoyListeners, el)
 	}
 
 	snap, err := cachev3.NewSnapshot(version, map[resourcev3.Type][]types.Resource{
