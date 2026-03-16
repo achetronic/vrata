@@ -24,27 +24,27 @@ Every change you make through the API is immediately translated into an Envoy xD
 
 **Middleware** — a reusable behaviour you attach to routes or groups. CORS, JWT authentication, external authorization (ext_authz), external processing (ext_proc), rate limiting, and header manipulation. Create the middleware once, reference it by ID wherever you need it. Rutoso handles registering it in Envoy's filter pipeline and enabling/disabling it per route automatically.
 
-## API
+## Architecture
 
+```mermaid
+flowchart LR
+    User([You]) -->|REST API| Rutoso
+    Rutoso -->|xDS gRPC| E1[Envoy]
+    Rutoso -->|xDS gRPC| E2[Envoy]
+    Rutoso -->|xDS gRPC| En[Envoy ...]
+
+    subgraph Rutoso
+        API[REST API :8080] --> GW[Gateway]
+        GW --> Builder[xDS Builder]
+        GW --> Store[(bbolt)]
+        K8s[k8s Watcher] -.->|EndpointSlice| GW
+    end
+
+    E1 --> U1[Upstream]
+    E2 --> U2[Upstream]
 ```
-/api/v1/routes          GET POST
-/api/v1/routes/{id}     GET PUT DELETE
 
-/api/v1/groups          GET POST
-/api/v1/groups/{id}     GET PUT DELETE
-
-/api/v1/destinations          GET POST
-/api/v1/destinations/{id}     GET PUT DELETE
-
-/api/v1/listeners          GET POST
-/api/v1/listeners/{id}     GET PUT DELETE
-
-/api/v1/middlewares          GET POST
-/api/v1/middlewares/{id}     GET PUT DELETE
-
-/api/v1/debug/xds/snapshot   GET    ← current xDS snapshot as JSON
-/api/v1/docs/                 GET    ← Swagger UI
-```
+Swagger UI with the full API spec is at `/api/v1/docs/` once Rutoso is running.
 
 ## Dev environment
 
