@@ -248,6 +248,38 @@ func buildRouteMatch(g model.RouteGroup, r model.Route) *routev3.RouteMatch {
 		rm.Headers = append(rm.Headers, buildHeaderMatcher(h))
 	}
 
+	// Method matching: Envoy uses a ":method" pseudo-header matcher.
+	// Multiple methods are combined into a single regex so Envoy ORs them
+	// (multiple HeaderMatchers on the same name would be ANDed, which is
+	// impossible for methods).
+	if len(r.Match.Methods) == 1 {
+		rm.Headers = append(rm.Headers, &routev3.HeaderMatcher{
+			Name: ":method",
+			HeaderMatchSpecifier: &routev3.HeaderMatcher_StringMatch{
+				StringMatch: &matcherv3.StringMatcher{
+					MatchPattern: &matcherv3.StringMatcher_Exact{Exact: r.Match.Methods[0]},
+				},
+			},
+		})
+	} else if len(r.Match.Methods) > 1 {
+		pattern := strings.Join(r.Match.Methods, "|")
+		rm.Headers = append(rm.Headers, &routev3.HeaderMatcher{
+			Name: ":method",
+			HeaderMatchSpecifier: &routev3.HeaderMatcher_StringMatch{
+				StringMatch: &matcherv3.StringMatcher{
+					MatchPattern: &matcherv3.StringMatcher_SafeRegex{
+						SafeRegex: &matcherv3.RegexMatcher{Regex: pattern},
+					},
+				},
+			},
+		})
+	}
+
+	// Query parameter matching.
+	for _, qp := range r.Match.QueryParams {
+		rm.QueryParameters = append(rm.QueryParameters, buildQueryParamMatcher(qp))
+	}
+
 	return rm
 }
 
@@ -281,6 +313,7 @@ func buildForwardAction(r model.Route) *routev3.Route_Route {
 	applyRetryPolicy(ra, f.Retry)
 	applyRewrite(ra, f.Rewrite)
 	applyMirror(ra, f.Mirror)
+	applyHashPolicy(ra, f.HashPolicy)
 
 	return &routev3.Route_Route{Route: ra}
 }
@@ -487,6 +520,46 @@ func applyMirror(ra *routev3.RouteAction, m *model.RouteMirror) {
 	}
 }
 
+// applyHashPolicy sets the hash_policy entries on the RouteAction.
+// Each model.HashPolicy is converted to an Envoy RouteAction_HashPolicy.
+// Envoy evaluates entries in order and uses the first one that produces a value.
+func applyHashPolicy(ra *routev3.RouteAction, policies []model.HashPolicy) {
+	for _, hp := range policies {
+		switch {
+		case hp.Header != "":
+			ra.HashPolicy = append(ra.HashPolicy, &routev3.RouteAction_HashPolicy{
+				PolicySpecifier: &routev3.RouteAction_HashPolicy_Header_{
+					Header: &routev3.RouteAction_HashPolicy_Header{
+						HeaderName: hp.Header,
+					},
+				},
+			})
+		case hp.Cookie != "":
+			cookie := &routev3.RouteAction_HashPolicy_Cookie{
+				Name: hp.Cookie,
+			}
+			if hp.CookieTTL != "" {
+				if dur, err := time.ParseDuration(hp.CookieTTL); err == nil {
+					cookie.Ttl = durationpb.New(dur)
+				}
+			}
+			ra.HashPolicy = append(ra.HashPolicy, &routev3.RouteAction_HashPolicy{
+				PolicySpecifier: &routev3.RouteAction_HashPolicy_Cookie_{
+					Cookie: cookie,
+				},
+			})
+		case hp.SourceIP:
+			ra.HashPolicy = append(ra.HashPolicy, &routev3.RouteAction_HashPolicy{
+				PolicySpecifier: &routev3.RouteAction_HashPolicy_ConnectionProperties_{
+					ConnectionProperties: &routev3.RouteAction_HashPolicy_ConnectionProperties{
+						SourceIp: true,
+					},
+				},
+			})
+		}
+	}
+}
+
 // buildHeaderMatcher converts a model.HeaderMatcher into an Envoy HeaderMatcher.
 func buildHeaderMatcher(h model.HeaderMatcher) *routev3.HeaderMatcher {
 	hm := &routev3.HeaderMatcher{Name: h.Name}
@@ -506,6 +579,30 @@ func buildHeaderMatcher(h model.HeaderMatcher) *routev3.HeaderMatcher {
 		}
 	}
 	return hm
+}
+
+// buildQueryParamMatcher converts a model.QueryParamMatcher into an Envoy
+// QueryParameterMatcher.
+func buildQueryParamMatcher(qp model.QueryParamMatcher) *routev3.QueryParameterMatcher {
+	qpm := &routev3.QueryParameterMatcher{Name: qp.Name}
+	if qp.Regex {
+		qpm.QueryParameterMatchSpecifier = &routev3.QueryParameterMatcher_StringMatch{
+			StringMatch: &matcherv3.StringMatcher{
+				MatchPattern: &matcherv3.StringMatcher_SafeRegex{
+					SafeRegex: &matcherv3.RegexMatcher{Regex: qp.Value},
+				},
+			},
+		}
+	} else if qp.Value != "" {
+		qpm.QueryParameterMatchSpecifier = &routev3.QueryParameterMatcher_StringMatch{
+			StringMatch: &matcherv3.StringMatcher{
+				MatchPattern: &matcherv3.StringMatcher_Exact{Exact: qp.Value},
+			},
+		}
+	}
+	// When Value is empty and Regex is false, the matcher checks for parameter
+	// presence only (any value).
+	return qpm
 }
 
 // isEDS reports whether a Destination should use EDS (Kubernetes discovery).

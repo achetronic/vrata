@@ -248,7 +248,6 @@ type DestinationDiscovery struct {
 }
 
 // BackendRef references a Destination by ID and assigns a traffic weight.
-// It replaces the old inline Backend struct in Route.
 type BackendRef struct {
 	// DestinationID is the ID of the Destination this backend points to.
 	DestinationID string `json:"destinationId"`
@@ -257,28 +256,29 @@ type BackendRef struct {
 	// when multiple backends are defined. Values across all BackendRefs in
 	// a Route must sum to 100.
 	Weight uint32 `json:"weight"`
-
-	// HashPolicy defines how Envoy computes the sticky-session key for this
-	// backend. Only relevant when the referenced Destination uses RING_HASH
-	// or MAGLEV balancing. Maps to RouteAction.hash_policy in Envoy.
-	HashPolicy *HashPolicy `json:"hashPolicy,omitempty"`
 }
 
 // HashPolicy defines the key Envoy uses to compute the consistent hash for
 // sticky sessions. Exactly one field should be set.
-// Maps to RouteAction.hash_policy in Envoy (not Cluster).
+//
+// This type lives alongside ForwardAction (not on Destination) because Envoy
+// evaluates hash_policy at routing time, using request attributes (headers,
+// cookies, client IP) that are only available in the RouteAction context.
+// The Destination (Cluster) defines the algorithm (RING_HASH / MAGLEV) and
+// ring parameters; the route defines what request data feeds the hash.
+// Both sides must be configured for sticky sessions to work.
 type HashPolicy struct {
 	// Header uses the value of the named request header as the hash key.
-	Header string `json:"header,omitempty"`
+	Header string `json:"header,omitempty" yaml:"header,omitempty"`
 
 	// Cookie uses the named cookie as the hash key. If the cookie is absent
 	// Envoy creates it with the given TTL (e.g. "3600s").
-	Cookie string `json:"cookie,omitempty"`
+	Cookie string `json:"cookie,omitempty" yaml:"cookie,omitempty"`
 
 	// CookieTTL is the TTL Envoy sets when generating a new sticky cookie.
 	// Ignored unless Cookie is set. Accepts Go duration strings.
-	CookieTTL string `json:"cookieTtl,omitempty"`
+	CookieTTL string `json:"cookieTtl,omitempty" yaml:"cookieTtl,omitempty"`
 
 	// SourceIP uses the downstream client IP as the hash key.
-	SourceIP bool `json:"sourceIP,omitempty"`
+	SourceIP bool `json:"sourceIP,omitempty" yaml:"sourceIP,omitempty"`
 }

@@ -70,6 +70,21 @@ type ForwardAction struct {
 	// observability or testing. The mirrored request is fire-and-forget;
 	// its response is discarded and never affects the client.
 	Mirror *RouteMirror `json:"mirror,omitempty" yaml:"mirror,omitempty"`
+
+	// HashPolicy controls how Envoy computes the consistent-hash key for
+	// sticky sessions. Only relevant when the Destination uses RING_HASH or
+	// MAGLEV balancing (configured in Destination.Options.Balancing).
+	//
+	// This field lives on the route — not on the Destination — because Envoy
+	// evaluates hash_policy at routing time using request attributes (headers,
+	// cookies, client IP) that are only available in the RouteAction context.
+	// The Destination defines *which algorithm* and ring parameters to use;
+	// the route defines *what request data* feeds the hash function.
+	// Both sides must be configured for sticky sessions to work.
+	//
+	// Entries are evaluated in order; the first one that produces a value wins.
+	// Maps to RouteAction.hash_policy in Envoy.
+	HashPolicy []HashPolicy `json:"hashPolicy,omitempty" yaml:"hashPolicy,omitempty"`
 }
 
 // RouteTimeouts controls how long a request is allowed to take.

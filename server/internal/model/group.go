@@ -111,9 +111,6 @@ type MatchRule struct {
 	// Headers are request header matchers that must all match.
 	Headers []HeaderMatcher `json:"headers,omitempty" yaml:"headers,omitempty"`
 
-	// Ports restricts the match to specific listener ports.
-	Ports []uint32 `json:"ports,omitempty" yaml:"ports,omitempty"`
-
 	// QueryParams are query parameter matchers that must all match.
 	QueryParams []QueryParamMatcher `json:"queryParams,omitempty" yaml:"queryParams,omitempty"`
 }
