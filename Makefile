@@ -29,7 +29,7 @@ ENVOY_NODE_ID  := envoy-dev-0
 # Auto-detected after cluster creation. Override: make dev-up HOST_IP=1.2.3.4
 HOST_IP ?= $(shell docker network inspect kind 2>/dev/null | grep '"Gateway"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -1)
 
-.PHONY: build docs docker-build docker-push run run-dev clean \
+.PHONY: build docs docker-build docker-push run run-dev clean swag-reorder \
         dev-up dev-down dev-envoy-logs dev-envoy-admin
 
 # ─── Standard targets ─────────────────────────────────────────────────────────
@@ -37,15 +37,9 @@ HOST_IP ?= $(shell docker network inspect kind 2>/dev/null | grep '"Gateway"' | 
 ## docs: regenerate OpenAPI docs from handler annotations (requires swag v2 in PATH)
 docs:
 	$(SWAG) init $(SWAG_FLAGS)
-	@# swag v2 emits 'openapi' and 'info' after 'components' — Swagger UI rejects that.
-	@# Reorder: bring openapi + info to the top.
-	@python3 -c "
-import json
-with open('$(SERVER_DIR)/docs/swagger.json') as f: spec = json.load(f)
-ordered = {'openapi': spec.pop('openapi'), 'info': spec.pop('info')}
-ordered.update(spec)
-with open('$(SERVER_DIR)/docs/swagger.json', 'w') as f: json.dump(ordered, f, indent=4)
-"
+	@# swag v2.0.0 emits 'openapi' and 'info' after 'components' — Swagger UI rejects that.
+	@# swag-reorder rewrites swagger.json so openapi+info come first.
+	cd $(SERVER_DIR) && $(GO) run ./cmd/swag-reorder $(SERVER_DIR)/docs/swagger.json
 
 ## build: compile the binary into ./bin/rutoso
 build:

@@ -1,6 +1,6 @@
 {
-    "openapi": "3.1.0",
-    "info": {
+"openapi": "3.1.0",
+"info": {
         "contact": {
             "name": "Rutoso project",
             "url": "https://github.com/achetronic/rutoso"
@@ -13,7 +13,7 @@
         "title": "Rutoso API",
         "version": "1.0"
     },
-    "components": {
+"components": {
         "schemas": {
             "model.Backend": {
                 "properties": {
@@ -209,11 +209,11 @@
             }
         }
     },
-    "externalDocs": {
+"externalDocs": {
         "description": "",
         "url": ""
     },
-    "paths": {
+"paths": {
         "/groups": {
             "get": {
                 "description": "Returns the full list of route groups.",
@@ -751,7 +751,7 @@
             }
         }
     },
-    "servers": [
+"servers": [
         {
             "url": "localhost:8080/"
         }
