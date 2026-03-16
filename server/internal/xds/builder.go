@@ -19,6 +19,7 @@ import (
 	routerv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/router/v3"
 	hcmv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	upstreamhttpv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
+	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	matcherv3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
@@ -925,6 +926,17 @@ func buildClusterFromDestination(d model.Destination) *clusterv3.Cluster {
 		}
 	}
 
+	// TLS upstream (UpstreamTlsContext as transport_socket).
+	if tls := d.Options.TLS; tls != nil && tls.Mode != model.TLSModeNone && tls.Mode != "" {
+		upstreamTLS := buildUpstreamTLSContext(tls, d.Host)
+		if tlsAny, err := anypb.New(upstreamTLS); err == nil {
+			c.TransportSocket = &corev3.TransportSocket{
+				Name: "envoy.transport_sockets.tls",
+				ConfigType: &corev3.TransportSocket_TypedConfig{TypedConfig: tlsAny},
+			}
+		}
+	}
+
 	return c
 }
 
@@ -964,6 +976,72 @@ func buildEndpointFromDestination(d model.Destination) *endpointv3.ClusterLoadAs
 // Middlewares referenced by routes and groups (usedMwIDs) are resolved from
 // mwByID and wired into the HCM pipeline. The router filter is always
 // appended as the last HTTP filter.
+// buildUpstreamTLSContext creates an UpstreamTlsContext from model.TLSOptions.
+// Supports TLS (server cert verification) and mTLS (client cert presentation).
+func buildUpstreamTLSContext(tls *model.TLSOptions, host string) *tlsv3.UpstreamTlsContext {
+	ctx := &tlsv3.UpstreamTlsContext{}
+	common := &tlsv3.CommonTlsContext{}
+
+	// SNI: use explicit value or fall back to the upstream host.
+	if tls.SNI != "" {
+		ctx.Sni = tls.SNI
+	} else {
+		ctx.Sni = host
+	}
+
+	// TLS version constraints.
+	if tls.MinVersion != "" || tls.MaxVersion != "" {
+		params := &tlsv3.TlsParameters{}
+		params.TlsMinimumProtocolVersion = parseTLSVersion(tls.MinVersion)
+		params.TlsMaximumProtocolVersion = parseTLSVersion(tls.MaxVersion)
+		common.TlsParams = params
+	}
+
+	// CA for server certificate validation.
+	if tls.CAFile != "" {
+		common.ValidationContextType = &tlsv3.CommonTlsContext_ValidationContext{
+			ValidationContext: &tlsv3.CertificateValidationContext{
+				TrustedCa: &corev3.DataSource{
+					Specifier: &corev3.DataSource_Filename{Filename: tls.CAFile},
+				},
+			},
+		}
+	}
+
+	// Client certificate for mTLS.
+	if tls.Mode == model.TLSModeMTLS && tls.CertFile != "" && tls.KeyFile != "" {
+		common.TlsCertificates = []*tlsv3.TlsCertificate{
+			{
+				CertificateChain: &corev3.DataSource{
+					Specifier: &corev3.DataSource_Filename{Filename: tls.CertFile},
+				},
+				PrivateKey: &corev3.DataSource{
+					Specifier: &corev3.DataSource_Filename{Filename: tls.KeyFile},
+				},
+			},
+		}
+	}
+
+	ctx.CommonTlsContext = common
+	return ctx
+}
+
+// parseTLSVersion converts a user-facing TLS version string to the Envoy enum.
+func parseTLSVersion(v string) tlsv3.TlsParameters_TlsProtocol {
+	switch v {
+	case "TLSv1_0":
+		return tlsv3.TlsParameters_TLSv1_0
+	case "TLSv1_1":
+		return tlsv3.TlsParameters_TLSv1_1
+	case "TLSv1_2":
+		return tlsv3.TlsParameters_TLSv1_2
+	case "TLSv1_3":
+		return tlsv3.TlsParameters_TLSv1_3
+	default:
+		return tlsv3.TlsParameters_TLS_AUTO
+	}
+}
+
 func buildListenerFromModel(ml model.Listener, mwByID map[string]model.Middleware, usedMwIDs map[string]bool, routeConfigName string) (*listenerv3.Listener, error) {
 	router, err := anypb.New(&routerv3.Router{})
 	if err != nil {
