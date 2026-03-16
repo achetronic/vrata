@@ -55,10 +55,12 @@ func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("PUT /api/v1/groups/{groupId}/routes/{routeId}", routes.HandleUpdateRoute)
 	mux.HandleFunc("DELETE /api/v1/groups/{groupId}/routes/{routeId}", routes.HandleDeleteRoute)
 
-	// Swagger UI — strip the /api/v1/docs prefix before passing to the handler.
-	mux.Handle("/api/v1/docs/", http.StripPrefix("/api/v1/docs", httpSwagger.Handler(
+	// Swagger UI. The http-swagger handler serves the UI and the spec (doc.json)
+	// from the docs package embedded at compile time. The URL passed here is the
+	// path the browser uses to fetch the JSON spec — it must not be stripped.
+	mux.Handle("/api/v1/docs/", httpSwagger.Handler(
 		httpSwagger.URL("/api/v1/docs/doc.json"),
-	)))
+	))
 
 	// Chain middleware: recovery wraps logger wraps mux.
 	return middleware.Recovery(logger)(middleware.Logger(logger)(mux))
