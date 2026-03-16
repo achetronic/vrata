@@ -6,43 +6,56 @@ _(nothing)_
 
 ## Pending
 
-### Route — new fields
-- [ ] WebSocket upgrade: `ForwardAction.Websocket bool` → RouteAction.upgrade_configs
-- [ ] Max gRPC timeout: `ForwardAction.MaxGRPCTimeout string` or in `RouteTimeouts` → RouteAction.max_grpc_timeout
-- [ ] Internal redirects: `ForwardAction.InternalRedirect *InternalRedirectPolicy` → RouteAction.internal_redirect_policy
-- [ ] gRPC match: `MatchRule.GRPC bool` → RouteMatch.grpc
+### TLS
+- [ ] TLS upstream (Destination): wire `DestinationOptions.TLS` into UpstreamTlsContext / transport_socket in builder. Critical for ExtAuthz and any external service over TLS.
+- [ ] TLS downstream (Listener): wire `Listener.TLS` into DownstreamTlsContext in builder.
+- [ ] Multiple filter chains: support SNI routing (one cert per domain) via multiple FilterChains on a single Listener.
 
-### Group — new fields
-- [ ] Default retry policy: `RouteGroup.RetryDefault *RouteRetry` → VirtualHost.retry_policy (route overrides if set)
-- [ ] Include request attempt count: `RouteGroup.IncludeAttemptCount bool` → VirtualHost.include_request_attempt_count
+### HA — Embedded distributed store (Hashicorp Raft + bbolt)
+Rutoso must run in HA with N replicas where any node can die without losing
+configuration and Envoy always has a Rutoso available for xDS.
 
-### Destination — new fields
-- [ ] HTTP/2 upstream: `DestinationOptions.HTTP2 bool` → Cluster.http2_protocol_options (required for gRPC backends)
-- [ ] DNS refresh rate: `DestinationOptions.DNSRefreshRate string` → Cluster.dns_refresh_rate (STRICT_DNS only)
-- [ ] DNS lookup family: `DestinationOptions.DNSLookupFamily string` (AUTO/V4_ONLY/V6_ONLY) → Cluster.dns_lookup_family
-- [ ] Max requests per connection: `DestinationOptions.MaxRequestsPerConnection uint32` → Cluster.max_requests_per_connection
-- [ ] Slow start: `DestinationOptions.SlowStart *SlowStartOptions` → Cluster.slow_start_config
-- [ ] TLS upstream: wire existing `DestinationOptions.TLS` into UpstreamTlsContext / transport_socket in builder
+Design:
+- New package `internal/raft/` wrapping `hashicorp/raft`.
+- Each Rutoso replica runs an embedded Raft node.
+- Writes (POST/PUT/DELETE) go through Raft consensus: proposed as a command,
+  replicated to quorum, then applied to each node's local bbolt via the FSM.
+- Reads (GET, xDS) go directly to the local bbolt — no Raft round-trip.
+- New `store/raft/raft.go` implementing store.Store: delegates reads to
+  bolt store, writes to Raft. Subscribe emits events from FSM apply.
+- Leader election is automatic (Raft). Non-leader nodes redirect writes
+  to the leader (307 or proxy).
+- Config in config.yaml:
+  ```yaml
+  cluster:
+    nodeId: "rutoso-0"
+    bindAddress: ":7000"
+    peers:
+      - "rutoso-0=10.0.0.1:7000"
+      - "rutoso-1=10.0.0.2:7000"
+      - "rutoso-2=10.0.0.3:7000"
+    dataDir: "/data/raft"
+  ```
+- If `cluster` is not configured, Rutoso runs in single-node mode with
+  plain bbolt (current behaviour, for development).
+- Raft snapshots use bbolt's consistent read to serialize the full DB.
+- All existing code (handlers, gateway, builder, xDS) is unchanged —
+  only the store.Store implementation injected in main.go changes.
 
-### Listener — new fields
-- [ ] Access log: `Listener.AccessLog *AccessLogConfig` → HCM.access_log (file or stdout, format template)
-- [ ] HTTP/2 on listener: `Listener.HTTP2 bool` → HCM.http2_protocol_options / codec_type AUTO (required for gRPC clients)
-- [ ] Listener filters TCP: `Listener.ListenerFilters []ListenerFilter` → tls_inspector, proxy_protocol, etc.
-- [ ] TLS downstream: wire existing `Listener.TLS` into DownstreamTlsContext in builder
-- [ ] Server name: `Listener.ServerName string` → HCM.server_name
-- [ ] Multiple filter chains: support SNI routing (one cert per domain) via multiple FilterChains
-- [ ] Max request headers size: `Listener.MaxRequestHeadersKB uint32` → HCM.max_request_headers_kb
-
-### Filters — new types + full wiring
-- [ ] Wire existing filter types with real Envoy configs (CORS, JWT, ExtAuthz, ExtProc) — replace stubs in buildHTTPFilter
-- [ ] FilterOverrides merge logic in builder: group is base, route wins → per_filter_config on Envoy routes
-- [ ] New FilterType: rate limiting (`rateLimit`) — Filter config for rate limit service + FilterOverrides for descriptors
-- [ ] New FilterType: header manipulation (`headers`) — Filter config for add/remove request/response headers
+Tasks:
+- [ ] Add `hashicorp/raft` and `hashicorp/raft-boltdb` to go.mod
+- [ ] Implement `internal/raft/fsm.go`: FSM that applies commands to bolt store
+- [ ] Implement `internal/raft/cluster.go`: Raft node lifecycle, transport, snapshot store
+- [ ] Implement `store/raft/raft.go`: store.Store wrapper (reads → bolt, writes → Raft)
+- [ ] Add `cluster` config block to config.yaml and `internal/config`
+- [ ] Update `main.go`: if cluster configured, use raft store; else use bolt
+- [ ] Leader detection: non-leader nodes redirect or proxy writes to leader
+- [ ] Snapshot/restore: serialize and restore full bbolt state
+- [ ] Integration test: 3-node cluster, kill leader, verify config survives
 
 ### Housekeeping
 - [ ] Add authentication to the REST API
 - [ ] Write unit and integration tests
-- [ ] HA storage: document shared-volume / Litestream pattern for multi-replica deployments
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
 
 ## Done
@@ -50,10 +63,34 @@ _(nothing)_
 - [x] **Wire methods, queryParams, hashPolicy in xDS builder** (cd083bb)
   - `buildRouteMatch`: maps `MatchRule.Methods` to `:method` header matcher (exact for 1, regex OR for multiple)
   - `buildRouteMatch`: maps `MatchRule.QueryParams` via `buildQueryParamMatcher` (exact, regex, presence-only)
-  - `HashPolicy` moved from `BackendRef` to `ForwardAction` — hash_policy is evaluated at routing time, not at cluster level. `BackendRef` now only carries `destinationId` and `weight`
+  - `HashPolicy` moved from `BackendRef` to `ForwardAction`
   - `applyHashPolicy`: maps header, cookie (with TTL), and sourceIP to Envoy `RouteAction.hash_policy`
   - `MatchRule.Ports` removed — Envoy has no port matching in RouteMatch
-  - OpenAPI docs regenerated
+
+- [x] **All entity fields implemented and wired in builder** (89bf667)
+  - Route: websocket, maxGrpcTimeout, internalRedirect, gRPC match
+  - Group: retryDefault, includeAttemptCount
+  - Destination: HTTP/2, DNS refresh/family, maxRequestsPerConnection, slowStart
+  - Listener: accessLog, HTTP/2, listenerFilters (tls_inspector/proxy_protocol/original_dst), serverName, maxRequestHeadersKB
+
+- [x] **Full middleware wiring with real Envoy configs** (1fc6db4)
+  - CORS, JWT, ExtAuthz, ExtProc: real typed configs replacing stubs
+  - RateLimit and Headers: new middleware types
+  - per_filter_config: group base + route wins merge logic
+
+- [x] **Rename Filter to Middleware, auto-register in HCM** (3c1da88)
+  - Filter entity renamed to Middleware across entire codebase
+  - API paths: /api/v1/filters → /api/v1/middlewares
+  - Route and Group gain `middlewareIds` — users attach middlewares to routes/groups
+  - Listener.FilterIDs removed — users never touch it
+  - Builder auto-collects middleware IDs from routes/groups and registers in HCM
+  - Per-route disable for middlewares not active on that route
+
+- [x] **CORS fix: empty Cors{} in HCM, CorsPolicy in per-route** (cc4f40e)
+  - CORS filter_enabled set to 100% so Envoy intercepts preflights
+
+- [x] **README** (9b3e9e8)
+  - Architecture diagram (mermaid), dev env, build, deploy, k8s discovery
 
 - [x] Scaffold project structure: `server/` layout, `go.mod`, `Makefile`, `Dockerfile`, `config.yaml`
 - [x] Implement `internal/config`: Config struct, `Load()` with `os.ExpandEnv`, defaults, `--config` flag wiring in main
