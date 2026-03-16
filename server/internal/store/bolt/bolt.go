@@ -17,7 +17,7 @@ import (
 const (
 	bucketRoutes       = "routes"
 	bucketGroups       = "groups"
-	bucketFilters      = "filters"
+	bucketMiddlewares      = "middlewares"
 	bucketListeners    = "listeners"
 	bucketDestinations = "destinations"
 )
@@ -40,7 +40,7 @@ func New(path string) (*Store, error) {
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, name := range []string{bucketRoutes, bucketGroups, bucketFilters, bucketListeners, bucketDestinations} {
+		for _, name := range []string{bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners, bucketDestinations} {
 			if _, err := tx.CreateBucketIfNotExists([]byte(name)); err != nil {
 				return fmt.Errorf("creating bucket %q: %w", name, err)
 			}
@@ -222,14 +222,14 @@ func (s *Store) DeleteGroup(_ context.Context, id string) error {
 // Filter operations
 // ────────────────────────────────────────────────────────────────────────────
 
-// ListFilters returns all filters stored in the database.
-func (s *Store) ListFilters(_ context.Context) ([]model.Filter, error) {
-	var filters []model.Filter
+// ListMiddlewares returns all filters stored in the database.
+func (s *Store) ListMiddlewares(_ context.Context) ([]model.Middleware, error) {
+	var filters []model.Middleware
 
 	err := s.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketFilters))
+		b := tx.Bucket([]byte(bucketMiddlewares))
 		return b.ForEach(func(_, v []byte) error {
-			var f model.Filter
+			var f model.Middleware
 			if err := json.Unmarshal(v, &f); err != nil {
 				return fmt.Errorf("unmarshalling filter: %w", err)
 			}
@@ -242,17 +242,17 @@ func (s *Store) ListFilters(_ context.Context) ([]model.Filter, error) {
 	}
 
 	if filters == nil {
-		filters = []model.Filter{}
+		filters = []model.Middleware{}
 	}
 	return filters, nil
 }
 
-// GetFilter returns the filter with the given ID, or model.ErrNotFound if absent.
-func (s *Store) GetFilter(_ context.Context, id string) (model.Filter, error) {
-	var filter model.Filter
+// GetMiddleware returns the filter with the given ID, or model.ErrNotFound if absent.
+func (s *Store) GetMiddleware(_ context.Context, id string) (model.Middleware, error) {
+	var filter model.Middleware
 
 	err := s.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketFilters))
+		b := tx.Bucket([]byte(bucketMiddlewares))
 		v := b.Get([]byte(id))
 		if v == nil {
 			return fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
@@ -260,39 +260,39 @@ func (s *Store) GetFilter(_ context.Context, id string) (model.Filter, error) {
 		return json.Unmarshal(v, &filter)
 	})
 	if err != nil {
-		return model.Filter{}, err
+		return model.Middleware{}, err
 	}
 	return filter, nil
 }
 
-// SaveFilter creates or replaces the filter with filter.ID as key.
-func (s *Store) SaveFilter(_ context.Context, filter model.Filter) error {
+// SaveMiddleware creates or replaces the filter with filter.ID as key.
+func (s *Store) SaveMiddleware(_ context.Context, filter model.Middleware) error {
 	data, err := json.Marshal(filter)
 	if err != nil {
 		return fmt.Errorf("marshalling filter: %w", err)
 	}
 
 	return s.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketFilters))
+		b := tx.Bucket([]byte(bucketMiddlewares))
 		if err := b.Put([]byte(filter.ID), data); err != nil {
 			return fmt.Errorf("saving filter %q: %w", filter.ID, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceFilter, ID: filter.ID})
+		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceMiddleware, ID: filter.ID})
 		return nil
 	})
 }
 
-// DeleteFilter removes the filter with the given ID.
-func (s *Store) DeleteFilter(_ context.Context, id string) error {
+// DeleteMiddleware removes the filter with the given ID.
+func (s *Store) DeleteMiddleware(_ context.Context, id string) error {
 	return s.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(bucketFilters))
+		b := tx.Bucket([]byte(bucketMiddlewares))
 		if b.Get([]byte(id)) == nil {
 			return fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
 		}
 		if err := b.Delete([]byte(id)); err != nil {
 			return fmt.Errorf("deleting filter %q: %w", id, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceFilter, ID: id})
+		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceMiddleware, ID: id})
 		return nil
 	})
 }

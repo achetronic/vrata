@@ -1,39 +1,39 @@
 // Package model defines the core domain types used throughout Rutoso.
 package model
 
-// FilterType identifies which Envoy HTTP filter a Filter entity configures.
-type FilterType string
+// MiddlewareType identifies which Envoy HTTP filter a Filter entity configures.
+type MiddlewareType string
 
 const (
-	// FilterTypeCORS configures the Envoy CORS filter (envoy.filters.http.cors).
-	FilterTypeCORS FilterType = "cors"
+	// MiddlewareTypeCORS configures the Envoy CORS filter (envoy.filters.http.cors).
+	MiddlewareTypeCORS MiddlewareType = "cors"
 
-	// FilterTypeJWT configures the Envoy JWT authn filter (envoy.filters.http.jwt_authn).
-	FilterTypeJWT FilterType = "jwt"
+	// MiddlewareTypeJWT configures the Envoy JWT authn filter (envoy.filters.http.jwt_authn).
+	MiddlewareTypeJWT MiddlewareType = "jwt"
 
-	// FilterTypeExtAuthz configures the Envoy external authorisation filter
+	// MiddlewareTypeExtAuthz configures the Envoy external authorisation filter
 	// (envoy.filters.http.ext_authz).
-	FilterTypeExtAuthz FilterType = "extAuthz"
+	MiddlewareTypeExtAuthz MiddlewareType = "extAuthz"
 
-	// FilterTypeExtProc configures the Envoy external processing filter
+	// MiddlewareTypeExtProc configures the Envoy external processing filter
 	// (envoy.filters.http.ext_proc).
-	FilterTypeExtProc FilterType = "extProc"
+	MiddlewareTypeExtProc MiddlewareType = "extProc"
 
-	// FilterTypeRateLimit configures the Envoy rate limit filter
+	// MiddlewareTypeRateLimit configures the Envoy rate limit filter
 	// (envoy.filters.http.ratelimit). Requires an external rate limit service.
-	FilterTypeRateLimit FilterType = "rateLimit"
+	MiddlewareTypeRateLimit MiddlewareType = "rateLimit"
 
-	// FilterTypeHeaders configures the Envoy header mutation filter
+	// MiddlewareTypeHeaders configures the Envoy header mutation filter
 	// (envoy.filters.http.header_mutation). Adds or removes request/response
 	// headers as a middleware, consistent with the Filter entity pattern.
-	FilterTypeHeaders FilterType = "headers"
+	MiddlewareTypeHeaders MiddlewareType = "headers"
 )
 
 // Filter is an independent first-class entity that holds the configuration for a
 // single Envoy HTTP filter. Filters are registered on Listeners by referencing
 // their ID in Listener.FilterIDs. Per-route behaviour can be tuned through
-// FilterOverride entries on Route or RouteGroup.
-type Filter struct {
+// MiddlewareOverride entries on Route or RouteGroup.
+type Middleware struct {
 	// ID is the unique identifier of the filter.
 	ID string `json:"id" yaml:"id"`
 
@@ -42,7 +42,7 @@ type Filter struct {
 
 	// Type identifies which Envoy HTTP filter this entity configures.
 	// Exactly one of the Config* fields below must match this type.
-	Type FilterType `json:"type" yaml:"type"`
+	Type MiddlewareType `json:"type" yaml:"type"`
 
 	// CORS holds the CORS filter configuration. Set when Type == "cors".
 	CORS *CORSConfig `json:"cors,omitempty" yaml:"cors,omitempty"`
@@ -307,11 +307,11 @@ type HeaderValue struct {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Rate Limit Descriptors (for FilterOverride)
+// Rate Limit Descriptors (for MiddlewareOverride)
 // ────────────────────────────────────────────────────────────────────────────
 
 // RateLimitDescriptor defines a rate limit descriptor entry sent to the
-// rate limit service. Used in FilterOverride to set per-route descriptors.
+// rate limit service. Used in MiddlewareOverride to set per-route descriptors.
 type RateLimitDescriptor struct {
 	// Key is the descriptor key (e.g. "remote_address", "header_match").
 	Key string `json:"key" yaml:"key"`
@@ -322,17 +322,17 @@ type RateLimitDescriptor struct {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// FilterOverride — per-route and per-group overrides
+// MiddlewareOverride — per-route and per-group overrides
 // ────────────────────────────────────────────────────────────────────────────
 
-// FilterOverride carries per-route or per-group overrides for a specific filter.
-// The map key in Route.FilterOverrides / RouteGroup.FilterOverrides is the Filter ID.
+// MiddlewareOverride carries per-route or per-group overrides for a specific filter.
+// The map key in Route.MiddlewareOverrides / RouteGroup.MiddlewareOverrides is the Filter ID.
 //
 // Merge semantics when both group and route carry an override for the same filter:
 // the route override wins. Fields absent in the route override are not filled in
 // from the group override — the entire route override replaces the group override
 // for that filter.
-type FilterOverride struct {
+type MiddlewareOverride struct {
 	// Disabled completely disables the filter for this route/group.
 	// When true, no other field is evaluated.
 	Disabled bool `json:"disabled,omitempty" yaml:"disabled,omitempty"`

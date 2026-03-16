@@ -34,19 +34,19 @@ const (
 	filterNameHeaders   = "envoy.filters.http.header_mutation"
 )
 
-func envoyFilterName(ft model.FilterType) string {
+func envoyFilterName(ft model.MiddlewareType) string {
 	switch ft {
-	case model.FilterTypeCORS:
+	case model.MiddlewareTypeCORS:
 		return filterNameCORS
-	case model.FilterTypeJWT:
+	case model.MiddlewareTypeJWT:
 		return filterNameJWT
-	case model.FilterTypeExtAuthz:
+	case model.MiddlewareTypeExtAuthz:
 		return filterNameExtAuthz
-	case model.FilterTypeExtProc:
+	case model.MiddlewareTypeExtProc:
 		return filterNameExtProc
-	case model.FilterTypeRateLimit:
+	case model.MiddlewareTypeRateLimit:
 		return filterNameRateLimit
-	case model.FilterTypeHeaders:
+	case model.MiddlewareTypeHeaders:
 		return filterNameHeaders
 	default:
 		return ""
@@ -55,7 +55,7 @@ func envoyFilterName(ft model.FilterType) string {
 
 // buildHTTPFilterReal builds a fully configured Envoy HttpFilter from a Rutoso
 // Filter entity. This replaces the stubs that were in builder.go.
-func buildHTTPFilterReal(f model.Filter) (*hcmv3.HttpFilter, error) {
+func buildHTTPFilterReal(f model.Middleware) (*hcmv3.HttpFilter, error) {
 	name := envoyFilterName(f.Type)
 	if name == "" {
 		return nil, nil
@@ -64,17 +64,17 @@ func buildHTTPFilterReal(f model.Filter) (*hcmv3.HttpFilter, error) {
 	var err error
 
 	switch f.Type {
-	case model.FilterTypeCORS:
+	case model.MiddlewareTypeCORS:
 		msg, err = marshalCORS(f.CORS)
-	case model.FilterTypeJWT:
+	case model.MiddlewareTypeJWT:
 		msg, err = marshalJWT(f.JWT)
-	case model.FilterTypeExtAuthz:
+	case model.MiddlewareTypeExtAuthz:
 		msg, err = marshalExtAuthz(f.ExtAuthz)
-	case model.FilterTypeExtProc:
+	case model.MiddlewareTypeExtProc:
 		msg, err = marshalExtProc(f.ExtProc)
-	case model.FilterTypeRateLimit:
+	case model.MiddlewareTypeRateLimit:
 		msg, err = marshalRateLimit(f.RateLimit)
-	case model.FilterTypeHeaders:
+	case model.MiddlewareTypeHeaders:
 		msg, err = marshalHeaders(f.Headers)
 	}
 	if err != nil {
@@ -368,84 +368,112 @@ func headerAppendAction(appendMode bool) corev3.HeaderValueOption_HeaderAppendAc
 	return corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD
 }
 
-// ─── per_filter_config (FilterOverrides) ─────────────────────────────────────
+// ─── per_filter_config (MiddlewareOverrides) ─────────────────────────────────────
 
-// buildPerFilterConfig merges group and route FilterOverrides into the Envoy
-// typed_per_filter_config map for a route. Group overrides are the base; route
-// overrides win on key collision (more specific takes precedence).
+// buildPerFilterConfig builds the Envoy typed_per_filter_config for a single
+// route. Middlewares in the HCM pipeline that are NOT active for this route
+// are disabled. Active middlewares get their override config (if any).
+//
+// "Active" means the middleware ID appears in the group's or route's
+// MiddlewareIDs. Group overrides are the base; route overrides win.
 func buildPerFilterConfig(
-	groupOverrides map[string]model.FilterOverride,
-	routeOverrides map[string]model.FilterOverride,
-	filterByID map[string]model.Filter,
+	groupMwIDs []string,
+	routeMwIDs []string,
+	groupOverrides map[string]model.MiddlewareOverride,
+	routeOverrides map[string]model.MiddlewareOverride,
+	usedMwIDs map[string]bool,
+	mwByID map[string]model.Middleware,
 ) map[string]*anypb.Any {
-	merged := make(map[string]model.FilterOverride)
-	for id, ov := range groupOverrides {
-		merged[id] = ov
-	}
-	for id, ov := range routeOverrides {
-		merged[id] = ov // route wins
-	}
-	if len(merged) == 0 {
+	if len(usedMwIDs) == 0 {
 		return nil
 	}
 
+	// Build set of active middleware IDs for this route.
+	active := make(map[string]bool)
+	for _, id := range groupMwIDs {
+		active[id] = true
+	}
+	for _, id := range routeMwIDs {
+		active[id] = true
+	}
+
+	// Merge overrides: group base, route wins.
+	mergedOv := make(map[string]model.MiddlewareOverride)
+	for id, ov := range groupOverrides {
+		mergedOv[id] = ov
+	}
+	for id, ov := range routeOverrides {
+		mergedOv[id] = ov
+	}
+
 	result := make(map[string]*anypb.Any)
-	for filterID, ov := range merged {
-		f, ok := filterByID[filterID]
+	for mwID := range usedMwIDs {
+		mw, ok := mwByID[mwID]
 		if !ok {
 			continue
 		}
-		name := envoyFilterName(f.Type)
+		name := envoyFilterName(mw.Type)
 		if name == "" {
 			continue
 		}
-		var a *anypb.Any
-		var err error
 
-		if ov.Disabled {
-			a, err = marshalDisabledOverride(f.Type)
-		} else {
-			a, err = marshalFilterOverride(f.Type, ov)
-		}
-		if err != nil || a == nil {
+		if !active[mwID] {
+			// Middleware is in pipeline but not active for this route — disable it.
+			if a, err := marshalDisabledOverride(mw.Type); err == nil && a != nil {
+				result[name] = a
+			}
 			continue
 		}
-		result[name] = a
+
+		// Middleware is active. Apply override if present.
+		if ov, hasOv := mergedOv[mwID]; hasOv {
+			if ov.Disabled {
+				if a, err := marshalDisabledOverride(mw.Type); err == nil && a != nil {
+					result[name] = a
+				}
+			} else {
+				if a, err := marshalMiddlewareOverride(mw.Type, ov); err == nil && a != nil {
+					result[name] = a
+				}
+			}
+		}
+		// If no override, the middleware runs with its global config (no per_filter_config needed).
 	}
+
 	if len(result) == 0 {
 		return nil
 	}
 	return result
 }
 
-func marshalDisabledOverride(ft model.FilterType) (*anypb.Any, error) {
+func marshalDisabledOverride(ft model.MiddlewareType) (*anypb.Any, error) {
 	switch ft {
-	case model.FilterTypeCORS:
+	case model.MiddlewareTypeCORS:
 		return anypb.New(&corsv3.CorsPolicy{})
-	case model.FilterTypeJWT:
+	case model.MiddlewareTypeJWT:
 		return anypb.New(&jwtauthnv3.PerRouteConfig{
 			RequirementSpecifier: &jwtauthnv3.PerRouteConfig_Disabled{Disabled: true},
 		})
-	case model.FilterTypeExtAuthz:
+	case model.MiddlewareTypeExtAuthz:
 		return anypb.New(&extauthzv3.ExtAuthzPerRoute{
 			Override: &extauthzv3.ExtAuthzPerRoute_Disabled{Disabled: true},
 		})
-	case model.FilterTypeExtProc:
+	case model.MiddlewareTypeExtProc:
 		return anypb.New(&extprocv3.ExtProcPerRoute{
 			Override: &extprocv3.ExtProcPerRoute_Disabled{Disabled: true},
 		})
-	case model.FilterTypeRateLimit:
+	case model.MiddlewareTypeRateLimit:
 		return anypb.New(&ratelimitv3.RateLimitPerRoute{})
-	case model.FilterTypeHeaders:
+	case model.MiddlewareTypeHeaders:
 		return anypb.New(&headermutv3.HeaderMutationPerRoute{})
 	default:
 		return nil, nil
 	}
 }
 
-func marshalFilterOverride(ft model.FilterType, ov model.FilterOverride) (*anypb.Any, error) {
+func marshalMiddlewareOverride(ft model.MiddlewareType, ov model.MiddlewareOverride) (*anypb.Any, error) {
 	switch ft {
-	case model.FilterTypeJWT:
+	case model.MiddlewareTypeJWT:
 		if ov.JWTProvider != "" {
 			return anypb.New(&jwtauthnv3.PerRouteConfig{
 				RequirementSpecifier: &jwtauthnv3.PerRouteConfig_RequirementName{
@@ -453,7 +481,7 @@ func marshalFilterOverride(ft model.FilterType, ov model.FilterOverride) (*anypb
 				},
 			})
 		}
-	case model.FilterTypeExtAuthz:
+	case model.MiddlewareTypeExtAuthz:
 		if len(ov.ExtAuthzContextExtensions) > 0 {
 			return anypb.New(&extauthzv3.ExtAuthzPerRoute{
 				Override: &extauthzv3.ExtAuthzPerRoute_CheckSettings{
@@ -463,7 +491,7 @@ func marshalFilterOverride(ft model.FilterType, ov model.FilterOverride) (*anypb
 				},
 			})
 		}
-	case model.FilterTypeExtProc:
+	case model.MiddlewareTypeExtProc:
 		if ov.ExtProcMode != nil {
 			return anypb.New(&extprocv3.ExtProcPerRoute{
 				Override: &extprocv3.ExtProcPerRoute_Overrides{
@@ -473,7 +501,7 @@ func marshalFilterOverride(ft model.FilterType, ov model.FilterOverride) (*anypb
 				},
 			})
 		}
-	case model.FilterTypeHeaders:
+	case model.MiddlewareTypeHeaders:
 		if ov.Headers != nil {
 			return anypb.New(&headermutv3.HeaderMutationPerRoute{
 				Mutations: buildMutations(ov.Headers),

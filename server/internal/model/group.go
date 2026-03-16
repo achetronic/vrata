@@ -54,11 +54,16 @@ type RouteGroup struct {
 	// Headers are appended to each referenced route's own header matchers.
 	Headers []HeaderMatcher `json:"headers,omitempty" yaml:"headers,omitempty"`
 
-	// FilterOverrides carries per-group overrides for filters registered on
-	// the listener. The map key is the Filter ID. These overrides apply to all
-	// routes in the group. If a route also carries an override for the same
-	// filter, the route override wins entirely.
-	FilterOverrides map[string]FilterOverride `json:"filterOverrides,omitempty" yaml:"filterOverrides,omitempty"`
+	// MiddlewareIDs lists the IDs of Middleware entities active on all routes
+	// in this group. The builder registers these in the Envoy HCM pipeline
+	// and enables them for every route in the group.
+	MiddlewareIDs []string `json:"middlewareIds,omitempty" yaml:"middlewareIds,omitempty"`
+
+	// MiddlewareOverrides carries per-group overrides for active middlewares.
+	// The map key is the Middleware ID. These overrides apply to all routes
+	// in the group. If a route also carries an override for the same
+	// middleware, the route override wins entirely.
+	MiddlewareOverrides map[string]MiddlewareOverride `json:"middlewareOverrides,omitempty" yaml:"middlewareOverrides,omitempty"`
 
 	// RetryDefault is the default retry policy applied to all routes in this
 	// group. Individual routes can override this by setting their own

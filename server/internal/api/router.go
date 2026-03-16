@@ -31,11 +31,11 @@ import (
 //	GET    /api/v1/groups/{groupId}    → get group
 //	PUT    /api/v1/groups/{groupId}    → update group
 //	DELETE /api/v1/groups/{groupId}    → delete group
-//	GET    /api/v1/filters             → list filters
-//	POST   /api/v1/filters             → create filter
-//	GET    /api/v1/filters/{filterId}  → get filter
-//	PUT    /api/v1/filters/{filterId}  → update filter
-//	DELETE /api/v1/filters/{filterId}  → delete filter
+//	GET    /api/v1/middlewares             → list filters
+//	POST   /api/v1/middlewares             → create filter
+//	GET    /api/v1/middlewares/{middlewareId}  → get filter
+//	PUT    /api/v1/middlewares/{middlewareId}  → update filter
+//	DELETE /api/v1/middlewares/{middlewareId}  → delete filter
 //	GET    /api/v1/listeners               → list listeners
 //	POST   /api/v1/listeners               → create listener
 //	GET    /api/v1/listeners/{listenerId}  → get listener
@@ -72,12 +72,12 @@ func NewRouter(st store.Store, xdsSrv *xds.Server, logger *slog.Logger) http.Han
 	mux.HandleFunc("PUT /api/v1/groups/{groupId}", deps.UpdateGroup)
 	mux.HandleFunc("DELETE /api/v1/groups/{groupId}", deps.DeleteGroup)
 
-	// Filter endpoints
-	mux.HandleFunc("GET /api/v1/filters", deps.ListFilters)
-	mux.HandleFunc("POST /api/v1/filters", deps.CreateFilter)
-	mux.HandleFunc("GET /api/v1/filters/{filterId}", deps.GetFilter)
-	mux.HandleFunc("PUT /api/v1/filters/{filterId}", deps.UpdateFilter)
-	mux.HandleFunc("DELETE /api/v1/filters/{filterId}", deps.DeleteFilter)
+	// Middleware endpoints
+	mux.HandleFunc("GET /api/v1/middlewares", deps.ListMiddlewares)
+	mux.HandleFunc("POST /api/v1/middlewares", deps.CreateMiddleware)
+	mux.HandleFunc("GET /api/v1/middlewares/{middlewareId}", deps.GetMiddleware)
+	mux.HandleFunc("PUT /api/v1/middlewares/{middlewareId}", deps.UpdateMiddleware)
+	mux.HandleFunc("DELETE /api/v1/middlewares/{middlewareId}", deps.DeleteMiddleware)
 
 	// Listener endpoints
 	mux.HandleFunc("GET /api/v1/listeners", deps.ListListeners)

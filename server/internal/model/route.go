@@ -40,11 +40,17 @@ type Route struct {
 	// Mutually exclusive with Forward and Redirect.
 	DirectResponse *RouteDirectResponse `json:"directResponse,omitempty" yaml:"directResponse,omitempty"`
 
-	// FilterOverrides carries per-route overrides for filters registered on
-	// the listener. The map key is the Filter ID. When both the route's group
-	// and the route itself carry an override for the same filter, the route
+	// MiddlewareIDs lists the IDs of Middleware entities active on this route.
+	// The builder registers these in the Envoy HCM pipeline and enables them
+	// only for this route (other routes where the middleware is not listed
+	// get it disabled via per_filter_config).
+	MiddlewareIDs []string `json:"middlewareIds,omitempty" yaml:"middlewareIds,omitempty"`
+
+	// MiddlewareOverrides carries per-route overrides for active middlewares.
+	// The map key is the Middleware ID. When both the route's group and the
+	// route itself carry an override for the same middleware, the route
 	// override wins entirely (more specific takes precedence).
-	FilterOverrides map[string]FilterOverride `json:"filterOverrides,omitempty" yaml:"filterOverrides,omitempty"`
+	MiddlewareOverrides map[string]MiddlewareOverride `json:"middlewareOverrides,omitempty" yaml:"middlewareOverrides,omitempty"`
 }
 
 // ForwardAction groups all configuration that controls how Envoy forwards a

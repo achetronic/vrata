@@ -19,7 +19,7 @@ type Store struct {
 	mu           sync.RWMutex
 	routes       map[string]model.Route       // keyed by route ID
 	groups       map[string]model.RouteGroup  // keyed by group ID
-	filters      map[string]model.Filter      // keyed by filter ID
+	filters      map[string]model.Middleware      // keyed by filter ID
 	listeners    map[string]model.Listener    // keyed by listener ID
 	destinations map[string]model.Destination // keyed by destination ID
 
@@ -32,7 +32,7 @@ func New() *Store {
 	return &Store{
 		routes:       make(map[string]model.Route),
 		groups:       make(map[string]model.RouteGroup),
-		filters:      make(map[string]model.Filter),
+		filters:      make(map[string]model.Middleware),
 		listeners:    make(map[string]model.Listener),
 		destinations: make(map[string]model.Destination),
 	}
@@ -144,42 +144,42 @@ func (s *Store) DeleteGroup(_ context.Context, id string) error {
 // Filter operations
 // ────────────────────────────────────────────────────────────────────────────
 
-// ListFilters returns all filters in insertion-independent order.
-func (s *Store) ListFilters(_ context.Context) ([]model.Filter, error) {
+// ListMiddlewares returns all filters in insertion-independent order.
+func (s *Store) ListMiddlewares(_ context.Context) ([]model.Middleware, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	out := make([]model.Filter, 0, len(s.filters))
+	out := make([]model.Middleware, 0, len(s.filters))
 	for _, f := range s.filters {
 		out = append(out, f)
 	}
 	return out, nil
 }
 
-// GetFilter returns the filter with the given ID, or model.ErrNotFound.
-func (s *Store) GetFilter(_ context.Context, id string) (model.Filter, error) {
+// GetMiddleware returns the filter with the given ID, or model.ErrNotFound.
+func (s *Store) GetMiddleware(_ context.Context, id string) (model.Middleware, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	f, ok := s.filters[id]
 	if !ok {
-		return model.Filter{}, fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
+		return model.Middleware{}, fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
 	}
 	return f, nil
 }
 
-// SaveFilter creates or replaces the filter identified by filter.ID.
-func (s *Store) SaveFilter(_ context.Context, f model.Filter) error {
+// SaveMiddleware creates or replaces the filter identified by filter.ID.
+func (s *Store) SaveMiddleware(_ context.Context, f model.Middleware) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.filters[f.ID] = f
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceFilter, ID: f.ID})
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceMiddleware, ID: f.ID})
 	return nil
 }
 
-// DeleteFilter removes the filter with the given ID.
-func (s *Store) DeleteFilter(_ context.Context, id string) error {
+// DeleteMiddleware removes the filter with the given ID.
+func (s *Store) DeleteMiddleware(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -187,7 +187,7 @@ func (s *Store) DeleteFilter(_ context.Context, id string) error {
 		return fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
 	}
 	delete(s.filters, id)
-	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceFilter, ID: id})
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceMiddleware, ID: id})
 	return nil
 }
 

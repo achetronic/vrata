@@ -43,16 +43,16 @@ import (
 //
 // One Cluster + ClusterLoadAssignment is generated per Destination. Routes
 // reference Destinations by ID via BackendRef.
-func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters []model.Filter, groups []model.RouteGroup, routes []model.Route, destinations []model.Destination, edsCLAs map[string]*endpointv3.ClusterLoadAssignment) (*cachev3.Snapshot, error) {
+func BuildSnapshot(version string, modelListeners []model.Listener, modelMiddlewares []model.Middleware, groups []model.RouteGroup, routes []model.Route, destinations []model.Destination, edsCLAs map[string]*endpointv3.ClusterLoadAssignment) (*cachev3.Snapshot, error) {
 	// Build lookup maps for O(1) resolution.
 	routeByID := make(map[string]model.Route, len(routes))
 	for _, r := range routes {
 		routeByID[r.ID] = r
 	}
 
-	filterByID := make(map[string]model.Filter, len(modelFilters))
-	for _, f := range modelFilters {
-		filterByID[f.ID] = f
+	mwByID := make(map[string]model.Middleware, len(modelMiddlewares))
+	for _, f := range modelMiddlewares {
+		mwByID[f.ID] = f
 	}
 
 	destByID := make(map[string]model.Destination, len(destinations))
@@ -85,14 +85,36 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters
 		}
 	}
 
+	// Collect all middleware IDs referenced by routes and groups so the
+	// builder can register them in every listener's HCM pipeline and
+	// disable them per-route where not active.
+	usedMwIDs := make(map[string]bool)
+	for _, g := range groups {
+		for _, id := range g.MiddlewareIDs {
+			usedMwIDs[id] = true
+		}
+		for id := range g.MiddlewareOverrides {
+			usedMwIDs[id] = true
+		}
+		for _, routeID := range g.RouteIDs {
+			if r, ok := routeByID[routeID]; ok {
+				for _, id := range r.MiddlewareIDs {
+					usedMwIDs[id] = true
+				}
+				for id := range r.MiddlewareOverrides {
+					usedMwIDs[id] = true
+				}
+			}
+		}
+	}
+
 	for _, g := range groups {
 		for _, routeID := range g.RouteIDs {
 			r, ok := routeByID[routeID]
 			if !ok {
-				// Route referenced by group does not exist; skip gracefully.
 				continue
 			}
-			vhosts = append(vhosts, buildVirtualHost(g, r, filterByID))
+			vhosts = append(vhosts, buildVirtualHost(g, r, mwByID, usedMwIDs))
 		}
 	}
 
@@ -104,7 +126,7 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters
 
 	var envoyListeners []types.Resource
 	for _, ml := range modelListeners {
-		el, err := buildListenerFromModel(ml, filterByID, routeConfig.Name)
+		el, err := buildListenerFromModel(ml, mwByID, usedMwIDs, routeConfig.Name)
 		if err != nil {
 			return nil, fmt.Errorf("building listener %q: %w", ml.ID, err)
 		}
@@ -126,7 +148,7 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters
 
 // buildVirtualHost creates an Envoy VirtualHost for a single Route within its group.
 // Group-level hostnames are merged (union) with the route's own hostnames.
-func buildVirtualHost(g model.RouteGroup, r model.Route, filterByID map[string]model.Filter) *routev3.VirtualHost {
+func buildVirtualHost(g model.RouteGroup, r model.Route, mwByID map[string]model.Middleware, usedMwIDs map[string]bool) *routev3.VirtualHost {
 	// Merge hostnames: start with the route's own, then add any from the group
 	// that are not already present.
 	domains := append([]string{}, r.Match.Hostnames...)
@@ -139,7 +161,7 @@ func buildVirtualHost(g model.RouteGroup, r model.Route, filterByID map[string]m
 		domains = []string{"*"}
 	}
 
-	route := buildRouteAction(g, r, filterByID)
+	route := buildRouteAction(g, r, mwByID, usedMwIDs)
 
 	vh := &routev3.VirtualHost{
 		Name:    fmt.Sprintf("%s__%s", g.ID, r.ID),
@@ -163,7 +185,7 @@ func buildVirtualHost(g model.RouteGroup, r model.Route, filterByID map[string]m
 // buildRouteAction builds the Envoy Route message for a single Rutoso Route,
 // including the match conditions and the appropriate action (forward to
 // backends, redirect, or direct response).
-func buildRouteAction(g model.RouteGroup, r model.Route, filterByID map[string]model.Filter) *routev3.Route {
+func buildRouteAction(g model.RouteGroup, r model.Route, mwByID map[string]model.Middleware, usedMwIDs map[string]bool) *routev3.Route {
 	match := buildRouteMatch(g, r)
 
 	envoyRoute := &routev3.Route{Match: match}
@@ -177,8 +199,8 @@ func buildRouteAction(g model.RouteGroup, r model.Route, filterByID map[string]m
 		envoyRoute.Action = buildForwardAction(r)
 	}
 
-	// Wire per_filter_config from merged FilterOverrides.
-	if pfc := buildPerFilterConfig(g.FilterOverrides, r.FilterOverrides, filterByID); pfc != nil {
+	// Wire per_filter_config from merged MiddlewareOverrides.
+	if pfc := buildPerFilterConfig(g.MiddlewareIDs, r.MiddlewareIDs, g.MiddlewareOverrides, r.MiddlewareOverrides, usedMwIDs, mwByID); pfc != nil {
 		envoyRoute.TypedPerFilterConfig = pfc
 	}
 
@@ -939,45 +961,35 @@ func buildEndpointFromDestination(d model.Destination) *endpointv3.ClusterLoadAs
 
 
 // buildListenerFromModel creates an Envoy Listener from a model.Listener.
-// It resolves the filter IDs against the provided map and wires each filter
-// into the HCM pipeline in declaration order. The router filter is always
+// Middlewares referenced by routes and groups (usedMwIDs) are resolved from
+// mwByID and wired into the HCM pipeline. The router filter is always
 // appended as the last HTTP filter.
-//
-// TLS config is stored in model.Listener.TLS but is NOT yet applied here;
-// DownstreamTlsContext generation is deferred to a future iteration.
-func buildListenerFromModel(ml model.Listener, filterByID map[string]model.Filter, routeConfigName string) (*listenerv3.Listener, error) {
+func buildListenerFromModel(ml model.Listener, mwByID map[string]model.Middleware, usedMwIDs map[string]bool, routeConfigName string) (*listenerv3.Listener, error) {
 	router, err := anypb.New(&routerv3.Router{})
 	if err != nil {
 		return nil, fmt.Errorf("marshalling router filter: %w", err)
 	}
 
-	// Start with the router filter; prepend resolved HTTP filters before it.
-	httpFilters := []*hcmv3.HttpFilter{
-		{
-			Name:       "envoy.filters.http.router",
-			ConfigType: &hcmv3.HttpFilter_TypedConfig{TypedConfig: router},
-		},
-	}
-
-	// Resolve filter IDs in reverse so we can prepend each resolved filter
-	// in declaration order using a simple append-then-reverse approach.
+	// Build HTTP filters from all middlewares used across routes/groups.
 	var resolved []*hcmv3.HttpFilter
-	for _, fid := range ml.FilterIDs {
-		f, ok := filterByID[fid]
+	for mwID := range usedMwIDs {
+		mw, ok := mwByID[mwID]
 		if !ok {
-			// Unknown filter ID — skip gracefully; do not crash the snapshot.
 			continue
 		}
-		hf, err := buildHTTPFilter(f)
+		hf, err := buildHTTPFilter(mw)
 		if err != nil {
-			return nil, fmt.Errorf("building filter %q: %w", fid, err)
+			return nil, fmt.Errorf("building middleware %q: %w", mwID, err)
 		}
 		if hf != nil {
 			resolved = append(resolved, hf)
 		}
 	}
-	// Prepend resolved filters before the router.
-	httpFilters = append(resolved, httpFilters...)
+	// Append router filter last.
+	resolved = append(resolved, &hcmv3.HttpFilter{
+		Name:       "envoy.filters.http.router",
+		ConfigType: &hcmv3.HttpFilter_TypedConfig{TypedConfig: router},
+	})
 
 	addr := ml.Address
 	if addr == "" {
@@ -994,7 +1006,7 @@ func buildListenerFromModel(ml model.Listener, filterByID map[string]model.Filte
 				RouteConfigName: routeConfigName,
 			},
 		},
-		HttpFilters: httpFilters,
+		HttpFilters: resolved,
 	}
 
 	// HTTP/2 support (required for gRPC clients).
@@ -1098,9 +1110,9 @@ func buildListenerFromModel(ml model.Listener, filterByID map[string]model.Filte
 	return l, nil
 }
 
-// buildHTTPFilter converts a model.Filter into an Envoy HttpFilter proto.
+// buildHTTPFilter converts a model.Middleware into an Envoy HttpFilter proto.
 // Delegates to buildHTTPFilterReal in filters.go for the actual typed config.
-func buildHTTPFilter(f model.Filter) (*hcmv3.HttpFilter, error) {
+func buildHTTPFilter(f model.Middleware) (*hcmv3.HttpFilter, error) {
 	return buildHTTPFilterReal(f)
 }
 

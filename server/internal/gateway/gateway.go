@@ -97,9 +97,9 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 		return fmt.Errorf("listing listeners: %w", err)
 	}
 
-	filters, err := gw.deps.Store.ListFilters(ctx)
+	middlewares, err := gw.deps.Store.ListMiddlewares(ctx)
 	if err != nil {
-		return fmt.Errorf("listing filters: %w", err)
+		return fmt.Errorf("listing middlewares: %w", err)
 	}
 
 	groups, err := gw.deps.Store.ListGroups(ctx)
@@ -124,7 +124,7 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 		edsCLAs = gw.deps.EndpointProvider.Endpoints()
 	}
 
-	snap, err := xds.BuildSnapshot(version, listeners, filters, groups, routes, destinations, edsCLAs)
+	snap, err := xds.BuildSnapshot(version, listeners, middlewares, groups, routes, destinations, edsCLAs)
 	if err != nil {
 		return fmt.Errorf("building snapshot: %w", err)
 	}
@@ -146,7 +146,7 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	gw.deps.Logger.Info("gateway: snapshot pushed",
 		slog.String("version", version),
 		slog.Int("listeners", len(listeners)),
-		slog.Int("filters", len(filters)),
+		slog.Int("middlewares", len(middlewares)),
 		slog.Int("groups", len(groups)),
 		slog.Int("routes", len(routes)),
 		slog.Int("destinations", len(destinations)),

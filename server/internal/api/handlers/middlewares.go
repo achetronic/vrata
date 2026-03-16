@@ -1,0 +1,142 @@
+// Package handlers wires HTTP request/response logic for the middlewares resource.
+package handlers
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+
+	"github.com/achetronic/rutoso/internal/api/respond"
+	"github.com/achetronic/rutoso/internal/model"
+	"github.com/google/uuid"
+)
+
+// ListMiddlewares returns all middlewares stored in the database.
+//
+// @Summary     List middlewares
+// @Description Returns the full list of middlewares.
+// @Tags        middlewares
+// @Produce     json
+// @Success     200 {array}   model.Middleware
+// @Failure     500 {object}  respond.ErrorBody
+// @Router      /middlewares [get]
+func (d *Dependencies) ListMiddlewares(w http.ResponseWriter, r *http.Request) {
+	middlewares, err := d.Store.ListMiddlewares(context.Background())
+	if err != nil {
+		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		return
+	}
+	respond.JSON(w, http.StatusOK, middlewares, d.Logger)
+}
+
+// CreateMiddleware creates a new mw and persists it in the database.
+//
+// @Summary     Create a middleware
+// @Description Creates a new HTTP mw entity.
+// @Tags        middlewares
+// @Accept      json
+// @Produce     json
+// @Param       mw body      model.Middleware true "Filter definition"
+// @Success     201    {object}  model.Middleware
+// @Failure     400    {object}  respond.ErrorBody
+// @Failure     500    {object}  respond.ErrorBody
+// @Router      /middlewares [post]
+func (d *Dependencies) CreateMiddleware(w http.ResponseWriter, r *http.Request) {
+	var mw model.Middleware
+	if err := json.NewDecoder(r.Body).Decode(&mw); err != nil {
+		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		return
+	}
+
+	if mw.ID == "" {
+		mw.ID = uuid.NewString()
+	}
+
+	if err := d.Store.SaveMiddleware(context.Background(), mw); err != nil {
+		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		return
+	}
+
+	respond.JSON(w, http.StatusCreated, mw, d.Logger)
+}
+
+// GetMiddleware returns the mw identified by middlewareId.
+//
+// @Summary     Get a middleware
+// @Description Returns the mw with the given ID.
+// @Tags        middlewares
+// @Produce     json
+// @Param       middlewareId path     string true "Filter ID"
+// @Success     200      {object} model.Middleware
+// @Failure     404      {object} respond.ErrorBody
+// @Failure     500      {object} respond.ErrorBody
+// @Router      /middlewares/{middlewareId} [get]
+func (d *Dependencies) GetMiddleware(w http.ResponseWriter, r *http.Request) {
+	middlewareID := r.PathValue("middlewareId")
+
+	mw, err := d.Store.GetMiddleware(context.Background(), middlewareID)
+	if err != nil {
+		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		return
+	}
+	respond.JSON(w, http.StatusOK, mw, d.Logger)
+}
+
+// UpdateMiddleware replaces an existing mw.
+//
+// @Summary     Update a middleware
+// @Description Replaces the mw with the given ID.
+// @Tags        middlewares
+// @Accept      json
+// @Produce     json
+// @Param       middlewareId path     string       true "Filter ID"
+// @Param       mw   body     model.Middleware true "Updated mw definition"
+// @Success     200      {object} model.Middleware
+// @Failure     400      {object} respond.ErrorBody
+// @Failure     404      {object} respond.ErrorBody
+// @Failure     500      {object} respond.ErrorBody
+// @Router      /middlewares/{middlewareId} [put]
+func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) {
+	middlewareID := r.PathValue("middlewareId")
+
+	if _, err := d.Store.GetMiddleware(context.Background(), middlewareID); err != nil {
+		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		return
+	}
+
+	var mw model.Middleware
+	if err := json.NewDecoder(r.Body).Decode(&mw); err != nil {
+		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		return
+	}
+	mw.ID = middlewareID
+
+	if err := d.Store.SaveMiddleware(context.Background(), mw); err != nil {
+		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		return
+	}
+
+	respond.JSON(w, http.StatusOK, mw, d.Logger)
+}
+
+// DeleteMiddleware removes the mw identified by middlewareId.
+//
+// @Summary     Delete a middleware
+// @Description Deletes the mw with the given ID.
+// @Tags        middlewares
+// @Produce     json
+// @Param       middlewareId path     string true "Filter ID"
+// @Success     204      "No Content"
+// @Failure     404      {object} respond.ErrorBody
+// @Failure     500      {object} respond.ErrorBody
+// @Router      /middlewares/{middlewareId} [delete]
+func (d *Dependencies) DeleteMiddleware(w http.ResponseWriter, r *http.Request) {
+	middlewareID := r.PathValue("middlewareId")
+
+	if err := d.Store.DeleteMiddleware(context.Background(), middlewareID); err != nil {
+		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}

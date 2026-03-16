@@ -277,7 +277,7 @@
                 "type": "object"
             },
             "model.ExtProcMode": {
-                "description": "ExtProcMode overrides the processing mode for this route/group.\nOnly meaningful when the referenced filter is of type \"extProc\".",
+                "description": "ProcessingMode controls which parts of the HTTP transaction are sent to\nthe external processor.",
                 "properties": {
                     "requestBodyMode": {
                         "$ref": "#/components/schemas/model.ExtProcPhase"
@@ -306,94 +306,6 @@
                     "ExtProcPhaseSkip",
                     "ExtProcPhaseSend",
                     "ExtProcPhaseBuffered"
-                ]
-            },
-            "model.Filter": {
-                "properties": {
-                    "cors": {
-                        "$ref": "#/components/schemas/model.CORSConfig"
-                    },
-                    "extAuthz": {
-                        "$ref": "#/components/schemas/model.ExtAuthzConfig"
-                    },
-                    "extProc": {
-                        "$ref": "#/components/schemas/model.ExtProcConfig"
-                    },
-                    "headers": {
-                        "$ref": "#/components/schemas/model.HeadersConfig"
-                    },
-                    "id": {
-                        "description": "ID is the unique identifier of the filter.",
-                        "type": "string"
-                    },
-                    "jwt": {
-                        "$ref": "#/components/schemas/model.JWTConfig"
-                    },
-                    "name": {
-                        "description": "Name is a human-readable label for the filter.",
-                        "type": "string"
-                    },
-                    "rateLimit": {
-                        "$ref": "#/components/schemas/model.RateLimitConfig"
-                    },
-                    "type": {
-                        "$ref": "#/components/schemas/model.FilterType"
-                    }
-                },
-                "type": "object"
-            },
-            "model.FilterOverride": {
-                "properties": {
-                    "disabled": {
-                        "description": "Disabled completely disables the filter for this route/group.\nWhen true, no other field is evaluated.",
-                        "type": "boolean"
-                    },
-                    "extAuthzContextExtensions": {
-                        "additionalProperties": {
-                            "type": "string"
-                        },
-                        "description": "ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.\nOnly meaningful when the referenced filter is of type \"extAuthz\".",
-                        "type": "object"
-                    },
-                    "extProcMode": {
-                        "$ref": "#/components/schemas/model.ExtProcMode"
-                    },
-                    "headers": {
-                        "$ref": "#/components/schemas/model.HeadersConfig"
-                    },
-                    "jwtProvider": {
-                        "description": "JWTProvider selects a specific JWT provider by name (instead of requiring all).\nOnly meaningful when the referenced filter is of type \"jwt\".",
-                        "type": "string"
-                    },
-                    "rateLimitDescriptors": {
-                        "description": "RateLimitDescriptors defines the rate limit descriptors sent to the\nrate limit service for this route/group.\nOnly meaningful when the referenced filter is of type \"rateLimit\".",
-                        "items": {
-                            "$ref": "#/components/schemas/model.RateLimitDescriptor"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    }
-                },
-                "type": "object"
-            },
-            "model.FilterType": {
-                "description": "Type identifies which Envoy HTTP filter this entity configures.\nExactly one of the Config* fields below must match this type.",
-                "enum": [
-                    "cors",
-                    "jwt",
-                    "extAuthz",
-                    "extProc",
-                    "rateLimit",
-                    "headers"
-                ],
-                "type": "string",
-                "x-enum-varnames": [
-                    "FilterTypeCORS",
-                    "FilterTypeJWT",
-                    "FilterTypeExtAuthz",
-                    "FilterTypeExtProc",
-                    "FilterTypeRateLimit",
-                    "FilterTypeHeaders"
                 ]
             },
             "model.ForwardAction": {
@@ -497,7 +409,7 @@
                 "type": "object"
             },
             "model.HeadersConfig": {
-                "description": "Headers overrides header manipulation for this route/group.\nOnly meaningful when the referenced filter is of type \"headers\".",
+                "description": "Headers holds the header mutation filter configuration.\nSet when Type == \"headers\".",
                 "properties": {
                     "requestHeadersToAdd": {
                         "description": "RequestHeadersToAdd are headers added to the request before forwarding\nto the upstream.",
@@ -701,14 +613,6 @@
                         "description": "Address is the IP address the listener binds to.\nDefaults to \"0.0.0.0\" if empty.",
                         "type": "string"
                     },
-                    "filterIds": {
-                        "description": "FilterIDs lists the IDs of Filter entities to activate on this listener,\nin evaluation order. The router filter is always added last automatically.",
-                        "items": {
-                            "type": "string"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
                     "http2": {
                         "description": "HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.\nWhen true, the HCM codec type is set to AUTO (accepts both HTTP/1.1\nand HTTP/2). When false, only HTTP/1.1 is accepted.\nMaps to HttpConnectionManager.codec_type.",
                         "type": "boolean"
@@ -844,6 +748,94 @@
                     }
                 },
                 "type": "object"
+            },
+            "model.Middleware": {
+                "properties": {
+                    "cors": {
+                        "$ref": "#/components/schemas/model.CORSConfig"
+                    },
+                    "extAuthz": {
+                        "$ref": "#/components/schemas/model.ExtAuthzConfig"
+                    },
+                    "extProc": {
+                        "$ref": "#/components/schemas/model.ExtProcConfig"
+                    },
+                    "headers": {
+                        "$ref": "#/components/schemas/model.HeadersConfig"
+                    },
+                    "id": {
+                        "description": "ID is the unique identifier of the filter.",
+                        "type": "string"
+                    },
+                    "jwt": {
+                        "$ref": "#/components/schemas/model.JWTConfig"
+                    },
+                    "name": {
+                        "description": "Name is a human-readable label for the filter.",
+                        "type": "string"
+                    },
+                    "rateLimit": {
+                        "$ref": "#/components/schemas/model.RateLimitConfig"
+                    },
+                    "type": {
+                        "$ref": "#/components/schemas/model.MiddlewareType"
+                    }
+                },
+                "type": "object"
+            },
+            "model.MiddlewareOverride": {
+                "properties": {
+                    "disabled": {
+                        "description": "Disabled completely disables the filter for this route/group.\nWhen true, no other field is evaluated.",
+                        "type": "boolean"
+                    },
+                    "extAuthzContextExtensions": {
+                        "additionalProperties": {
+                            "type": "string"
+                        },
+                        "description": "ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.\nOnly meaningful when the referenced filter is of type \"extAuthz\".",
+                        "type": "object"
+                    },
+                    "extProcMode": {
+                        "$ref": "#/components/schemas/model.ExtProcMode"
+                    },
+                    "headers": {
+                        "$ref": "#/components/schemas/model.HeadersConfig"
+                    },
+                    "jwtProvider": {
+                        "description": "JWTProvider selects a specific JWT provider by name (instead of requiring all).\nOnly meaningful when the referenced filter is of type \"jwt\".",
+                        "type": "string"
+                    },
+                    "rateLimitDescriptors": {
+                        "description": "RateLimitDescriptors defines the rate limit descriptors sent to the\nrate limit service for this route/group.\nOnly meaningful when the referenced filter is of type \"rateLimit\".",
+                        "items": {
+                            "$ref": "#/components/schemas/model.RateLimitDescriptor"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
+            "model.MiddlewareType": {
+                "description": "Type identifies which Envoy HTTP filter this entity configures.\nExactly one of the Config* fields below must match this type.",
+                "enum": [
+                    "cors",
+                    "jwt",
+                    "extAuthz",
+                    "extProc",
+                    "rateLimit",
+                    "headers"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                    "MiddlewareTypeCORS",
+                    "MiddlewareTypeJWT",
+                    "MiddlewareTypeExtAuthz",
+                    "MiddlewareTypeExtProc",
+                    "MiddlewareTypeRateLimit",
+                    "MiddlewareTypeHeaders"
+                ]
             },
             "model.OutlierDetectionOptions": {
                 "description": "OutlierDetection automatically ejects endpoints that return consecutive\nerrors, without requiring active health checks.\nMaps to Cluster.outlier_detection.",
@@ -985,13 +977,6 @@
                     "directResponse": {
                         "$ref": "#/components/schemas/model.RouteDirectResponse"
                     },
-                    "filterOverrides": {
-                        "additionalProperties": {
-                            "$ref": "#/components/schemas/model.FilterOverride"
-                        },
-                        "description": "FilterOverrides carries per-route overrides for filters registered on\nthe listener. The map key is the Filter ID. When both the route's group\nand the route itself carry an override for the same filter, the route\noverride wins entirely (more specific takes precedence).",
-                        "type": "object"
-                    },
                     "forward": {
                         "$ref": "#/components/schemas/model.ForwardAction"
                     },
@@ -1001,6 +986,21 @@
                     },
                     "match": {
                         "$ref": "#/components/schemas/model.MatchRule"
+                    },
+                    "middlewareIds": {
+                        "description": "MiddlewareIDs lists the IDs of Middleware entities active on this route.\nThe builder registers these in the Envoy HCM pipeline and enables them\nonly for this route (other routes where the middleware is not listed\nget it disabled via per_filter_config).",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "middlewareOverrides": {
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/model.MiddlewareOverride"
+                        },
+                        "description": "MiddlewareOverrides carries per-route overrides for active middlewares.\nThe map key is the Middleware ID. When both the route's group and the\nroute itself carry an override for the same middleware, the route\noverride wins entirely (more specific takes precedence).",
+                        "type": "object"
                     },
                     "name": {
                         "description": "Name is a human-readable label for the route.",
@@ -1028,13 +1028,6 @@
             },
             "model.RouteGroup": {
                 "properties": {
-                    "filterOverrides": {
-                        "additionalProperties": {
-                            "$ref": "#/components/schemas/model.FilterOverride"
-                        },
-                        "description": "FilterOverrides carries per-group overrides for filters registered on\nthe listener. The map key is the Filter ID. These overrides apply to all\nroutes in the group. If a route also carries an override for the same\nfilter, the route override wins entirely.",
-                        "type": "object"
-                    },
                     "headers": {
                         "description": "Headers are appended to each referenced route's own header matchers.",
                         "items": {
@@ -1058,6 +1051,21 @@
                     "includeAttemptCount": {
                         "description": "IncludeAttemptCount makes Envoy add the x-envoy-attempt-count header\nto upstream requests, indicating how many times the request has been\nattempted (including the original). Maps to\nVirtualHost.include_request_attempt_count.",
                         "type": "boolean"
+                    },
+                    "middlewareIds": {
+                        "description": "MiddlewareIDs lists the IDs of Middleware entities active on all routes\nin this group. The builder registers these in the Envoy HCM pipeline\nand enables them for every route in the group.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "middlewareOverrides": {
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/model.MiddlewareOverride"
+                        },
+                        "description": "MiddlewareOverrides carries per-group overrides for active middlewares.\nThe map key is the Middleware ID. These overrides apply to all routes\nin the group. If a route also carries an override for the same\nmiddleware, the route override wins entirely.",
+                        "type": "object"
                     },
                     "name": {
                         "description": "Name is a human-readable label for the group.",
@@ -1594,274 +1602,6 @@
                 ]
             }
         },
-        "/filters": {
-            "get": {
-                "description": "Returns the full list of filters.",
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "items": {
-                                        "$ref": "#/components/schemas/model.Filter"
-                                    },
-                                    "type": "array"
-                                }
-                            }
-                        },
-                        "description": "OK"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "List filters",
-                "tags": [
-                    "filters"
-                ]
-            },
-            "post": {
-                "description": "Creates a new HTTP filter entity.",
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/model.Filter",
-                                        "summary": "filter",
-                                        "description": "Filter definition"
-                                    }
-                                ]
-                            }
-                        }
-                    },
-                    "description": "Filter definition",
-                    "required": true
-                },
-                "responses": {
-                    "201": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.Filter"
-                                }
-                            }
-                        },
-                        "description": "Created"
-                    },
-                    "400": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Bad Request"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Create a filter",
-                "tags": [
-                    "filters"
-                ]
-            }
-        },
-        "/filters/{filterId}": {
-            "delete": {
-                "description": "Deletes the filter with the given ID.",
-                "parameters": [
-                    {
-                        "description": "Filter ID",
-                        "in": "path",
-                        "name": "filterId",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "204": {
-                        "description": "No Content"
-                    },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Delete a filter",
-                "tags": [
-                    "filters"
-                ]
-            },
-            "get": {
-                "description": "Returns the filter with the given ID.",
-                "parameters": [
-                    {
-                        "description": "Filter ID",
-                        "in": "path",
-                        "name": "filterId",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.Filter"
-                                }
-                            }
-                        },
-                        "description": "OK"
-                    },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Get a filter",
-                "tags": [
-                    "filters"
-                ]
-            },
-            "put": {
-                "description": "Replaces the filter with the given ID.",
-                "parameters": [
-                    {
-                        "description": "Filter ID",
-                        "in": "path",
-                        "name": "filterId",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "oneOf": [
-                                    {
-                                        "type": "object"
-                                    },
-                                    {
-                                        "$ref": "#/components/schemas/model.Filter",
-                                        "summary": "filter",
-                                        "description": "Updated filter definition"
-                                    }
-                                ]
-                            }
-                        }
-                    },
-                    "description": "Updated filter definition",
-                    "required": true
-                },
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/model.Filter"
-                                }
-                            }
-                        },
-                        "description": "OK"
-                    },
-                    "400": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Bad Request"
-                    },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Update a filter",
-                "tags": [
-                    "filters"
-                ]
-            }
-        },
         "/groups": {
             "get": {
                 "description": "Returns the full list of route groups.",
@@ -2395,6 +2135,274 @@
                 "summary": "Update a listener",
                 "tags": [
                     "listeners"
+                ]
+            }
+        },
+        "/middlewares": {
+            "get": {
+                "description": "Returns the full list of middlewares.",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/model.Middleware"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "List middlewares",
+                "tags": [
+                    "middlewares"
+                ]
+            },
+            "post": {
+                "description": "Creates a new HTTP mw entity.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/model.Middleware",
+                                        "summary": "mw",
+                                        "description": "Filter definition"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Filter definition",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.Middleware"
+                                }
+                            }
+                        },
+                        "description": "Created"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Create a middleware",
+                "tags": [
+                    "middlewares"
+                ]
+            }
+        },
+        "/middlewares/{middlewareId}": {
+            "delete": {
+                "description": "Deletes the mw with the given ID.",
+                "parameters": [
+                    {
+                        "description": "Filter ID",
+                        "in": "path",
+                        "name": "middlewareId",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Delete a middleware",
+                "tags": [
+                    "middlewares"
+                ]
+            },
+            "get": {
+                "description": "Returns the mw with the given ID.",
+                "parameters": [
+                    {
+                        "description": "Filter ID",
+                        "in": "path",
+                        "name": "middlewareId",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.Middleware"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Get a middleware",
+                "tags": [
+                    "middlewares"
+                ]
+            },
+            "put": {
+                "description": "Replaces the mw with the given ID.",
+                "parameters": [
+                    {
+                        "description": "Filter ID",
+                        "in": "path",
+                        "name": "middlewareId",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/model.Middleware",
+                                        "summary": "mw",
+                                        "description": "Updated mw definition"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Updated mw definition",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.Middleware"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Update a middleware",
+                "tags": [
+                    "middlewares"
                 ]
             }
         },

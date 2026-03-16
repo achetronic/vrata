@@ -33,8 +33,8 @@ const (
 	// ResourceRoute refers to a Route resource.
 	ResourceRoute ResourceType = "route"
 
-	// ResourceFilter refers to a Filter resource.
-	ResourceFilter ResourceType = "filter"
+	// ResourceMiddleware refers to a Filter resource.
+	ResourceMiddleware ResourceType = "middleware"
 
 	// ResourceListener refers to a Listener resource.
 	ResourceListener ResourceType = "listener"
@@ -94,19 +94,19 @@ type Store interface {
 
 	// --- Filters ---
 
-	// ListFilters returns all filters. The returned slice is never nil.
-	ListFilters(ctx context.Context) ([]model.Filter, error)
+	// ListMiddlewares returns all filters. The returned slice is never nil.
+	ListMiddlewares(ctx context.Context) ([]model.Middleware, error)
 
-	// GetFilter returns the filter with the given ID.
+	// GetMiddleware returns the filter with the given ID.
 	// Returns model.ErrNotFound if no such filter exists.
-	GetFilter(ctx context.Context, id string) (model.Filter, error)
+	GetMiddleware(ctx context.Context, id string) (model.Middleware, error)
 
-	// SaveFilter creates or replaces the filter identified by filter.ID.
-	SaveFilter(ctx context.Context, f model.Filter) error
+	// SaveMiddleware creates or replaces the filter identified by filter.ID.
+	SaveMiddleware(ctx context.Context, f model.Middleware) error
 
-	// DeleteFilter removes the filter with the given ID.
+	// DeleteMiddleware removes the filter with the given ID.
 	// Returns model.ErrNotFound if the filter does not exist.
-	DeleteFilter(ctx context.Context, id string) error
+	DeleteMiddleware(ctx context.Context, id string) error
 
 	// --- Listeners ---
 

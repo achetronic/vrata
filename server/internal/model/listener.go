@@ -26,10 +26,6 @@ type Listener struct {
 	// Port is the TCP port the listener binds to.
 	Port uint32 `json:"port" yaml:"port"`
 
-	// FilterIDs lists the IDs of Filter entities to activate on this listener,
-	// in evaluation order. The router filter is always added last automatically.
-	FilterIDs []string `json:"filterIds,omitempty" yaml:"filterIds,omitempty"`
-
 	// TLS holds optional TLS termination configuration.
 	// When nil, the listener operates in plaintext mode.
 	// NOTE: TLS support is modelled here but not yet implemented in the xDS
