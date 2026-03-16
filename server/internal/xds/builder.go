@@ -998,14 +998,19 @@ func buildUpstreamTLSContext(tls *model.TLSOptions, host string) *tlsv3.Upstream
 	}
 
 	// CA for server certificate validation.
-	if tls.CAFile != "" {
-		common.ValidationContextType = &tlsv3.CommonTlsContext_ValidationContext{
-			ValidationContext: &tlsv3.CertificateValidationContext{
-				TrustedCa: &corev3.DataSource{
-					Specifier: &corev3.DataSource_Filename{Filename: tls.CAFile},
-				},
+	// When no CA file is specified in TLS mode, default to the system CA bundle
+	// so connections to services with public certificates (Let's Encrypt, etc.)
+	// work out of the box without extra configuration.
+	caFile := tls.CAFile
+	if caFile == "" {
+		caFile = "/etc/ssl/certs/ca-certificates.crt"
+	}
+	common.ValidationContextType = &tlsv3.CommonTlsContext_ValidationContext{
+		ValidationContext: &tlsv3.CertificateValidationContext{
+			TrustedCa: &corev3.DataSource{
+				Specifier: &corev3.DataSource_Filename{Filename: caFile},
 			},
-		}
+		},
 	}
 
 	// Client certificate for mTLS.
