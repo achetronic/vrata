@@ -129,9 +129,16 @@ type JWTProvider struct {
 	// validation is skipped.
 	Audiences []string `json:"audiences,omitempty" yaml:"audiences,omitempty"`
 
-	// JWKsURI is the URL from which the JSON Web Key Set is fetched.
+	// JWKsURI is the URL path from which the JSON Web Key Set is fetched.
+	// When set, JWKsDestinationID must also be set to identify the upstream
+	// that serves the JWKS endpoint.
 	// Mutually exclusive with JWKsInline.
 	JWKsURI string `json:"jwksUri,omitempty" yaml:"jwksUri,omitempty"`
+
+	// JWKsDestinationID references the Destination entity that hosts the
+	// JWKS endpoint. Required when JWKsURI is set. The Destination's cluster
+	// (with its TLS config) is used as the upstream for fetching keys.
+	JWKsDestinationID string `json:"jwksDestinationId,omitempty" yaml:"jwksDestinationId,omitempty"`
 
 	// JWKsInline is a literal JSON Web Key Set document.
 	// Mutually exclusive with JWKsURI.
@@ -175,15 +182,18 @@ type JWTRule struct {
 
 // ExtAuthzConfig holds the configuration for the Envoy ext_authz HTTP filter.
 type ExtAuthzConfig struct {
-	// GRPCService is the address of the gRPC authorisation service
-	// (e.g. "authz.default.svc.cluster.local:50051").
-	// Mutually exclusive with HTTPService.
-	GRPCService string `json:"grpcService,omitempty" yaml:"grpcService,omitempty"`
+	// DestinationID references the Destination entity that hosts the
+	// authorisation service. The Destination's cluster (with its TLS,
+	// timeouts, health checks, etc.) is used as the upstream for ext_authz.
+	DestinationID string `json:"destinationId" yaml:"destinationId"`
 
-	// HTTPService is the URL of the HTTP authorisation service
-	// (e.g. "http://opa.default.svc.cluster.local:8181/v1/authz").
-	// Mutually exclusive with GRPCService.
-	HTTPService string `json:"httpService,omitempty" yaml:"httpService,omitempty"`
+	// Mode selects the transport protocol to the authz service.
+	// "grpc" or "http". Default: "http".
+	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
+
+	// PathPrefix is the URL path prefix for HTTP mode authz requests.
+	// Ignored in gRPC mode. Example: "/v1/authz".
+	PathPrefix string `json:"pathPrefix,omitempty" yaml:"pathPrefix,omitempty"`
 
 	// Timeout is the authorisation request deadline (e.g. "5s", "500ms").
 	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
@@ -203,9 +213,9 @@ type ExtAuthzConfig struct {
 
 // ExtProcConfig holds the configuration for the Envoy ext_proc HTTP filter.
 type ExtProcConfig struct {
-	// GRPCService is the address of the gRPC processing service
-	// (e.g. "ext-proc.default.svc.cluster.local:9000").
-	GRPCService string `json:"grpcService" yaml:"grpcService"`
+	// DestinationID references the Destination entity that hosts the
+	// external processing service. Must be a gRPC service.
+	DestinationID string `json:"destinationId" yaml:"destinationId"`
 
 	// Timeout is the processing request deadline (e.g. "2s").
 	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
@@ -255,9 +265,9 @@ type RateLimitConfig struct {
 	// The service uses this to scope rate limit descriptors.
 	Domain string `json:"domain" yaml:"domain"`
 
-	// GRPCService is the address of the gRPC rate limit service
-	// (e.g. "ratelimit.default.svc.cluster.local:8081").
-	GRPCService string `json:"grpcService" yaml:"grpcService"`
+	// DestinationID references the Destination entity that hosts the gRPC
+	// rate limit service.
+	DestinationID string `json:"destinationId" yaml:"destinationId"`
 
 	// Timeout is the rate limit request deadline (e.g. "500ms").
 	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`

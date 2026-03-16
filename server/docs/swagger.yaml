@@ -227,28 +227,32 @@ components:
         ExtAuthz holds the external authorisation filter configuration.
         Set when Type == "extAuthz".
       properties:
+        destinationId:
+          description: |-
+            DestinationID references the Destination entity that hosts the
+            authorisation service. The Destination's cluster (with its TLS,
+            timeouts, health checks, etc.) is used as the upstream for ext_authz.
+          type: string
         failureModeAllow:
           description: |-
             FailureModeAllow controls what happens when the authz service is
             unreachable. If true, requests are allowed through (fail-open).
             Default is false (fail-closed).
           type: boolean
-        grpcService:
-          description: |-
-            GRPCService is the address of the gRPC authorisation service
-            (e.g. "authz.default.svc.cluster.local:50051").
-            Mutually exclusive with HTTPService.
-          type: string
-        httpService:
-          description: |-
-            HTTPService is the URL of the HTTP authorisation service
-            (e.g. "http://opa.default.svc.cluster.local:8181/v1/authz").
-            Mutually exclusive with GRPCService.
-          type: string
         includeRequestBodyInCheck:
           description: IncludeRequestBodyInCheck forwards the request body to the
             authz service.
           type: boolean
+        mode:
+          description: |-
+            Mode selects the transport protocol to the authz service.
+            "grpc" or "http". Default: "http".
+          type: string
+        pathPrefix:
+          description: |-
+            PathPrefix is the URL path prefix for HTTP mode authz requests.
+            Ignored in gRPC mode. Example: "/v1/authz".
+          type: string
         timeout:
           description: Timeout is the authorisation request deadline (e.g. "5s", "500ms").
           type: string
@@ -258,10 +262,10 @@ components:
         ExtProc holds the external processing filter configuration.
         Set when Type == "extProc".
       properties:
-        grpcService:
+        destinationId:
           description: |-
-            GRPCService is the address of the gRPC processing service
-            (e.g. "ext-proc.default.svc.cluster.local:9000").
+            DestinationID references the Destination entity that hosts the
+            external processing service. Must be a gRPC service.
           type: string
         processingMode:
           $ref: '#/components/schemas/model.ExtProcMode'
@@ -558,6 +562,12 @@ components:
         issuer:
           description: Issuer is the expected value of the "iss" claim.
           type: string
+        jwksDestinationId:
+          description: |-
+            JWKsDestinationID references the Destination entity that hosts the
+            JWKS endpoint. Required when JWKsURI is set. The Destination's cluster
+            (with its TLS config) is used as the upstream for fetching keys.
+          type: string
         jwksInline:
           description: |-
             JWKsInline is a literal JSON Web Key Set document.
@@ -565,7 +575,9 @@ components:
           type: string
         jwksUri:
           description: |-
-            JWKsURI is the URL from which the JSON Web Key Set is fetched.
+            JWKsURI is the URL path from which the JSON Web Key Set is fetched.
+            When set, JWKsDestinationID must also be set to identify the upstream
+            that serves the JWKS endpoint.
             Mutually exclusive with JWKsInline.
           type: string
       type: object
@@ -877,6 +889,11 @@ components:
         RateLimit holds the rate limit filter configuration.
         Set when Type == "rateLimit".
       properties:
+        destinationId:
+          description: |-
+            DestinationID references the Destination entity that hosts the gRPC
+            rate limit service.
+          type: string
         domain:
           description: |-
             Domain is the rate limit domain passed to the rate limit service.
@@ -888,11 +905,6 @@ components:
             unreachable. If true, requests are denied (fail-closed).
             Default is false (fail-open).
           type: boolean
-        grpcService:
-          description: |-
-            GRPCService is the address of the gRPC rate limit service
-            (e.g. "ratelimit.default.svc.cluster.local:8081").
-          type: string
         timeout:
           description: Timeout is the rate limit request deadline (e.g. "500ms").
           type: string

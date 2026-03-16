@@ -152,12 +152,12 @@ func marshalJWT(c *model.JWTConfig) (*anypb.Any, error) {
 			Audiences: p.Audiences,
 			Forward:   p.ForwardJWT,
 		}
-		if p.JWKsURI != "" {
+		if p.JWKsURI != "" && p.JWKsDestinationID != "" {
 			jp.JwksSourceSpecifier = &jwtauthnv3.JwtProvider_RemoteJwks{
 				RemoteJwks: &jwtauthnv3.RemoteJwks{
 					HttpUri: &corev3.HttpUri{
 						Uri:              p.JWKsURI,
-						HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: name + "_jwks"},
+						HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: p.JWKsDestinationID},
 						Timeout:          durationpb.New(5 * time.Second),
 					},
 				},
@@ -212,35 +212,36 @@ func marshalJWT(c *model.JWTConfig) (*anypb.Any, error) {
 
 func marshalExtAuthz(c *model.ExtAuthzConfig) (*anypb.Any, error) {
 	ea := &extauthzv3.ExtAuthz{}
-	if c != nil {
+	if c != nil && c.DestinationID != "" {
 		ea.FailureModeAllow = c.FailureModeAllow
-		if c.GRPCService != "" {
+		timeout := durationpb.New(5 * time.Second)
+		if c.Timeout != "" {
+			if dur, err := time.ParseDuration(c.Timeout); err == nil {
+				timeout = durationpb.New(dur)
+			}
+		}
+		if c.Mode == "grpc" {
 			ea.Services = &extauthzv3.ExtAuthz_GrpcService{
 				GrpcService: &corev3.GrpcService{
 					TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
-						EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{ClusterName: c.GRPCService},
+						EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{ClusterName: c.DestinationID},
 					},
+					Timeout: timeout,
 				},
 			}
-			if c.Timeout != "" {
-				if dur, err := time.ParseDuration(c.Timeout); err == nil {
-					ea.GetGrpcService().Timeout = durationpb.New(dur)
-				}
+		} else {
+			uri := c.DestinationID
+			if c.PathPrefix != "" {
+				uri = c.PathPrefix
 			}
-		} else if c.HTTPService != "" {
 			ea.Services = &extauthzv3.ExtAuthz_HttpService{
 				HttpService: &extauthzv3.HttpService{
 					ServerUri: &corev3.HttpUri{
-						Uri:              c.HTTPService,
-						HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: "ext_authz_http"},
-						Timeout:          durationpb.New(5 * time.Second),
+						Uri:              uri,
+						HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: c.DestinationID},
+						Timeout:          timeout,
 					},
 				},
-			}
-			if c.Timeout != "" {
-				if dur, err := time.ParseDuration(c.Timeout); err == nil {
-					ea.GetHttpService().ServerUri.Timeout = durationpb.New(dur)
-				}
 			}
 		}
 		if c.IncludeRequestBodyInCheck {
@@ -257,17 +258,18 @@ func marshalExtAuthz(c *model.ExtAuthzConfig) (*anypb.Any, error) {
 
 func marshalExtProc(c *model.ExtProcConfig) (*anypb.Any, error) {
 	ep := &extprocv3.ExternalProcessor{}
-	if c != nil {
-		ep.GrpcService = &corev3.GrpcService{
+	if c != nil && c.DestinationID != "" {
+		gs := &corev3.GrpcService{
 			TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
-				EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{ClusterName: c.GRPCService},
+				EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{ClusterName: c.DestinationID},
 			},
 		}
 		if c.Timeout != "" {
 			if dur, err := time.ParseDuration(c.Timeout); err == nil {
-				ep.GrpcService.Timeout = durationpb.New(dur)
+				gs.Timeout = durationpb.New(dur)
 			}
 		}
+		ep.GrpcService = gs
 		if c.ProcessingMode != nil {
 			ep.ProcessingMode = mapExtProcMode(c.ProcessingMode)
 		}
@@ -312,13 +314,13 @@ func mapExtProcMode(m *model.ExtProcMode) *extprocv3.ProcessingMode {
 
 func marshalRateLimit(c *model.RateLimitConfig) (*anypb.Any, error) {
 	rl := &ratelimitv3.RateLimit{}
-	if c != nil {
+	if c != nil && c.DestinationID != "" {
 		rl.Domain = c.Domain
 		rl.FailureModeDeny = c.FailureModeDeny
 		rl.RateLimitService = &rlconfv3.RateLimitServiceConfig{
 			GrpcService: &corev3.GrpcService{
 				TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
-					EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{ClusterName: c.GRPCService},
+					EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{ClusterName: c.DestinationID},
 				},
 			},
 			TransportApiVersion: corev3.ApiVersion_V3,

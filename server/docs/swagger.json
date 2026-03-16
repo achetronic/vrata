@@ -236,21 +236,25 @@
             "model.ExtAuthzConfig": {
                 "description": "ExtAuthz holds the external authorisation filter configuration.\nSet when Type == \"extAuthz\".",
                 "properties": {
+                    "destinationId": {
+                        "description": "DestinationID references the Destination entity that hosts the\nauthorisation service. The Destination's cluster (with its TLS,\ntimeouts, health checks, etc.) is used as the upstream for ext_authz.",
+                        "type": "string"
+                    },
                     "failureModeAllow": {
                         "description": "FailureModeAllow controls what happens when the authz service is\nunreachable. If true, requests are allowed through (fail-open).\nDefault is false (fail-closed).",
                         "type": "boolean"
                     },
-                    "grpcService": {
-                        "description": "GRPCService is the address of the gRPC authorisation service\n(e.g. \"authz.default.svc.cluster.local:50051\").\nMutually exclusive with HTTPService.",
-                        "type": "string"
-                    },
-                    "httpService": {
-                        "description": "HTTPService is the URL of the HTTP authorisation service\n(e.g. \"http://opa.default.svc.cluster.local:8181/v1/authz\").\nMutually exclusive with GRPCService.",
-                        "type": "string"
-                    },
                     "includeRequestBodyInCheck": {
                         "description": "IncludeRequestBodyInCheck forwards the request body to the authz service.",
                         "type": "boolean"
+                    },
+                    "mode": {
+                        "description": "Mode selects the transport protocol to the authz service.\n\"grpc\" or \"http\". Default: \"http\".",
+                        "type": "string"
+                    },
+                    "pathPrefix": {
+                        "description": "PathPrefix is the URL path prefix for HTTP mode authz requests.\nIgnored in gRPC mode. Example: \"/v1/authz\".",
+                        "type": "string"
                     },
                     "timeout": {
                         "description": "Timeout is the authorisation request deadline (e.g. \"5s\", \"500ms\").",
@@ -262,8 +266,8 @@
             "model.ExtProcConfig": {
                 "description": "ExtProc holds the external processing filter configuration.\nSet when Type == \"extProc\".",
                 "properties": {
-                    "grpcService": {
-                        "description": "GRPCService is the address of the gRPC processing service\n(e.g. \"ext-proc.default.svc.cluster.local:9000\").",
+                    "destinationId": {
+                        "description": "DestinationID references the Destination entity that hosts the\nexternal processing service. Must be a gRPC service.",
                         "type": "string"
                     },
                     "processingMode": {
@@ -554,12 +558,16 @@
                         "description": "Issuer is the expected value of the \"iss\" claim.",
                         "type": "string"
                     },
+                    "jwksDestinationId": {
+                        "description": "JWKsDestinationID references the Destination entity that hosts the\nJWKS endpoint. Required when JWKsURI is set. The Destination's cluster\n(with its TLS config) is used as the upstream for fetching keys.",
+                        "type": "string"
+                    },
                     "jwksInline": {
                         "description": "JWKsInline is a literal JSON Web Key Set document.\nMutually exclusive with JWKsURI.",
                         "type": "string"
                     },
                     "jwksUri": {
-                        "description": "JWKsURI is the URL from which the JSON Web Key Set is fetched.\nMutually exclusive with JWKsInline.",
+                        "description": "JWKsURI is the URL path from which the JSON Web Key Set is fetched.\nWhen set, JWKsDestinationID must also be set to identify the upstream\nthat serves the JWKS endpoint.\nMutually exclusive with JWKsInline.",
                         "type": "string"
                     }
                 },
@@ -883,6 +891,10 @@
             "model.RateLimitConfig": {
                 "description": "RateLimit holds the rate limit filter configuration.\nSet when Type == \"rateLimit\".",
                 "properties": {
+                    "destinationId": {
+                        "description": "DestinationID references the Destination entity that hosts the gRPC\nrate limit service.",
+                        "type": "string"
+                    },
                     "domain": {
                         "description": "Domain is the rate limit domain passed to the rate limit service.\nThe service uses this to scope rate limit descriptors.",
                         "type": "string"
@@ -890,10 +902,6 @@
                     "failureModeDeny": {
                         "description": "FailureModeDeny controls what happens when the rate limit service is\nunreachable. If true, requests are denied (fail-closed).\nDefault is false (fail-open).",
                         "type": "boolean"
-                    },
-                    "grpcService": {
-                        "description": "GRPCService is the address of the gRPC rate limit service\n(e.g. \"ratelimit.default.svc.cluster.local:8081\").",
-                        "type": "string"
                     },
                     "timeout": {
                         "description": "Timeout is the rate limit request deadline (e.g. \"500ms\").",
