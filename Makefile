@@ -39,7 +39,7 @@ docs:
 	$(SWAG) init $(SWAG_FLAGS)
 	@# swag v2.0.0 emits 'openapi' and 'info' after 'components' — Swagger UI rejects that.
 	@# swag-reorder rewrites swagger.json so openapi+info come first.
-	cd $(SERVER_DIR) && $(GO) run ./cmd/swag-reorder $(SERVER_DIR)/docs/swagger.json
+	cd $(SERVER_DIR) && $(GO) run ./cmd/swag-reorder docs/swagger.json
 
 ## build: compile the binary into ./bin/rutoso
 build:
