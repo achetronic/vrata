@@ -1,0 +1,24 @@
+# Values for e2e cluster tests in kind.
+image:
+  repository: vrata
+  tag: e2e-cluster
+  pullPolicy: Never
+
+controlPlane:
+  enabled: true
+  replicas: 3
+  cluster:
+    enabled: true
+  persistence:
+    enabled: true
+    size: 100Mi
+  service:
+    type: NodePort
+    port: 8080
+    nodePort: 31081
+  log:
+    format: json
+    level: info
+
+proxy:
+  enabled: false

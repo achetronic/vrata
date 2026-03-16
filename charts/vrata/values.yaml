@@ -1,0 +1,177 @@
+# Default values for the Vrata chart.
+# Documentation: https://github.com/achetronic/vrata
+
+image:
+  repository: ghcr.io/achetronic/vrata
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  # Always | IfNotPresent | Never
+  pullPolicy: IfNotPresent
+  # imagePullSecrets:
+  #   - name: my-registry-secret
+
+# Control plane nodes expose the REST API, store configuration in bbolt,
+# and push active snapshots to connected proxies via SSE.
+# Set enabled: false when deploying a proxy fleet that connects to an
+# external control plane.
+controlPlane:
+  enabled: true
+
+  # Number of replicas.
+  # Use 1 for single-node mode (plain bbolt, no Raft).
+  # Use 3 or 5 for cluster mode (requires cluster.enabled: true).
+  # Avoid even numbers — Raft requires a majority quorum.
+  replicas: 1
+
+  # Raft-based HA consensus. Only meaningful when replicas > 1.
+  # Any node accepts reads and writes; followers forward writes to the
+  # leader transparently.
+  cluster:
+    enabled: false
+    # TCP port for Raft peer-to-peer communication between nodes.
+    raftPort: 7000
+    # Directory for Raft logs, stable store, and snapshots.
+    # Must be on a persistent volume, distinct from the bbolt store path.
+    dataDir: /data/raft
+
+  # Persistent storage for the bbolt store (and Raft data in cluster mode).
+  persistence:
+    enabled: true
+    # Storage request size.
+    size: 1Gi
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ""
+    # Access modes for the PersistentVolumeClaim.
+    # ReadWriteOnce is sufficient for single-node and cluster mode.
+    accessModes:
+      - ReadWriteOnce
+
+  service:
+    # ClusterIP | NodePort | LoadBalancer
+    type: ClusterIP
+    # HTTP port for the REST API and SSE sync stream.
+    port: 8080
+    # Only used when type is NodePort. Leave empty for auto-assign.
+    nodePort: ""
+    # Annotations to add to the Service (e.g. for cloud load balancers).
+    annotations: {}
+
+  log:
+    # console (human-readable) | json
+    format: console
+    # debug | info | warn | error
+    level: info
+
+  # Kubernetes resource requests and limits for the control plane container.
+  resources: {}
+  # resources:
+  #   requests:
+  #     cpu: 100m
+  #     memory: 128Mi
+  #   limits:
+  #     cpu: 500m
+  #     memory: 256Mi
+
+  # How long Kubernetes waits for the pod to terminate gracefully (seconds).
+  terminationGracePeriodSeconds: 15
+
+  # Additional labels added to each control plane pod.
+  podLabels: {}
+  # podLabels:
+  #   team: platform
+
+  # Additional annotations added to each control plane pod.
+  podAnnotations: {}
+  # podAnnotations:
+  #   prometheus.io/scrape: "true"
+
+  # Constrain pods to nodes matching these labels.
+  nodeSelector: {}
+  # nodeSelector:
+  #   kubernetes.io/arch: amd64
+
+  # Allow pods to be scheduled on tainted nodes.
+  tolerations: []
+  # tolerations:
+  #   - key: dedicated
+  #     operator: Equal
+  #     value: control-plane
+  #     effect: NoSchedule
+
+  # Advanced pod scheduling rules.
+  affinity: {}
+  # affinity:
+  #   podAntiAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       - labelSelector:
+  #           matchLabels:
+  #             app.kubernetes.io/component: controlplane
+  #         topologyKey: kubernetes.io/hostname
+
+  # Extra environment variables injected into the control plane container.
+  extraEnv: []
+  # extraEnv:
+  #   - name: MY_VAR
+  #     value: my-value
+
+  # Extra volumes mounted into the control plane container.
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# Proxy instances connect to the control plane via SSE and apply the active
+# snapshot. They are stateless and horizontally scalable.
+# Set enabled: false to deploy a control plane without any proxy fleet.
+# Deploy multiple fleets by installing the chart multiple times with different
+# release names.
+proxy:
+  enabled: false
+
+  # Number of proxy replicas.
+  replicas: 2
+
+  # How long a proxy waits before reconnecting after an SSE disconnect.
+  # Accepts Go duration strings: "5s", "10s", "1m".
+  reconnectInterval: 5s
+
+  # Override the control plane address used by proxies.
+  # Defaults to the in-cluster Service created by this chart.
+  # Set this when connecting to an external control plane.
+  # controlPlaneAddress: "http://external-cp:8080"
+
+  service:
+    # ClusterIP | NodePort | LoadBalancer
+    type: ClusterIP
+    # Port on which the proxy accepts proxied HTTP traffic.
+    # Routes and listeners are configured via the control plane API.
+    port: 3000
+    # Only used when type is NodePort. Leave empty for auto-assign.
+    nodePort: ""
+    # Annotations to add to the Service.
+    annotations: {}
+
+  log:
+    # console | json
+    format: console
+    # debug | info | warn | error
+    level: info
+
+  resources: {}
+  # resources:
+  #   requests:
+  #     cpu: 50m
+  #     memory: 64Mi
+  #   limits:
+  #     cpu: 200m
+  #     memory: 128Mi
+
+  terminationGracePeriodSeconds: 15
+
+  podLabels: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  extraEnv: []
+  extraVolumes: []
+  extraVolumeMounts: []

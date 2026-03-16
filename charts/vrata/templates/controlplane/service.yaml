@@ -1,0 +1,49 @@
+{{- if .Values.controlPlane.enabled }}
+---
+# Headless Service for StatefulSet DNS and Raft peer discovery.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vrata.cpName" . }}-headless
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: {{ include "vrata.name" . }}
+    app.kubernetes.io/component: controlplane
+  ports:
+    - name: http
+      port: {{ .Values.controlPlane.service.port }}
+      targetPort: http
+    {{- if and .Values.controlPlane.cluster.enabled (gt (int .Values.controlPlane.replicas) 1) }}
+    - name: raft
+      port: {{ .Values.controlPlane.cluster.raftPort }}
+      targetPort: raft
+    {{- end }}
+---
+# ClusterIP Service for the REST API (used by proxies and external clients).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vrata.cpName" . }}
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+  {{- with .Values.controlPlane.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.controlPlane.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "vrata.name" . }}
+    app.kubernetes.io/component: controlplane
+  ports:
+    - name: http
+      port: {{ .Values.controlPlane.service.port }}
+      targetPort: http
+      {{- if .Values.controlPlane.service.nodePort }}
+      nodePort: {{ .Values.controlPlane.service.nodePort }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,30 @@
+# mode: "controlplane" (default) or "proxy"
+# - controlplane: REST API + store + gateway + proxy + SSE sync endpoint
+# - proxy: connects to a control plane via SSE, no local store or API
+mode: "${VRATA_MODE:-controlplane}"
+
+server:
+  # Address the REST API HTTP server listens on (controlplane mode only).
+  address: "${SERVER_ADDRESS:-:8080}"
+
+# Settings for proxy mode — ignored in controlplane mode.
+controlPlane:
+  # Base URL of the control plane (e.g. "http://10.0.0.1:8080").
+  address: "${CONTROLPLANE_ADDRESS:-}"
+  # How long to wait before reconnecting after a stream disconnection.
+  reconnectInterval: "${CONTROLPLANE_RECONNECT_INTERVAL:-5s}"
+
+log:
+  # format: "console" (human-readable) or "json"
+  format: "${LOG_FORMAT:-console}"
+  # level: "debug", "info", "warn", or "error"
+  level: "${LOG_LEVEL:-info}"
+
+# Session store for STICKY destination balancing.
+# Credentials via environment variables.
+sessionStore:
+  type: "${SESSION_STORE_TYPE}"
+  redis:
+    address: "${REDIS_ADDRESS}"
+    password: "${REDIS_PASSWORD}"
+    db: 0

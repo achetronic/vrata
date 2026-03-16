@@ -1,0 +1,17 @@
+{{- if .Values.proxy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vrata.proxyName" . }}
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    mode: "proxy"
+    controlPlane:
+      address: "{{ .Values.proxy.controlPlaneAddress | default (printf "http://%s:%d" (include "vrata.cpName" .) (int .Values.controlPlane.service.port)) }}"
+      reconnectInterval: "{{ .Values.proxy.reconnectInterval }}"
+    log:
+      format: "{{ .Values.proxy.log.format }}"
+      level: "{{ .Values.proxy.log.level }}"
+{{- end }}
