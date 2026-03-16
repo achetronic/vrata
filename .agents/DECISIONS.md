@@ -224,3 +224,137 @@ external cert/key distribution mechanism (file mount vs SDS) needs to be decided
 **Do not**: Move TLS config to a separate entity. Do not implement TLS wiring in the
 xDS builder until the cert delivery mechanism is decided. Do not remove `TLS` from
 the model — the field must persist in the API and storage even while unimplemented.
+
+---
+
+## Destination as the upstream abstraction — BackendRef replaces inline Backend
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+Upstream backends are modeled as first-class `Destination` entities (id, name, host,
+port, and a rich `DestinationOptions` struct covering TLS, LB policy, circuit breakers,
+health checks, and outlier detection). Routes reference destinations via `BackendRef`
+(`destinationId`, `weight`, optional `hashPolicy`). The old `Backend` struct (inline
+host/port on Route) has been removed entirely.
+
+**Reasoning**: An inline `Backend` struct couples the upstream connection config to
+every route that uses it, forcing duplication when two routes hit the same service.
+A `Destination` entity is defined once and reused by any number of routes. It also
+allows independent lifecycle management — an operator can update a Destination's TLS
+cert or LB policy without touching any Route.
+
+**Do not**: Re-introduce an inline `Backend` struct on `Route`. Do not put
+`BackendRef` or `HashPolicy` in `model/route.go` — they live in `model/destination.go`.
+Do not reference destinations by name; always use the ID field.
+
+---
+
+## Cluster type is auto-derived — no user-facing discovery field on Destination
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+The Envoy cluster discovery type (`EDS`, `STATIC`, `STRICT_DNS`) is derived automatically
+by the xDS builder from the Destination's `host` and `options.discovery` fields:
+- `options.discovery.type == "kubernetes"` → EDS (endpoint pushed by k8s watcher)
+- `host` is a bare IPv4/IPv6 address → STATIC
+- `host` is an FQDN → STRICT_DNS
+
+**Reasoning**: Exposing Envoy's internal cluster type as a user-facing field would
+require operators to understand Envoy internals just to point a route at an upstream.
+The three rules above cover all real-world cases deterministically with no ambiguity.
+
+**Do not**: Add a `discoveryType` or `clusterType` field directly on `Destination`.
+The derivation logic lives in `xds/builder.go` (`clusterTypeFor` function) and must
+not be duplicated elsewhere.
+
+---
+
+## Destination as a first-class entity (replaces inline Backend)
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+`model.Destination` replaces the old inline `Backend` struct. A `Route` now
+carries `Backends []BackendRef` — each `BackendRef` references a `Destination`
+by ID plus a weight. The `Destination` entity holds all upstream connection
+config: host, port, LB algorithm, TLS, circuit breaker, health check, outlier
+detection, and optional Kubernetes service discovery.
+
+**Reasoning**: Inlining host/port/weight on every route forced repetition and
+made it impossible to update a shared upstream without touching every route that
+referenced it. Promoting Destination to its own entity makes upstreams reusable,
+auditable, and independently updateable. It also unlocks rich per-cluster config
+(TLS, circuit breakers) that would have been impractical to inline on every BackendRef.
+
+**Do not**: Add host/port fields back to `Route.Backends` or `BackendRef`.
+Do not remove the `Destination` entity and revert to inline backends.
+`BackendRef` must reference a `Destination` by ID — never embed the destination config directly.
+
+---
+
+## Cluster type derived automatically from Destination fields (not user-configurable)
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+The Envoy cluster discovery type (EDS / STATIC / STRICT_DNS) is derived
+automatically by the xDS builder from the `Destination` fields:
+- `options.discovery.type == "kubernetes"` → EDS
+- `host` is a bare IP address → STATIC
+- `host` is an FQDN → STRICT_DNS
+
+**Reasoning**: Exposing the Envoy cluster type as a user field would leak
+implementation details and create opportunities for misconfiguration (e.g. a user
+setting STRICT_DNS on an IP address). The derivation rule is unambiguous and covers
+all practical cases. Users think in terms of "is this a Kubernetes service or not"
+— not Envoy cluster types.
+
+**Do not**: Add a `clusterType` or `discoveryType` field to `Destination` or its
+options. Do not allow users to directly choose EDS, STATIC, or STRICT_DNS.
+The derivation logic lives solely in `xds/builder.go:clusterTypeFor`.
+
+---
+
+## hashPolicy lives on BackendRef, not on Destination
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+`HashPolicy` (header/cookie/sourceIP) is a field of `BackendRef`, not of
+`Destination`. The LB algorithm (`RING_HASH`, `MAGLEV`) that consumes hash
+policies lives on `Destination.Options.Balancing.Algorithm`.
+
+**Reasoning**: In the Envoy data model, `hash_policy` is part of `RouteAction`
+(i.e. per-route), not per-cluster. A single destination configured with RING_HASH
+may be reached by different routes that want to hash on different things (one on a
+header, another on source IP). Placing `hashPolicy` on `BackendRef` accurately
+reflects where Envoy applies it and allows per-route control.
+
+**Do not**: Move `HashPolicy` to `Destination` or `DestinationOptions`.
+Do not add hash_policy at the cluster level.
+
+---
+
+## discovery on Destination is Rutoso-internal (no namespace/service fields)
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+`Destination.Options.Discovery` is a Rutoso-internal concept — it signals to
+Rutoso that endpoint discovery should be delegated to the Kubernetes EndpointSlice
+watcher. The `host` field holds the full service FQDN
+(e.g. `my-svc.default.svc.cluster.local`). Rutoso derives the namespace and
+service name from the FQDN at watch time. There are no separate `namespace` or
+`serviceName` fields on `Destination`.
+
+**Reasoning**: A fully-qualified service FQDN is unambiguous and already contains
+all the information needed. Adding redundant `namespace`/`service` fields would
+require keeping them in sync with `host` and create a validation burden.
+The FQDN is also what Envoy uses as the upstream host, so the same value serves
+double duty.
+
+**Do not**: Add `namespace`, `serviceName`, or `serviceAccount` fields to
+`Destination` or `Discovery`. Do not parse the FQDN outside of the k8s watcher
+package — the xDS builder receives the FQDN as-is and passes it to Envoy.

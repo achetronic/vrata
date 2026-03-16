@@ -40,6 +40,11 @@ import (
 //	GET    /api/v1/listeners/{listenerId}  → get listener
 //	PUT    /api/v1/listeners/{listenerId}  → update listener
 //	DELETE /api/v1/listeners/{listenerId}  → delete listener
+//	GET    /api/v1/destinations                    → list destinations
+//	POST   /api/v1/destinations                    → create destination
+//	GET    /api/v1/destinations/{destinationId}    → get destination
+//	PUT    /api/v1/destinations/{destinationId}    → update destination
+//	DELETE /api/v1/destinations/{destinationId}    → delete destination
 //	GET    /api/v1/docs/               → Swagger UI
 //	GET    /api/v1/docs/doc.json       → OpenAPI spec (JSON)
 func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
@@ -77,6 +82,13 @@ func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/listeners/{listenerId}", deps.GetListener)
 	mux.HandleFunc("PUT /api/v1/listeners/{listenerId}", deps.UpdateListener)
 	mux.HandleFunc("DELETE /api/v1/listeners/{listenerId}", deps.DeleteListener)
+
+	// Destination endpoints
+	mux.HandleFunc("GET /api/v1/destinations", deps.ListDestinations)
+	mux.HandleFunc("POST /api/v1/destinations", deps.CreateDestination)
+	mux.HandleFunc("GET /api/v1/destinations/{destinationId}", deps.GetDestination)
+	mux.HandleFunc("PUT /api/v1/destinations/{destinationId}", deps.UpdateDestination)
+	mux.HandleFunc("DELETE /api/v1/destinations/{destinationId}", deps.DeleteDestination)
 
 	// Swagger UI — static assets (HTML, JS, CSS). http-swagger/v2 reads the spec
 	// URL from the config; the actual JSON is served by the handler below.

@@ -97,8 +97,13 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 		return fmt.Errorf("listing routes: %w", err)
 	}
 
+	destinations, err := gw.deps.Store.ListDestinations(ctx)
+	if err != nil {
+		return fmt.Errorf("listing destinations: %w", err)
+	}
+
 	version := gw.deps.NextVersion()
-	snap, err := xds.BuildSnapshot(version, listeners, filters, groups, routes)
+	snap, err := xds.BuildSnapshot(version, listeners, filters, groups, routes, destinations)
 	if err != nil {
 		return fmt.Errorf("building snapshot: %w", err)
 	}
@@ -120,6 +125,7 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 		slog.Int("filters", len(filters)),
 		slog.Int("groups", len(groups)),
 		slog.Int("routes", len(routes)),
+		slog.Int("destinations", len(destinations)),
 		slog.Int("nodes", len(gw.deps.Cache.GetStatusKeys())),
 	)
 	return nil

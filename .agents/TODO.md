@@ -35,30 +35,7 @@ turn `FilterIDs` into real Envoy HTTP filter objects.
 - [ ] Wire `model.Listener.TLS` into Envoy's `DownstreamTlsContext` in the builder
 
 ### Cluster — first-class entity
-Currently auto-generated from `Backend.Host`/`Backend.Port` with no configurability.
-Make it a managed entity so upstream TLS, circuit breaking, and retries are controllable.
-
-- [ ] Define `model.Cluster` — upstream connection config:
-  - `id`, `name`
-  - `endpoints []Endpoint` — list of `{ host, port, weight }`
-  - `tls` (optional) — upstream TLS: SNI, CA cert path or SDS, mTLS cert/key,
-    skip verify flag
-  - `connectTimeout` — default `5s`
-  - `circuitBreaker` (optional) — max connections, max pending requests,
-    max requests, max retries
-  - `healthCheck` (optional) — HTTP or gRPC health check path, interval,
-    timeout, unhealthy/healthy threshold
-  - `lbPolicy` — `ROUND_ROBIN` (default), `LEAST_REQUEST`, `RANDOM`, `RING_HASH`
-- [ ] Decouple `Backend` from inline host/port — `Route.Backends` becomes
-  `[]BackendRef { clusterID, weight }` (reference to a Cluster by ID)
-- [ ] Add `Cluster` CRUD to `store.Store` interface
-- [ ] Implement in `store/bolt` — new `clusters` bucket
-- [ ] Implement in `store/memory`
-- [ ] Add REST handlers: `GET/POST /api/v1/clusters`,
-  `GET/PUT/DELETE /api/v1/clusters/{clusterId}`
-- [ ] Update `gateway.Rebuild()` to fetch clusters from store
-- [ ] Update `xds/builder.go` — build Envoy Cluster from `model.Cluster`;
-  apply TLS, circuit breaker, health check, lb policy
+DONE — implemented as `Destination` entity. See Done section below.
 
 ### RouteAction — fill missing fields
 - [ ] `rewrite` — `prefixRewrite` or `regexRewrite` (pattern + substitution)
@@ -119,3 +96,16 @@ Make it a managed entity so upstream TLS, circuit breaking, and retries are cont
   - `xds/builder.go`: `BuildSnapshot(version, listeners, filters, groups, routes)` new signature; builds real Envoy Listener per `model.Listener`; fallback to hardcoded `rutoso_listener 0.0.0.0:80` if no listeners in store
   - Swagger docs regenerated via `make docs`
   - `go build ./...` and `go vet ./...` pass clean
+
+- [x] **Destination entity** — `model.Destination` with `DestinationOptions` (TLS, LB, circuit breaker, health check, outlier detection, discovery)
+  - `model/destination.go`: `Destination`, `DestinationOptions`, `TLSOptions`, `BalancingOptions`, `CircuitBreakerOptions`, `HealthCheckOptions`, `OutlierDetectionOptions`, `Discovery`; `BackendRef` and `HashPolicy` defined here (used by Route)
+  - `model/route.go`: `Route.Backends` changed from `[]Backend` to `[]BackendRef`; old `Backend` struct removed
+  - `store/store.go`: `SaveDestination`, `GetDestination`, `ListDestinations`, `DeleteDestination` added to interface
+  - `store/bolt/bolt.go`: `destinations` bucket + 4 CRUD methods
+  - `store/memory/memory.go`: `destinations` map + 4 CRUD methods
+  - `handlers/destinations.go`: full CRUD handlers with swag annotations
+  - `router.go`: `GET/POST /api/v1/destinations` and `GET/PUT/DELETE /api/v1/destinations/{destinationId}` registered
+  - `gateway/gateway.go`: `Rebuild()` fetches destinations from store, passes to `BuildSnapshot`
+  - `xds/builder.go`: `BuildSnapshot` signature updated; `buildClusterFromDestination` and `buildEndpointFromDestination` implemented; EDS/STATIC/STRICT_DNS auto-derivation via `clusterTypeFor`; old `buildCluster(model.Backend)` and `buildEndpoint(model.Backend)` removed
+  - `go build ./...` and `go vet ./...` pass clean
+  - Swagger docs regenerated

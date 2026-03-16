@@ -1,6 +1,6 @@
 // Package store defines the persistence interface used by Rutoso to read and
-// write routes, route groups, filters, and listeners, and to subscribe to
-// state change events.
+// write routes, route groups, filters, listeners, and destinations, and to
+// subscribe to state change events.
 package store
 
 import (
@@ -38,6 +38,9 @@ const (
 
 	// ResourceListener refers to a Listener resource.
 	ResourceListener ResourceType = "listener"
+
+	// ResourceDestination refers to a Destination resource.
+	ResourceDestination ResourceType = "destination"
 )
 
 // StoreEvent is emitted by the store whenever the state changes.
@@ -120,6 +123,22 @@ type Store interface {
 	// DeleteListener removes the listener with the given ID.
 	// Returns model.ErrNotFound if the listener does not exist.
 	DeleteListener(ctx context.Context, id string) error
+
+	// --- Destinations ---
+
+	// ListDestinations returns all destinations. The returned slice is never nil.
+	ListDestinations(ctx context.Context) ([]model.Destination, error)
+
+	// GetDestination returns the destination with the given ID.
+	// Returns model.ErrNotFound if no such destination exists.
+	GetDestination(ctx context.Context, id string) (model.Destination, error)
+
+	// SaveDestination creates or replaces the destination identified by d.ID.
+	SaveDestination(ctx context.Context, d model.Destination) error
+
+	// DeleteDestination removes the destination with the given ID.
+	// Returns model.ErrNotFound if the destination does not exist.
+	DeleteDestination(ctx context.Context, id string) error
 
 	// --- Subscriptions ---
 

@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	bucketRoutes    = "routes"
-	bucketGroups    = "groups"
-	bucketFilters   = "filters"
-	bucketListeners = "listeners"
+	bucketRoutes       = "routes"
+	bucketGroups       = "groups"
+	bucketFilters      = "filters"
+	bucketListeners    = "listeners"
+	bucketDestinations = "destinations"
 )
 
 // Store wraps a bbolt database and exposes CRUD operations for routes and groups.
@@ -39,7 +40,7 @@ func New(path string) (*Store, error) {
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, name := range []string{bucketRoutes, bucketGroups, bucketFilters, bucketListeners} {
+		for _, name := range []string{bucketRoutes, bucketGroups, bucketFilters, bucketListeners, bucketDestinations} {
 			if _, err := tx.CreateBucketIfNotExists([]byte(name)); err != nil {
 				return fmt.Errorf("creating bucket %q: %w", name, err)
 			}
@@ -371,6 +372,85 @@ func (s *Store) DeleteListener(_ context.Context, id string) error {
 			return fmt.Errorf("deleting listener %q: %w", id, err)
 		}
 		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceListener, ID: id})
+		return nil
+	})
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Destination operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListDestinations returns all destinations stored in the database.
+func (s *Store) ListDestinations(_ context.Context) ([]model.Destination, error) {
+	var destinations []model.Destination
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketDestinations))
+		return b.ForEach(func(_, v []byte) error {
+			var d model.Destination
+			if err := json.Unmarshal(v, &d); err != nil {
+				return fmt.Errorf("unmarshalling destination: %w", err)
+			}
+			destinations = append(destinations, d)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing destinations: %w", err)
+	}
+
+	if destinations == nil {
+		destinations = []model.Destination{}
+	}
+	return destinations, nil
+}
+
+// GetDestination returns the destination with the given ID, or model.ErrNotFound if absent.
+func (s *Store) GetDestination(_ context.Context, id string) (model.Destination, error) {
+	var destination model.Destination
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketDestinations))
+		v := b.Get([]byte(id))
+		if v == nil {
+			return fmt.Errorf("destination %q: %w", id, model.ErrNotFound)
+		}
+		return json.Unmarshal(v, &destination)
+	})
+	if err != nil {
+		return model.Destination{}, err
+	}
+	return destination, nil
+}
+
+// SaveDestination creates or replaces the destination with d.ID as key.
+func (s *Store) SaveDestination(_ context.Context, d model.Destination) error {
+	data, err := json.Marshal(d)
+	if err != nil {
+		return fmt.Errorf("marshalling destination: %w", err)
+	}
+
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketDestinations))
+		if err := b.Put([]byte(d.ID), data); err != nil {
+			return fmt.Errorf("saving destination %q: %w", d.ID, err)
+		}
+		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceDestination, ID: d.ID})
+		return nil
+	})
+}
+
+// DeleteDestination removes the destination with the given ID.
+func (s *Store) DeleteDestination(_ context.Context, id string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketDestinations))
+		if b.Get([]byte(id)) == nil {
+			return fmt.Errorf("destination %q: %w", id, model.ErrNotFound)
+		}
+		if err := b.Delete([]byte(id)); err != nil {
+			return fmt.Errorf("deleting destination %q: %w", id, err)
+		}
+		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceDestination, ID: id})
 		return nil
 	})
 }

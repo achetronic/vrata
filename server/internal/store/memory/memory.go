@@ -16,11 +16,12 @@ import (
 
 // Store is an in-memory, thread-safe implementation of store.Store.
 type Store struct {
-	mu      sync.RWMutex
-	routes   map[string]model.Route      // keyed by route ID
-	groups   map[string]model.RouteGroup // keyed by group ID
-	filters  map[string]model.Filter     // keyed by filter ID
-	listeners map[string]model.Listener  // keyed by listener ID
+	mu           sync.RWMutex
+	routes       map[string]model.Route       // keyed by route ID
+	groups       map[string]model.RouteGroup  // keyed by group ID
+	filters      map[string]model.Filter      // keyed by filter ID
+	listeners    map[string]model.Listener    // keyed by listener ID
+	destinations map[string]model.Destination // keyed by destination ID
 
 	subsMu sync.Mutex
 	subs   []chan store.StoreEvent
@@ -29,10 +30,11 @@ type Store struct {
 // New creates an empty in-memory Store.
 func New() *Store {
 	return &Store{
-		routes:    make(map[string]model.Route),
-		groups:    make(map[string]model.RouteGroup),
-		filters:   make(map[string]model.Filter),
-		listeners: make(map[string]model.Listener),
+		routes:       make(map[string]model.Route),
+		groups:       make(map[string]model.RouteGroup),
+		filters:      make(map[string]model.Filter),
+		listeners:    make(map[string]model.Listener),
+		destinations: make(map[string]model.Destination),
 	}
 }
 
@@ -237,6 +239,57 @@ func (s *Store) DeleteListener(_ context.Context, id string) error {
 	}
 	delete(s.listeners, id)
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceListener, ID: id})
+	return nil
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Destination operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListDestinations returns all destinations in insertion-independent order.
+func (s *Store) ListDestinations(_ context.Context) ([]model.Destination, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]model.Destination, 0, len(s.destinations))
+	for _, d := range s.destinations {
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+// GetDestination returns the destination with the given ID, or model.ErrNotFound.
+func (s *Store) GetDestination(_ context.Context, id string) (model.Destination, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	d, ok := s.destinations[id]
+	if !ok {
+		return model.Destination{}, fmt.Errorf("destination %q: %w", id, model.ErrNotFound)
+	}
+	return d, nil
+}
+
+// SaveDestination creates or replaces the destination identified by d.ID.
+func (s *Store) SaveDestination(_ context.Context, d model.Destination) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.destinations[d.ID] = d
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceDestination, ID: d.ID})
+	return nil
+}
+
+// DeleteDestination removes the destination with the given ID.
+func (s *Store) DeleteDestination(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.destinations[id]; !ok {
+		return fmt.Errorf("destination %q: %w", id, model.ErrNotFound)
+	}
+	delete(s.destinations, id)
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceDestination, ID: id})
 	return nil
 }
 

@@ -3,6 +3,7 @@ package xds
 
 import (
 	"fmt"
+	"net"
 	"regexp"
 	"time"
 
@@ -24,8 +25,8 @@ import (
 	"github.com/achetronic/rutoso/internal/model"
 )
 
-// BuildSnapshot converts listeners, filters, groups and routes into a complete
-// Envoy xDS Snapshot.
+// BuildSnapshot converts listeners, filters, groups, routes, and destinations
+// into a complete Envoy xDS Snapshot.
 //
 // Each model.Listener produces one Envoy Listener. Filters referenced by
 // FilterIDs are resolved and their configs are wired into the HCM filter chain
@@ -34,27 +35,46 @@ import (
 // When no listeners are stored, a default listener on 0.0.0.0:80 is generated
 // automatically so the xDS server always emits a valid snapshot.
 //
-// One Cluster + ClusterLoadAssignment is generated per unique Backend name.
-// All virtual hosts share a single RouteConfiguration.
-func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters []model.Filter, groups []model.RouteGroup, routes []model.Route) (*cachev3.Snapshot, error) {
-	// Build a lookup map so we can resolve route IDs in O(1).
+// One Cluster + ClusterLoadAssignment is generated per Destination. Routes
+// reference Destinations by ID via BackendRef.
+func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters []model.Filter, groups []model.RouteGroup, routes []model.Route, destinations []model.Destination) (*cachev3.Snapshot, error) {
+	// Build lookup maps for O(1) resolution.
 	routeByID := make(map[string]model.Route, len(routes))
 	for _, r := range routes {
 		routeByID[r.ID] = r
 	}
 
-	// Build a lookup map for filters so the listener builder can resolve them.
 	filterByID := make(map[string]model.Filter, len(modelFilters))
 	for _, f := range modelFilters {
 		filterByID[f.ID] = f
 	}
 
+	destByID := make(map[string]model.Destination, len(destinations))
+	for _, d := range destinations {
+		destByID[d.ID] = d
+	}
+
+	// Build one Envoy Cluster + ClusterLoadAssignment per Destination.
+	// Clusters are keyed by Destination ID so routes can reference them directly.
 	var (
 		clusters  []types.Resource
 		endpoints []types.Resource
 		vhosts    []*routev3.VirtualHost
-		seen      = make(map[string]bool) // tracks already-created cluster names
+		seen      = make(map[string]bool) // avoids duplicate clusters
 	)
+
+	for _, d := range destinations {
+		if seen[d.ID] {
+			continue
+		}
+		seen[d.ID] = true
+		clusters = append(clusters, buildClusterFromDestination(d))
+		// Only emit a static ClusterLoadAssignment for non-EDS clusters.
+		// EDS clusters receive endpoint updates via the EndpointSlice watcher.
+		if !isEDS(d) {
+			endpoints = append(endpoints, buildEndpointFromDestination(d))
+		}
+	}
 
 	for _, g := range groups {
 		for _, routeID := range g.RouteIDs {
@@ -63,18 +83,7 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters
 				// Route referenced by group does not exist; skip gracefully.
 				continue
 			}
-
-			vhost := buildVirtualHost(g, r)
-			vhosts = append(vhosts, vhost)
-
-			for _, b := range r.Backends {
-				if seen[b.Name] {
-					continue
-				}
-				seen[b.Name] = true
-				clusters = append(clusters, buildCluster(b))
-				endpoints = append(endpoints, buildEndpoint(b))
-			}
+			vhosts = append(vhosts, buildVirtualHost(g, r))
 		}
 	}
 
@@ -245,13 +254,14 @@ func buildRouteMatch(g model.RouteGroup, r model.Route) *routev3.RouteMatch {
 }
 
 // buildWeightedClusterAction creates a weighted cluster route action.
-// If only one backend is defined, a simple cluster action is used instead.
+// Cluster names match Destination IDs. If only one backend is defined,
+// a simple cluster action is used instead of a weighted cluster.
 func buildWeightedClusterAction(r model.Route) *routev3.Route_Route {
 	if len(r.Backends) == 1 {
 		return &routev3.Route_Route{
 			Route: &routev3.RouteAction{
 				ClusterSpecifier: &routev3.RouteAction_Cluster{
-					Cluster: r.Backends[0].Name,
+					Cluster: r.Backends[0].DestinationID,
 				},
 			},
 		}
@@ -260,7 +270,7 @@ func buildWeightedClusterAction(r model.Route) *routev3.Route_Route {
 	var wcs []*routev3.WeightedCluster_ClusterWeight
 	for _, b := range r.Backends {
 		wcs = append(wcs, &routev3.WeightedCluster_ClusterWeight{
-			Name:   b.Name,
+			Name:   b.DestinationID,
 			Weight: wrapperspb.UInt32(b.Weight),
 		})
 	}
@@ -297,24 +307,197 @@ func buildHeaderMatcher(h model.HeaderMatcher) *routev3.HeaderMatcher {
 	return hm
 }
 
-// buildCluster creates an Envoy Cluster for a Backend using EDS discovery.
-func buildCluster(b model.Backend) *clusterv3.Cluster {
-	return &clusterv3.Cluster{
-		Name:                 b.Name,
-		ConnectTimeout:       durationpb.New(5 * time.Second),
-		ClusterDiscoveryType: &clusterv3.Cluster_Type{Type: clusterv3.Cluster_EDS},
-		EdsClusterConfig: &clusterv3.Cluster_EdsClusterConfig{
-			EdsConfig: &corev3.ConfigSource{
-				ConfigSourceSpecifier: &corev3.ConfigSource_Ads{},
-			},
-		},
+// isEDS reports whether a Destination should use EDS (Kubernetes discovery).
+func isEDS(d model.Destination) bool {
+	return d.Options != nil &&
+		d.Options.Discovery != nil &&
+		d.Options.Discovery.Type == model.DiscoveryTypeKubernetes
+}
+
+// clusterTypeFor derives the Envoy cluster discovery type from the Destination.
+// Rules:
+//   - Kubernetes discovery  → EDS (endpoints pushed by EndpointSlice watcher)
+//   - Host is a bare IP     → STATIC
+//   - Host is an FQDN       → STRICT_DNS
+func clusterTypeFor(d model.Destination) clusterv3.Cluster_DiscoveryType {
+	if isEDS(d) {
+		return clusterv3.Cluster_EDS
+	}
+	if net.ParseIP(d.Host) != nil {
+		return clusterv3.Cluster_STATIC
+	}
+	return clusterv3.Cluster_STRICT_DNS
+}
+
+// connectTimeoutFor parses the user-supplied connect timeout string, falling
+// back to 5 s when the field is empty or unparseable.
+func connectTimeoutFor(d model.Destination) *durationpb.Duration {
+	if d.Options != nil && d.Options.ConnectTimeout != "" {
+		if dur, err := time.ParseDuration(d.Options.ConnectTimeout); err == nil {
+			return durationpb.New(dur)
+		}
+	}
+	return durationpb.New(5 * time.Second)
+}
+
+// lbPolicyFor maps the user-supplied algorithm string to an Envoy LbPolicy.
+func lbPolicyFor(d model.Destination) clusterv3.Cluster_LbPolicy {
+	if d.Options == nil || d.Options.Balancing == nil {
+		return clusterv3.Cluster_ROUND_ROBIN
+	}
+	switch d.Options.Balancing.Algorithm {
+	case model.LBPolicyLeastRequest:
+		return clusterv3.Cluster_LEAST_REQUEST
+	case model.LBPolicyRingHash:
+		return clusterv3.Cluster_RING_HASH
+	case model.LBPolicyMaglev:
+		return clusterv3.Cluster_MAGLEV
+	case model.LBPolicyRandom:
+		return clusterv3.Cluster_RANDOM
+	default:
+		return clusterv3.Cluster_ROUND_ROBIN
 	}
 }
 
-// buildEndpoint creates the ClusterLoadAssignment (EDS resource) for a Backend.
-func buildEndpoint(b model.Backend) *endpointv3.ClusterLoadAssignment {
+// buildClusterFromDestination converts a model.Destination into an Envoy Cluster.
+// Cluster type is derived automatically (EDS / STATIC / STRICT_DNS).
+// All optional sub-configs (TLS, circuit breakers, health checks, outlier
+// detection, ring-hash / maglev) are applied only when the corresponding
+// Options fields are populated.
+func buildClusterFromDestination(d model.Destination) *clusterv3.Cluster {
+	ctype := clusterTypeFor(d)
+	lbPolicy := lbPolicyFor(d)
+
+	c := &clusterv3.Cluster{
+		Name:                 d.ID,
+		ConnectTimeout:       connectTimeoutFor(d),
+		ClusterDiscoveryType: &clusterv3.Cluster_Type{Type: ctype},
+		LbPolicy:             lbPolicy,
+	}
+
+	// EDS: delegate endpoint discovery to the xDS server (EndpointSlice watcher).
+	if ctype == clusterv3.Cluster_EDS {
+		c.EdsClusterConfig = &clusterv3.Cluster_EdsClusterConfig{
+			EdsConfig: &corev3.ConfigSource{
+				ConfigSourceSpecifier: &corev3.ConfigSource_Ads{},
+			},
+			ServiceName: d.ID,
+		}
+	}
+
+	if d.Options == nil {
+		return c
+	}
+
+	// Ring-hash / Maglev config.
+	if d.Options.Balancing != nil {
+		switch lbPolicy {
+		case clusterv3.Cluster_RING_HASH:
+			rhc := &clusterv3.Cluster_RingHashLbConfig{}
+			if d.Options.Balancing.RingSize != nil {
+				rhc.MinimumRingSize = wrapperspb.UInt64(d.Options.Balancing.RingSize.Min)
+				rhc.MaximumRingSize = wrapperspb.UInt64(d.Options.Balancing.RingSize.Max)
+				_ = rhc // suppress unused if only size is set
+			}
+			c.LbConfig = &clusterv3.Cluster_RingHashLbConfig_{RingHashLbConfig: rhc}
+		case clusterv3.Cluster_MAGLEV:
+			if d.Options.Balancing.MaglevTableSize > 0 {
+				c.LbConfig = &clusterv3.Cluster_MaglevLbConfig_{
+					MaglevLbConfig: &clusterv3.Cluster_MaglevLbConfig{
+						TableSize: wrapperspb.UInt64(d.Options.Balancing.MaglevTableSize),
+					},
+				}
+			}
+		}
+	}
+
+	// Circuit breakers.
+	if cb := d.Options.CircuitBreaker; cb != nil {
+		c.CircuitBreakers = &clusterv3.CircuitBreakers{
+			Thresholds: []*clusterv3.CircuitBreakers_Thresholds{
+				{
+					MaxConnections:     wrapperspb.UInt32(cb.MaxConnections),
+					MaxPendingRequests: wrapperspb.UInt32(cb.MaxPendingRequests),
+					MaxRequests:        wrapperspb.UInt32(cb.MaxRequests),
+					MaxRetries:         wrapperspb.UInt32(cb.MaxRetries),
+				},
+			},
+		}
+	}
+
+	// Health checks.
+	if hc := d.Options.HealthCheck; hc != nil {
+		interval := 10 * time.Second
+		timeout := 5 * time.Second
+		if hc.Interval != "" {
+			if dur, err := time.ParseDuration(hc.Interval); err == nil {
+				interval = dur
+			}
+		}
+		if hc.Timeout != "" {
+			if dur, err := time.ParseDuration(hc.Timeout); err == nil {
+				timeout = dur
+			}
+		}
+		c.HealthChecks = []*corev3.HealthCheck{
+			{
+				Interval: durationpb.New(interval),
+				Timeout:  durationpb.New(timeout),
+				UnhealthyThreshold: wrapperspb.UInt32(func() uint32 {
+					if hc.UnhealthyThreshold > 0 {
+						return hc.UnhealthyThreshold
+					}
+					return 3
+				}()),
+				HealthyThreshold: wrapperspb.UInt32(func() uint32 {
+					if hc.HealthyThreshold > 0 {
+						return hc.HealthyThreshold
+					}
+					return 2
+				}()),
+				HealthChecker: &corev3.HealthCheck_HttpHealthCheck_{
+					HttpHealthCheck: &corev3.HealthCheck_HttpHealthCheck{
+						Path: hc.Path,
+					},
+				},
+			},
+		}
+	}
+
+	// Outlier detection.
+	if od := d.Options.OutlierDetection; od != nil {
+		odc := &clusterv3.OutlierDetection{}
+		if od.Consecutive5xx > 0 {
+			odc.Consecutive_5Xx = wrapperspb.UInt32(od.Consecutive5xx)
+		}
+		if od.ConsecutiveGatewayErrors > 0 {
+			odc.ConsecutiveGatewayFailure = wrapperspb.UInt32(od.ConsecutiveGatewayErrors)
+		}
+		if od.MaxEjectionPercent > 0 {
+			odc.MaxEjectionPercent = wrapperspb.UInt32(od.MaxEjectionPercent)
+		}
+		if od.Interval != "" {
+			if dur, err := time.ParseDuration(od.Interval); err == nil {
+				odc.Interval = durationpb.New(dur)
+			}
+		}
+		if od.BaseEjectionTime != "" {
+			if dur, err := time.ParseDuration(od.BaseEjectionTime); err == nil {
+				odc.BaseEjectionTime = durationpb.New(dur)
+			}
+		}
+		c.OutlierDetection = odc
+	}
+
+	return c
+}
+
+// buildEndpointFromDestination creates a static ClusterLoadAssignment for
+// STATIC and STRICT_DNS clusters. EDS clusters must NOT call this function —
+// their endpoints are pushed dynamically by the EndpointSlice watcher.
+func buildEndpointFromDestination(d model.Destination) *endpointv3.ClusterLoadAssignment {
 	return &endpointv3.ClusterLoadAssignment{
-		ClusterName: b.Name,
+		ClusterName: d.ID,
 		Endpoints: []*endpointv3.LocalityLbEndpoints{
 			{
 				LbEndpoints: []*endpointv3.LbEndpoint{
@@ -324,9 +507,9 @@ func buildEndpoint(b model.Backend) *endpointv3.ClusterLoadAssignment {
 								Address: &corev3.Address{
 									Address: &corev3.Address_SocketAddress{
 										SocketAddress: &corev3.SocketAddress{
-											Address: b.Host,
+											Address: d.Host,
 											PortSpecifier: &corev3.SocketAddress_PortValue{
-												PortValue: b.Port,
+												PortValue: d.Port,
 											},
 										},
 									},
@@ -339,6 +522,7 @@ func buildEndpoint(b model.Backend) *endpointv3.ClusterLoadAssignment {
 		},
 	}
 }
+
 
 // buildListenerFromModel creates an Envoy Listener from a model.Listener.
 // It resolves the filter IDs against the provided map and wires each filter
