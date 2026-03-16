@@ -1,0 +1,14 @@
+server:
+  # Address the REST API HTTP server listens on.
+  address: "${SERVER_ADDRESS:-:8080}"
+
+xds:
+  # Address the gRPC xDS control-plane server listens on.
+  # Envoy proxies must be configured to connect here.
+  address: "${XDS_ADDRESS:-:18000}"
+
+log:
+  # format: "console" (human-readable) or "json"
+  format: "${LOG_FORMAT:-console}"
+  # level: "debug", "info", "warn", or "error"
+  level: "${LOG_LEVEL:-info}"
