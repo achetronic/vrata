@@ -14,8 +14,11 @@ import (
 	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	listenerv3 "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
+	accesslogcorev3 "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
+	accesslogv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/file/v3"
 	routerv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/router/v3"
 	hcmv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+	upstreamhttpv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/upstreams/http/v3"
 	matcherv3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
@@ -138,11 +141,23 @@ func buildVirtualHost(g model.RouteGroup, r model.Route) *routev3.VirtualHost {
 
 	route := buildRouteAction(g, r)
 
-	return &routev3.VirtualHost{
+	vh := &routev3.VirtualHost{
 		Name:    fmt.Sprintf("%s__%s", g.ID, r.ID),
 		Domains: domains,
 		Routes:  []*routev3.Route{route},
 	}
+
+	// Group-level default retry policy.
+	if g.RetryDefault != nil {
+		vh.RetryPolicy = buildRetryPolicy(g.RetryDefault)
+	}
+
+	// Include x-envoy-attempt-count header.
+	if g.IncludeAttemptCount {
+		vh.IncludeRequestAttemptCount = true
+	}
+
+	return vh
 }
 
 // buildRouteAction builds the Envoy Route message for a single Rutoso Route,
@@ -280,6 +295,11 @@ func buildRouteMatch(g model.RouteGroup, r model.Route) *routev3.RouteMatch {
 		rm.QueryParameters = append(rm.QueryParameters, buildQueryParamMatcher(qp))
 	}
 
+	// gRPC-only matching.
+	if r.Match.GRPC {
+		rm.Grpc = &routev3.RouteMatch_GrpcRouteMatchOptions{}
+	}
+
 	return rm
 }
 
@@ -314,6 +334,35 @@ func buildForwardAction(r model.Route) *routev3.Route_Route {
 	applyRewrite(ra, f.Rewrite)
 	applyMirror(ra, f.Mirror)
 	applyHashPolicy(ra, f.HashPolicy)
+
+	// WebSocket upgrade.
+	if f.Websocket {
+		ra.UpgradeConfigs = append(ra.UpgradeConfigs, &routev3.RouteAction_UpgradeConfig{
+			UpgradeType: "websocket",
+		})
+	}
+
+	// Max gRPC timeout.
+	if f.MaxGRPCTimeout != "" {
+		if dur, err := time.ParseDuration(f.MaxGRPCTimeout); err == nil {
+			ra.MaxGrpcTimeout = durationpb.New(dur)
+		}
+	}
+
+	// Internal redirect policy.
+	if ir := f.InternalRedirect; ir != nil {
+		irp := &routev3.InternalRedirectPolicy{}
+		if ir.MaxRedirects > 0 {
+			irp.MaxInternalRedirects = wrapperspb.UInt32(ir.MaxRedirects)
+		}
+		if ir.AllowCrossScheme {
+			irp.AllowCrossSchemeRedirect = true
+		}
+		for _, code := range ir.RedirectCodes {
+			irp.RedirectResponseCodes = append(irp.RedirectResponseCodes, code)
+		}
+		ra.InternalRedirectPolicy = irp
+	}
 
 	return &routev3.Route_Route{Route: ra}
 }
@@ -423,6 +472,12 @@ func applyRetryPolicy(ra *routev3.RouteAction, retry *model.RouteRetry) {
 	if retry == nil {
 		return
 	}
+	ra.RetryPolicy = buildRetryPolicy(retry)
+}
+
+// buildRetryPolicy converts a model.RouteRetry into an Envoy RetryPolicy.
+// Used by both per-route (RouteAction) and per-group (VirtualHost) retry config.
+func buildRetryPolicy(retry *model.RouteRetry) *routev3.RetryPolicy {
 	rp := &routev3.RetryPolicy{
 		NumRetries: wrapperspb.UInt32(retry.Attempts),
 	}
@@ -462,7 +517,7 @@ func applyRetryPolicy(ra *routev3.RouteAction, retry *model.RouteRetry) {
 		rp.RetryBackOff = bo
 	}
 
-	ra.RetryPolicy = rp
+	return rp
 }
 
 // applyRewrite sets prefix rewrite, regex rewrite, and host rewrite on the
@@ -787,6 +842,62 @@ func buildClusterFromDestination(d model.Destination) *clusterv3.Cluster {
 		c.OutlierDetection = odc
 	}
 
+	// HTTP/2 upstream protocol.
+	if d.Options.HTTP2 {
+		upstreamOpts := &upstreamhttpv3.HttpProtocolOptions{
+			UpstreamProtocolOptions: &upstreamhttpv3.HttpProtocolOptions_ExplicitHttpConfig_{
+				ExplicitHttpConfig: &upstreamhttpv3.HttpProtocolOptions_ExplicitHttpConfig{
+					ProtocolConfig: &upstreamhttpv3.HttpProtocolOptions_ExplicitHttpConfig_Http2ProtocolOptions{
+						Http2ProtocolOptions: &corev3.Http2ProtocolOptions{},
+					},
+				},
+			},
+		}
+		if upAny, err := anypb.New(upstreamOpts); err == nil {
+			c.TypedExtensionProtocolOptions = map[string]*anypb.Any{
+				"envoy.extensions.upstreams.http.v3.HttpProtocolOptions": upAny,
+			}
+		}
+	}
+
+	// DNS settings (STRICT_DNS only).
+	if d.Options.DNSRefreshRate != "" {
+		if dur, err := time.ParseDuration(d.Options.DNSRefreshRate); err == nil {
+			c.DnsRefreshRate = durationpb.New(dur)
+		}
+	}
+	switch d.Options.DNSLookupFamily {
+	case "V4_ONLY":
+		c.DnsLookupFamily = clusterv3.Cluster_V4_ONLY
+	case "V6_ONLY":
+		c.DnsLookupFamily = clusterv3.Cluster_V6_ONLY
+	case "AUTO", "":
+		c.DnsLookupFamily = clusterv3.Cluster_AUTO
+	}
+
+	// Max requests per connection.
+	if d.Options.MaxRequestsPerConnection > 0 {
+		c.MaxRequestsPerConnection = wrapperspb.UInt32(d.Options.MaxRequestsPerConnection)
+	}
+
+	// Slow start.
+	if ss := d.Options.SlowStart; ss != nil {
+		ssc := &clusterv3.Cluster_SlowStartConfig{}
+		if ss.Window != "" {
+			if dur, err := time.ParseDuration(ss.Window); err == nil {
+				ssc.SlowStartWindow = durationpb.New(dur)
+			}
+		}
+		if ss.Aggression > 0 {
+			ssc.Aggression = &corev3.RuntimeDouble{DefaultValue: ss.Aggression}
+		}
+		c.LbConfig = &clusterv3.Cluster_RoundRobinLbConfig_{
+			RoundRobinLbConfig: &clusterv3.Cluster_RoundRobinLbConfig{
+				SlowStartConfig: ssc,
+			},
+		}
+	}
+
 	return c
 }
 
@@ -881,12 +992,63 @@ func buildListenerFromModel(ml model.Listener, filterByID map[string]model.Filte
 		HttpFilters: httpFilters,
 	}
 
+	// HTTP/2 support (required for gRPC clients).
+	if ml.HTTP2 {
+		hcm.CodecType = hcmv3.HttpConnectionManager_AUTO
+	}
+
+	// Server name header.
+	if ml.ServerName != "" {
+		hcm.ServerName = ml.ServerName
+	}
+
+	// Max request headers size.
+	if ml.MaxRequestHeadersKB > 0 {
+		hcm.MaxRequestHeadersKb = wrapperspb.UInt32(ml.MaxRequestHeadersKB)
+	}
+
+	// Access log.
+	if al := ml.AccessLog; al != nil {
+		accessLogConfig := &accesslogv3.FileAccessLog{
+			Path: al.Path,
+		}
+		// Format: JSON or text template.
+		if al.JSON {
+			if al.Format != "" {
+				accessLogConfig.AccessLogFormat = &accesslogv3.FileAccessLog_LogFormat{
+					LogFormat: &corev3.SubstitutionFormatString{
+						Format: &corev3.SubstitutionFormatString_TextFormat{
+							TextFormat: al.Format,
+						},
+					},
+				}
+			}
+		} else if al.Format != "" {
+			accessLogConfig.AccessLogFormat = &accesslogv3.FileAccessLog_LogFormat{
+				LogFormat: &corev3.SubstitutionFormatString{
+					Format: &corev3.SubstitutionFormatString_TextFormat{
+						TextFormat: al.Format,
+					},
+				},
+			}
+		}
+		alAny, err := anypb.New(accessLogConfig)
+		if err == nil {
+			hcm.AccessLog = []*accesslogcorev3.AccessLog{
+				{
+					Name:       "envoy.access_loggers.file",
+					ConfigType: &accesslogcorev3.AccessLog_TypedConfig{TypedConfig: alAny},
+				},
+			}
+		}
+	}
+
 	hcmAny, err := anypb.New(hcm)
 	if err != nil {
 		return nil, fmt.Errorf("marshalling HCM to Any: %w", err)
 	}
 
-	return &listenerv3.Listener{
+	l := &listenerv3.Listener{
 		Name: ml.ID,
 		Address: &corev3.Address{
 			Address: &corev3.Address_SocketAddress{
@@ -908,7 +1070,27 @@ func buildListenerFromModel(ml model.Listener, filterByID map[string]model.Filte
 				},
 			},
 		},
-	}, nil
+	}
+
+	// TCP-level listener filters.
+	for _, lf := range ml.ListenerFilters {
+		switch lf.Type {
+		case model.ListenerFilterTLSInspector:
+			l.ListenerFilters = append(l.ListenerFilters, &listenerv3.ListenerFilter{
+				Name: "envoy.filters.listener.tls_inspector",
+			})
+		case model.ListenerFilterProxyProtocol:
+			l.ListenerFilters = append(l.ListenerFilters, &listenerv3.ListenerFilter{
+				Name: "envoy.filters.listener.proxy_protocol",
+			})
+		case model.ListenerFilterOriginalDst:
+			l.ListenerFilters = append(l.ListenerFilters, &listenerv3.ListenerFilter{
+				Name: "envoy.filters.listener.original_dst",
+			})
+		}
+	}
+
+	return l, nil
 }
 
 // buildHTTPFilter converts a model.Filter into an Envoy HttpFilter proto.

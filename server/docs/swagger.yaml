@@ -1,5 +1,29 @@
 components:
   schemas:
+    model.AccessLogConfig:
+      description: |-
+        AccessLog configures access logging for this listener.
+        When nil, no access logs are emitted.
+        Maps to HttpConnectionManager.access_log.
+      properties:
+        format:
+          description: |-
+            Format is the log line format using Envoy's command operator syntax.
+            When empty, Envoy uses its default format.
+            Example: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL% %RESPONSE_CODE%"
+          type: string
+        json:
+          description: |-
+            JSON switches the log output to JSON format. When true, Format is
+            interpreted as a JSON template (map of key to format string).
+            When false, Format is used as a plain text template.
+          type: boolean
+        path:
+          description: |-
+            Path is the file path where access logs are written.
+            Use "/dev/stdout" for container-friendly stdout logging.
+          type: string
+      type: object
     model.BackendRef:
       properties:
         destinationId:
@@ -156,10 +180,36 @@ components:
           type: string
         discovery:
           $ref: '#/components/schemas/model.DestinationDiscovery'
+        dnsLookupFamily:
+          description: |-
+            DNSLookupFamily selects the IP version for DNS resolution.
+            Accepted values: "AUTO", "V4_ONLY", "V6_ONLY". Default: "AUTO".
+            Maps to Cluster.dns_lookup_family.
+          type: string
+        dnsRefreshRate:
+          description: |-
+            DNSRefreshRate controls how often STRICT_DNS clusters re-resolve the
+            host. Ignored for STATIC and EDS clusters. Accepts Go duration strings.
+            Default: "5s". Maps to Cluster.dns_refresh_rate.
+          type: string
         healthCheck:
           $ref: '#/components/schemas/model.HealthCheckOptions'
+        http2:
+          description: |-
+            HTTP2 enables HTTP/2 to the upstream. Required when the backend speaks
+            gRPC or HTTP/2. Maps to Cluster.typed_extension_protocol_options with
+            envoy.extensions.upstreams.http.v3.HttpProtocolOptions.
+          type: boolean
+        maxRequestsPerConnection:
+          description: |-
+            MaxRequestsPerConnection drains a connection to the upstream after this
+            many requests. 0 means unlimited. Useful for load balancing across new
+            pods. Maps to Cluster.max_requests_per_connection.
+          type: integer
         outlierDetection:
           $ref: '#/components/schemas/model.OutlierDetectionOptions'
+        slowStart:
+          $ref: '#/components/schemas/model.SlowStartOptions'
         tls:
           $ref: '#/components/schemas/model.TLSOptions'
       type: object
@@ -336,6 +386,15 @@ components:
             $ref: '#/components/schemas/model.HashPolicy'
           type: array
           uniqueItems: false
+        internalRedirect:
+          $ref: '#/components/schemas/model.InternalRedirectPolicy'
+        maxGrpcTimeout:
+          description: |-
+            MaxGRPCTimeout caps the timeout that a gRPC client can request via
+            the grpc-timeout header. If the client asks for more, Envoy clamps
+            it to this value. Accepts Go duration strings (e.g. "30s").
+            Maps to RouteAction.max_grpc_timeout.
+          type: string
         mirror:
           $ref: '#/components/schemas/model.RouteMirror'
         retry:
@@ -344,6 +403,13 @@ components:
           $ref: '#/components/schemas/model.RouteRewrite'
         timeouts:
           $ref: '#/components/schemas/model.RouteTimeouts'
+        websocket:
+          description: |-
+            Websocket enables HTTP/1.1 WebSocket upgrade for this route.
+            When true, Envoy allows clients to upgrade the connection to a
+            WebSocket and proxies frames bidirectionally to the upstream.
+            Maps to RouteAction.upgrade_configs with type "websocket".
+          type: boolean
       type: object
     model.HashPolicy:
       properties:
@@ -414,6 +480,31 @@ components:
             endpoint is marked unhealthy. Default: 3.
             Maps to unhealthy_threshold.
           type: integer
+      type: object
+    model.InternalRedirectPolicy:
+      description: |-
+        InternalRedirect controls Envoy's behaviour when the upstream returns
+        a redirect (3xx). Instead of forwarding the redirect to the client,
+        Envoy can follow it internally and return the final response.
+      properties:
+        allowCrossScheme:
+          description: |-
+            AllowCrossScheme allows internal redirects that change the scheme
+            (e.g. http to https). Default: false.
+          type: boolean
+        maxRedirects:
+          description: |-
+            MaxRedirects is the maximum number of internal redirects Envoy will
+            follow before returning the redirect to the client. Default: 1.
+          type: integer
+        redirectCodes:
+          description: |-
+            RedirectCodes lists the HTTP status codes treated as redirects.
+            Default: [302]. Other common values: 301, 303, 307, 308.
+          items:
+            type: integer
+          type: array
+          uniqueItems: false
       type: object
     model.JWTClaimHeader:
       properties:
@@ -521,6 +612,8 @@ components:
       - LBPolicyRandom
     model.Listener:
       properties:
+        accessLog:
+          $ref: '#/components/schemas/model.AccessLogConfig'
         address:
           description: |-
             Address is the IP address the listener binds to.
@@ -534,18 +627,63 @@ components:
             type: string
           type: array
           uniqueItems: false
+        http2:
+          description: |-
+            HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.
+            When true, the HCM codec type is set to AUTO (accepts both HTTP/1.1
+            and HTTP/2). When false, only HTTP/1.1 is accepted.
+            Maps to HttpConnectionManager.codec_type.
+          type: boolean
         id:
           description: ID is the unique identifier of the listener.
           type: string
+        listenerFilters:
+          description: |-
+            ListenerFilters are TCP-level filters evaluated before the HTTP
+            connection manager. Common examples: tls_inspector (required for
+            TLS/SNI), proxy_protocol (PROXY protocol v1/v2 from load balancers).
+            Maps to Listener.listener_filters.
+          items:
+            $ref: '#/components/schemas/model.ListenerFilter'
+          type: array
+          uniqueItems: false
+        maxRequestHeadersKB:
+          description: |-
+            MaxRequestHeadersKB limits the total size of request headers in
+            kilobytes. Requests exceeding this limit receive a 431 response.
+            Default: 60 (Envoy's default). Maps to HCM.max_request_headers_kb.
+          type: integer
         name:
           description: Name is a human-readable label for the listener.
           type: string
         port:
           description: Port is the TCP port the listener binds to.
           type: integer
+        serverName:
+          description: |-
+            ServerName sets the "server" header Envoy adds to responses.
+            When empty, Envoy uses its default ("envoy").
+            Maps to HttpConnectionManager.server_name.
+          type: string
         tls:
           $ref: '#/components/schemas/model.ListenerTLS'
       type: object
+    model.ListenerFilter:
+      properties:
+        type:
+          $ref: '#/components/schemas/model.ListenerFilterType'
+      type: object
+    model.ListenerFilterType:
+      description: Type selects the listener filter.
+      enum:
+      - tls_inspector
+      - proxy_protocol
+      - original_dst
+      type: string
+      x-enum-varnames:
+      - ListenerFilterTLSInspector
+      - ListenerFilterProxyProtocol
+      - ListenerFilterOriginalDst
     model.ListenerTLS:
       description: |-
         TLS holds optional TLS termination configuration.
@@ -575,6 +713,11 @@ components:
     model.MatchRule:
       description: Match defines the conditions that a request must satisfy.
       properties:
+        grpc:
+          description: |-
+            GRPC restricts this match to gRPC requests only (content-type
+            application/grpc). Maps to RouteMatch.grpc.
+          type: boolean
         headers:
           description: Headers are request header matchers that must all match.
           items:
@@ -791,6 +934,13 @@ components:
         id:
           description: ID is the unique identifier of the group.
           type: string
+        includeAttemptCount:
+          description: |-
+            IncludeAttemptCount makes Envoy add the x-envoy-attempt-count header
+            to upstream requests, indicating how many times the request has been
+            attempted (including the original). Maps to
+            VirtualHost.include_request_attempt_count.
+          type: boolean
         name:
           description: Name is a human-readable label for the group.
           type: string
@@ -805,6 +955,8 @@ components:
             namespace. It is composed with the route's own path specifier according
             to the rules described above. Mutually exclusive with PathPrefix.
           type: string
+        retryDefault:
+          $ref: '#/components/schemas/model.RouteRetry'
         routeIds:
           description: |-
             RouteIDs lists the IDs of the routes that belong to this group.
@@ -934,6 +1086,25 @@ components:
             Request is the total time the entire request may take from the moment
             Envoy receives the first byte from the client until the response is
             fully sent. Accepts Go duration strings (e.g. "30s", "1m").
+          type: string
+      type: object
+    model.SlowStartOptions:
+      description: |-
+        SlowStart configures gradual traffic ramp-up to new endpoints.
+        Helps avoid overwhelming a freshly-started pod with full traffic.
+        Maps to Cluster.slow_start_config.
+      properties:
+        aggression:
+          description: |-
+            Aggression controls how aggressively weight ramps up. Values > 1.0
+            produce a steeper ramp at the end; values < 1.0 ramp steeply at the
+            start. Default: 1.0 (linear). Maps to aggression.
+          type: number
+        window:
+          description: |-
+            Window is how long the slow-start period lasts after an endpoint
+            becomes healthy. Accepts Go duration strings (e.g. "30s", "2m").
+            Maps to slow_start_window.
           type: string
       type: object
     model.TLSMode:

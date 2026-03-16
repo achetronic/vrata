@@ -90,6 +90,31 @@ type DestinationOptions struct {
 	//   IP address  → STATIC
 	//   FQDN        → STRICT_DNS
 	Discovery *DestinationDiscovery `json:"discovery,omitempty"`
+
+	// HTTP2 enables HTTP/2 to the upstream. Required when the backend speaks
+	// gRPC or HTTP/2. Maps to Cluster.typed_extension_protocol_options with
+	// envoy.extensions.upstreams.http.v3.HttpProtocolOptions.
+	HTTP2 bool `json:"http2,omitempty"`
+
+	// DNSRefreshRate controls how often STRICT_DNS clusters re-resolve the
+	// host. Ignored for STATIC and EDS clusters. Accepts Go duration strings.
+	// Default: "5s". Maps to Cluster.dns_refresh_rate.
+	DNSRefreshRate string `json:"dnsRefreshRate,omitempty"`
+
+	// DNSLookupFamily selects the IP version for DNS resolution.
+	// Accepted values: "AUTO", "V4_ONLY", "V6_ONLY". Default: "AUTO".
+	// Maps to Cluster.dns_lookup_family.
+	DNSLookupFamily string `json:"dnsLookupFamily,omitempty"`
+
+	// MaxRequestsPerConnection drains a connection to the upstream after this
+	// many requests. 0 means unlimited. Useful for load balancing across new
+	// pods. Maps to Cluster.max_requests_per_connection.
+	MaxRequestsPerConnection uint32 `json:"maxRequestsPerConnection,omitempty"`
+
+	// SlowStart configures gradual traffic ramp-up to new endpoints.
+	// Helps avoid overwhelming a freshly-started pod with full traffic.
+	// Maps to Cluster.slow_start_config.
+	SlowStart *SlowStartOptions `json:"slowStart,omitempty"`
 }
 
 // TLSOptions configures the upstream TLS transport socket.
@@ -238,6 +263,22 @@ type OutlierDetectionOptions struct {
 	// ejected simultaneously. Default: 10.
 	// Maps to max_ejection_percent.
 	MaxEjectionPercent uint32 `json:"maxEjectionPercent,omitempty"`
+}
+
+// SlowStartOptions configures gradual traffic ramp-up to new endpoints.
+// During the slow-start window, Envoy applies a reduced weight to the endpoint
+// that increases linearly until the window elapses.
+// Maps to Cluster.slow_start_config.
+type SlowStartOptions struct {
+	// Window is how long the slow-start period lasts after an endpoint
+	// becomes healthy. Accepts Go duration strings (e.g. "30s", "2m").
+	// Maps to slow_start_window.
+	Window string `json:"window" yaml:"window"`
+
+	// Aggression controls how aggressively weight ramps up. Values > 1.0
+	// produce a steeper ramp at the end; values < 1.0 ramp steeply at the
+	// start. Default: 1.0 (linear). Maps to aggression.
+	Aggression float64 `json:"aggression,omitempty" yaml:"aggression,omitempty"`
 }
 
 // DestinationDiscovery enables dynamic endpoint resolution beyond plain DNS.

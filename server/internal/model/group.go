@@ -59,6 +59,17 @@ type RouteGroup struct {
 	// routes in the group. If a route also carries an override for the same
 	// filter, the route override wins entirely.
 	FilterOverrides map[string]FilterOverride `json:"filterOverrides,omitempty" yaml:"filterOverrides,omitempty"`
+
+	// RetryDefault is the default retry policy applied to all routes in this
+	// group. Individual routes can override this by setting their own
+	// ForwardAction.Retry. Maps to VirtualHost.retry_policy.
+	RetryDefault *RouteRetry `json:"retryDefault,omitempty" yaml:"retryDefault,omitempty"`
+
+	// IncludeAttemptCount makes Envoy add the x-envoy-attempt-count header
+	// to upstream requests, indicating how many times the request has been
+	// attempted (including the original). Maps to
+	// VirtualHost.include_request_attempt_count.
+	IncludeAttemptCount bool `json:"includeAttemptCount,omitempty" yaml:"includeAttemptCount,omitempty"`
 }
 
 // HeaderMatcher describes a condition on a single HTTP request header.
@@ -113,4 +124,8 @@ type MatchRule struct {
 
 	// QueryParams are query parameter matchers that must all match.
 	QueryParams []QueryParamMatcher `json:"queryParams,omitempty" yaml:"queryParams,omitempty"`
+
+	// GRPC restricts this match to gRPC requests only (content-type
+	// application/grpc). Maps to RouteMatch.grpc.
+	GRPC bool `json:"grpc,omitempty" yaml:"grpc,omitempty"`
 }

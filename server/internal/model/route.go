@@ -85,6 +85,23 @@ type ForwardAction struct {
 	// Entries are evaluated in order; the first one that produces a value wins.
 	// Maps to RouteAction.hash_policy in Envoy.
 	HashPolicy []HashPolicy `json:"hashPolicy,omitempty" yaml:"hashPolicy,omitempty"`
+
+	// Websocket enables HTTP/1.1 WebSocket upgrade for this route.
+	// When true, Envoy allows clients to upgrade the connection to a
+	// WebSocket and proxies frames bidirectionally to the upstream.
+	// Maps to RouteAction.upgrade_configs with type "websocket".
+	Websocket bool `json:"websocket,omitempty" yaml:"websocket,omitempty"`
+
+	// MaxGRPCTimeout caps the timeout that a gRPC client can request via
+	// the grpc-timeout header. If the client asks for more, Envoy clamps
+	// it to this value. Accepts Go duration strings (e.g. "30s").
+	// Maps to RouteAction.max_grpc_timeout.
+	MaxGRPCTimeout string `json:"maxGrpcTimeout,omitempty" yaml:"maxGrpcTimeout,omitempty"`
+
+	// InternalRedirect controls Envoy's behaviour when the upstream returns
+	// a redirect (3xx). Instead of forwarding the redirect to the client,
+	// Envoy can follow it internally and return the final response.
+	InternalRedirect *InternalRedirectPolicy `json:"internalRedirect,omitempty" yaml:"internalRedirect,omitempty"`
 }
 
 // RouteTimeouts controls how long a request is allowed to take.
@@ -234,4 +251,21 @@ type RouteMirror struct {
 	// Percentage is the fraction of requests to mirror, from 0 to 100.
 	// Default: 100 (mirror all matched traffic).
 	Percentage uint32 `json:"percentage,omitempty" yaml:"percentage,omitempty"`
+}
+
+// InternalRedirectPolicy controls how Envoy handles upstream redirects (3xx)
+// internally, following them without returning the redirect to the client.
+// Maps to RouteAction.internal_redirect_policy.
+type InternalRedirectPolicy struct {
+	// MaxRedirects is the maximum number of internal redirects Envoy will
+	// follow before returning the redirect to the client. Default: 1.
+	MaxRedirects uint32 `json:"maxRedirects,omitempty" yaml:"maxRedirects,omitempty"`
+
+	// AllowCrossScheme allows internal redirects that change the scheme
+	// (e.g. http to https). Default: false.
+	AllowCrossScheme bool `json:"allowCrossScheme,omitempty" yaml:"allowCrossScheme,omitempty"`
+
+	// RedirectCodes lists the HTTP status codes treated as redirects.
+	// Default: [302]. Other common values: 301, 303, 307, 308.
+	RedirectCodes []uint32 `json:"redirectCodes,omitempty" yaml:"redirectCodes,omitempty"`
 }

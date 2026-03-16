@@ -15,6 +15,24 @@
     },
 "components": {
         "schemas": {
+            "model.AccessLogConfig": {
+                "description": "AccessLog configures access logging for this listener.\nWhen nil, no access logs are emitted.\nMaps to HttpConnectionManager.access_log.",
+                "properties": {
+                    "format": {
+                        "description": "Format is the log line format using Envoy's command operator syntax.\nWhen empty, Envoy uses its default format.\nExample: \"%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL% %RESPONSE_CODE%\"",
+                        "type": "string"
+                    },
+                    "json": {
+                        "description": "JSON switches the log output to JSON format. When true, Format is\ninterpreted as a JSON template (map of key to format string).\nWhen false, Format is used as a plain text template.",
+                        "type": "boolean"
+                    },
+                    "path": {
+                        "description": "Path is the file path where access logs are written.\nUse \"/dev/stdout\" for container-friendly stdout logging.",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
             "model.BackendRef": {
                 "properties": {
                     "destinationId": {
@@ -174,11 +192,30 @@
                     "discovery": {
                         "$ref": "#/components/schemas/model.DestinationDiscovery"
                     },
+                    "dnsLookupFamily": {
+                        "description": "DNSLookupFamily selects the IP version for DNS resolution.\nAccepted values: \"AUTO\", \"V4_ONLY\", \"V6_ONLY\". Default: \"AUTO\".\nMaps to Cluster.dns_lookup_family.",
+                        "type": "string"
+                    },
+                    "dnsRefreshRate": {
+                        "description": "DNSRefreshRate controls how often STRICT_DNS clusters re-resolve the\nhost. Ignored for STATIC and EDS clusters. Accepts Go duration strings.\nDefault: \"5s\". Maps to Cluster.dns_refresh_rate.",
+                        "type": "string"
+                    },
                     "healthCheck": {
                         "$ref": "#/components/schemas/model.HealthCheckOptions"
                     },
+                    "http2": {
+                        "description": "HTTP2 enables HTTP/2 to the upstream. Required when the backend speaks\ngRPC or HTTP/2. Maps to Cluster.typed_extension_protocol_options with\nenvoy.extensions.upstreams.http.v3.HttpProtocolOptions.",
+                        "type": "boolean"
+                    },
+                    "maxRequestsPerConnection": {
+                        "description": "MaxRequestsPerConnection drains a connection to the upstream after this\nmany requests. 0 means unlimited. Useful for load balancing across new\npods. Maps to Cluster.max_requests_per_connection.",
+                        "type": "integer"
+                    },
                     "outlierDetection": {
                         "$ref": "#/components/schemas/model.OutlierDetectionOptions"
+                    },
+                    "slowStart": {
+                        "$ref": "#/components/schemas/model.SlowStartOptions"
                     },
                     "tls": {
                         "$ref": "#/components/schemas/model.TLSOptions"
@@ -357,6 +394,13 @@
                         "type": "array",
                         "uniqueItems": false
                     },
+                    "internalRedirect": {
+                        "$ref": "#/components/schemas/model.InternalRedirectPolicy"
+                    },
+                    "maxGrpcTimeout": {
+                        "description": "MaxGRPCTimeout caps the timeout that a gRPC client can request via\nthe grpc-timeout header. If the client asks for more, Envoy clamps\nit to this value. Accepts Go duration strings (e.g. \"30s\").\nMaps to RouteAction.max_grpc_timeout.",
+                        "type": "string"
+                    },
                     "mirror": {
                         "$ref": "#/components/schemas/model.RouteMirror"
                     },
@@ -368,6 +412,10 @@
                     },
                     "timeouts": {
                         "$ref": "#/components/schemas/model.RouteTimeouts"
+                    },
+                    "websocket": {
+                        "description": "Websocket enables HTTP/1.1 WebSocket upgrade for this route.\nWhen true, Envoy allows clients to upgrade the connection to a\nWebSocket and proxies frames bidirectionally to the upstream.\nMaps to RouteAction.upgrade_configs with type \"websocket\".",
+                        "type": "boolean"
                     }
                 },
                 "type": "object"
@@ -432,6 +480,28 @@
                     "unhealthyThreshold": {
                         "description": "UnhealthyThreshold is the number of consecutive failures before an\nendpoint is marked unhealthy. Default: 3.\nMaps to unhealthy_threshold.",
                         "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "model.InternalRedirectPolicy": {
+                "description": "InternalRedirect controls Envoy's behaviour when the upstream returns\na redirect (3xx). Instead of forwarding the redirect to the client,\nEnvoy can follow it internally and return the final response.",
+                "properties": {
+                    "allowCrossScheme": {
+                        "description": "AllowCrossScheme allows internal redirects that change the scheme\n(e.g. http to https). Default: false.",
+                        "type": "boolean"
+                    },
+                    "maxRedirects": {
+                        "description": "MaxRedirects is the maximum number of internal redirects Envoy will\nfollow before returning the redirect to the client. Default: 1.",
+                        "type": "integer"
+                    },
+                    "redirectCodes": {
+                        "description": "RedirectCodes lists the HTTP status codes treated as redirects.\nDefault: [302]. Other common values: 301, 303, 307, 308.",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
                     }
                 },
                 "type": "object"
@@ -548,6 +618,9 @@
             },
             "model.Listener": {
                 "properties": {
+                    "accessLog": {
+                        "$ref": "#/components/schemas/model.AccessLogConfig"
+                    },
                     "address": {
                         "description": "Address is the IP address the listener binds to.\nDefaults to \"0.0.0.0\" if empty.",
                         "type": "string"
@@ -560,9 +633,25 @@
                         "type": "array",
                         "uniqueItems": false
                     },
+                    "http2": {
+                        "description": "HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.\nWhen true, the HCM codec type is set to AUTO (accepts both HTTP/1.1\nand HTTP/2). When false, only HTTP/1.1 is accepted.\nMaps to HttpConnectionManager.codec_type.",
+                        "type": "boolean"
+                    },
                     "id": {
                         "description": "ID is the unique identifier of the listener.",
                         "type": "string"
+                    },
+                    "listenerFilters": {
+                        "description": "ListenerFilters are TCP-level filters evaluated before the HTTP\nconnection manager. Common examples: tls_inspector (required for\nTLS/SNI), proxy_protocol (PROXY protocol v1/v2 from load balancers).\nMaps to Listener.listener_filters.",
+                        "items": {
+                            "$ref": "#/components/schemas/model.ListenerFilter"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "maxRequestHeadersKB": {
+                        "description": "MaxRequestHeadersKB limits the total size of request headers in\nkilobytes. Requests exceeding this limit receive a 431 response.\nDefault: 60 (Envoy's default). Maps to HCM.max_request_headers_kb.",
+                        "type": "integer"
                     },
                     "name": {
                         "description": "Name is a human-readable label for the listener.",
@@ -572,11 +661,37 @@
                         "description": "Port is the TCP port the listener binds to.",
                         "type": "integer"
                     },
+                    "serverName": {
+                        "description": "ServerName sets the \"server\" header Envoy adds to responses.\nWhen empty, Envoy uses its default (\"envoy\").\nMaps to HttpConnectionManager.server_name.",
+                        "type": "string"
+                    },
                     "tls": {
                         "$ref": "#/components/schemas/model.ListenerTLS"
                     }
                 },
                 "type": "object"
+            },
+            "model.ListenerFilter": {
+                "properties": {
+                    "type": {
+                        "$ref": "#/components/schemas/model.ListenerFilterType"
+                    }
+                },
+                "type": "object"
+            },
+            "model.ListenerFilterType": {
+                "description": "Type selects the listener filter.",
+                "enum": [
+                    "tls_inspector",
+                    "proxy_protocol",
+                    "original_dst"
+                ],
+                "type": "string",
+                "x-enum-varnames": [
+                    "ListenerFilterTLSInspector",
+                    "ListenerFilterProxyProtocol",
+                    "ListenerFilterOriginalDst"
+                ]
             },
             "model.ListenerTLS": {
                 "description": "TLS holds optional TLS termination configuration.\nWhen nil, the listener operates in plaintext mode.\nNOTE: TLS support is modelled here but not yet implemented in the xDS\nbuilder. The field is accepted and stored; it has no effect until the\nbuilder is updated to emit a DownstreamTlsContext.",
@@ -603,6 +718,10 @@
             "model.MatchRule": {
                 "description": "Match defines the conditions that a request must satisfy.",
                 "properties": {
+                    "grpc": {
+                        "description": "GRPC restricts this match to gRPC requests only (content-type\napplication/grpc). Maps to RouteMatch.grpc.",
+                        "type": "boolean"
+                    },
                     "headers": {
                         "description": "Headers are request header matchers that must all match.",
                         "items": {
@@ -825,6 +944,10 @@
                         "description": "ID is the unique identifier of the group.",
                         "type": "string"
                     },
+                    "includeAttemptCount": {
+                        "description": "IncludeAttemptCount makes Envoy add the x-envoy-attempt-count header\nto upstream requests, indicating how many times the request has been\nattempted (including the original). Maps to\nVirtualHost.include_request_attempt_count.",
+                        "type": "boolean"
+                    },
                     "name": {
                         "description": "Name is a human-readable label for the group.",
                         "type": "string"
@@ -836,6 +959,9 @@
                     "pathRegex": {
                         "description": "PathRegex is a RE2 regular expression that defines the group's path\nnamespace. It is composed with the route's own path specifier according\nto the rules described above. Mutually exclusive with PathPrefix.",
                         "type": "string"
+                    },
+                    "retryDefault": {
+                        "$ref": "#/components/schemas/model.RouteRetry"
                     },
                     "routeIds": {
                         "description": "RouteIDs lists the IDs of the routes that belong to this group.\nRoutes are independent entities and may be referenced by multiple groups.",
@@ -959,6 +1085,20 @@
                     },
                     "request": {
                         "description": "Request is the total time the entire request may take from the moment\nEnvoy receives the first byte from the client until the response is\nfully sent. Accepts Go duration strings (e.g. \"30s\", \"1m\").",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "model.SlowStartOptions": {
+                "description": "SlowStart configures gradual traffic ramp-up to new endpoints.\nHelps avoid overwhelming a freshly-started pod with full traffic.\nMaps to Cluster.slow_start_config.",
+                "properties": {
+                    "aggression": {
+                        "description": "Aggression controls how aggressively weight ramps up. Values \u003e 1.0\nproduce a steeper ramp at the end; values \u003c 1.0 ramp steeply at the\nstart. Default: 1.0 (linear). Maps to aggression.",
+                        "type": "number"
+                    },
+                    "window": {
+                        "description": "Window is how long the slow-start period lasts after an endpoint\nbecomes healthy. Accepts Go duration strings (e.g. \"30s\", \"2m\").\nMaps to slow_start_window.",
                         "type": "string"
                     }
                 },
