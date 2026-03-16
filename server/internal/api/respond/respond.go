@@ -7,9 +7,10 @@ import (
 	"net/http"
 )
 
-// errorBody is the standard error response shape.
-type errorBody struct {
-	Error string `json:"error"`
+// ErrorBody is the standard error response payload returned on all non-2xx responses.
+type ErrorBody struct {
+	// Error contains a human-readable description of what went wrong.
+	Error string `json:"error" example:"group \"abc\" not found"`
 }
 
 // JSON encodes v as JSON and writes it to w with the given status code.
@@ -24,5 +25,5 @@ func JSON(w http.ResponseWriter, status int, v any, logger *slog.Logger) {
 
 // Error writes a JSON error response with the given status and message.
 func Error(w http.ResponseWriter, status int, msg string, logger *slog.Logger) {
-	JSON(w, status, errorBody{Error: msg}, logger)
+	JSON(w, status, ErrorBody{Error: msg}, logger)
 }

@@ -2,14 +2,14 @@
 
 ## In Progress
 
-_(nothing — scaffold is complete, moving to enhancements)_
+_(nothing)_
 
 ## Pending
 
-- [ ] Integrate swag-go v2: annotate all handlers, `make docs` target, serve spec at `/docs`
-- [ ] Decide and implement production-ready `Store` backend (replicated, HA, simple backup)
 - [ ] Add authentication to the REST API
 - [ ] Write unit and integration tests
+- [ ] Add `make docs` target to Makefile (runs `swag init`)
+- [ ] HA storage: document shared-volume / Litestream pattern for multi-replica deployments
 
 ## Done
 
@@ -30,3 +30,6 @@ _(nothing — scaffold is complete, moving to enhancements)_
 - [x] `run-dev` documented: override `XDS_ADDR` so Kubernetes-deployed Envoys can reach local machine
 - [x] `main.go`: wires config, store, xDS server, gateway, HTTP server, graceful shutdown
 - [x] `go build ./...` and `go vet ./...` pass with zero errors
+- [x] Rename API paths: `/api/v1/route-groups` → `/api/v1/groups`, nested routes kept under `/{groupId}/routes`
+- [x] Implement persistent store: bbolt (`store/bolt`), single-file DB, full `Store` interface, `--store-path` flag
+- [x] OpenAPI docs: swag-go v2 annotations on all 10 handlers, `docs/` generated, Swagger UI at `/api/v1/docs/`

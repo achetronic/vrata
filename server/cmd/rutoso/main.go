@@ -4,7 +4,19 @@
 //
 // Usage:
 //
-//	rutoso --config /path/to/config.yaml
+//	rutoso --config /path/to/config.yaml [--store-path /path/to/rutoso.db]
+//
+//	@title			Rutoso API
+//	@version		1.0
+//	@description	REST API control plane for Envoy proxies. Manage route groups and routes;
+//	@description	changes are pushed to all connected Envoy instances via xDS in real time.
+//	@contact.name	Rutoso project
+//	@contact.url	https://github.com/achetronic/rutoso
+//	@license.name	Apache 2.0
+//	@license.url	https://www.apache.org/licenses/LICENSE-2.0
+//	@host			localhost:8080
+//	@BasePath		/
+//	@schemes		http https
 package main
 
 import (
@@ -20,7 +32,7 @@ import (
 	"github.com/achetronic/rutoso/internal/api"
 	"github.com/achetronic/rutoso/internal/config"
 	"github.com/achetronic/rutoso/internal/gateway"
-	"github.com/achetronic/rutoso/internal/store/memory"
+	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
 	"github.com/achetronic/rutoso/internal/xds"
 )
 
@@ -33,6 +45,7 @@ func main() {
 
 func run() error {
 	configPath := flag.String("config", "config.yaml", "path to the YAML configuration file")
+	storePath := flag.String("store-path", "rutoso.db", "path to the bbolt database file")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
@@ -44,10 +57,19 @@ func run() error {
 	logger.Info("rutoso starting",
 		slog.String("http", cfg.Server.Address),
 		slog.String("xds", cfg.XDS.Address),
+		slog.String("store", *storePath),
 	)
 
-	// In-memory store (swap for a persistent implementation later).
-	st := memory.New()
+	// Persistent bbolt store.
+	st, err := boltstore.New(*storePath)
+	if err != nil {
+		return fmt.Errorf("opening store: %w", err)
+	}
+	defer func() {
+		if err := st.Close(); err != nil {
+			logger.Error("closing store", slog.String("error", err.Error()))
+		}
+	}()
 
 	// xDS control-plane server.
 	xdsSrv := xds.New(logger)

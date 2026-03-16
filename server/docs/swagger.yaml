@@ -1,0 +1,510 @@
+basePath: /
+definitions:
+  model.Backend:
+    properties:
+      host:
+        description: Host is the upstream hostname or IP address.
+        type: string
+      name:
+        description: |-
+          Name is a unique identifier for this backend within the route.
+          It maps to an Envoy cluster name.
+        type: string
+      port:
+        description: Port is the upstream TCP port.
+        type: integer
+      tls:
+        description: TLS indicates whether the connection to the upstream should use
+          TLS.
+        type: boolean
+      weight:
+        description: |-
+          Weight controls what percentage of traffic is sent to this backend
+          when multiple backends are defined. Values across all backends in a
+          route must sum to 100.
+        type: integer
+    type: object
+  model.HeaderMatcher:
+    properties:
+      name:
+        description: Name is the header name (case-insensitive).
+        type: string
+      regex:
+        description: Regex indicates that Value should be treated as a regular expression.
+        type: boolean
+      value:
+        description: |-
+          Value is the exact value the header must have.
+          If empty, only the presence of the header is checked.
+        type: string
+    type: object
+  model.MatchRule:
+    properties:
+      headers:
+        description: |-
+          Headers are additional header matchers specific to this route.
+          These are evaluated in addition to the group-level headers.
+        items:
+          $ref: '#/definitions/model.HeaderMatcher'
+        type: array
+      hostnames:
+        description: |-
+          Hostnames overrides the group-level hostname matchers for this specific route.
+          An empty slice inherits the group's hostnames.
+        items:
+          type: string
+        type: array
+      methods:
+        description: |-
+          Methods lists the HTTP methods this rule applies to.
+          An empty slice matches all methods.
+        items:
+          type: string
+        type: array
+      path:
+        description: Path is the exact path that must match.
+        type: string
+      pathPrefix:
+        description: |-
+          PathPrefix is a prefix that the request path must start with.
+          Mutually exclusive with Path and PathRegex.
+        type: string
+      pathRegex:
+        description: |-
+          PathRegex is a regular expression the request path must match.
+          Mutually exclusive with Path and PathPrefix.
+        type: string
+    type: object
+  model.Route:
+    properties:
+      backends:
+        description: |-
+          Backends lists the upstream destinations for this route.
+          Weights across all backends should sum to 100. If only one backend is
+          provided its weight is ignored and all traffic goes to it.
+        items:
+          $ref: '#/definitions/model.Backend'
+        type: array
+      description:
+        description: Description is an optional explanation of the route's purpose.
+        type: string
+      groupId:
+        description: GroupID is the identifier of the RouteGroup this route belongs
+          to.
+        type: string
+      id:
+        description: ID is the unique identifier of the route within its group.
+        type: string
+      match:
+        allOf:
+        - $ref: '#/definitions/model.MatchRule'
+        description: |-
+          Match defines the conditions that a request must satisfy to be handled
+          by this route. Path, method, hostname, and header matchers are supported.
+      name:
+        description: Name is a human-readable label for the route.
+        type: string
+    type: object
+  model.RouteGroup:
+    properties:
+      description:
+        description: Description is an optional explanation of the group's purpose.
+        type: string
+      headers:
+        description: |-
+          Headers are additional request header matchers applied to all routes in
+          this group. Routes can define their own headers on top of these.
+        items:
+          $ref: '#/definitions/model.HeaderMatcher'
+        type: array
+      hostnames:
+        description: |-
+          Hostnames restricts this group to requests targeting specific virtual hosts.
+          An empty slice means the group matches all hostnames.
+        items:
+          type: string
+        type: array
+      id:
+        description: ID is the unique identifier of the group.
+        type: string
+      name:
+        description: Name is a human-readable label for the group.
+        type: string
+      prefix:
+        description: |-
+          Prefix is a path prefix applied to all routes in this group.
+          Example: "/api/v1" will make a route with path "/users" match "/api/v1/users".
+        type: string
+      routes:
+        description: Routes holds all routes that belong to this group.
+        items:
+          $ref: '#/definitions/model.Route'
+        type: array
+    type: object
+  respond.ErrorBody:
+    properties:
+      error:
+        description: Error contains a human-readable description of what went wrong.
+        example: group "abc" not found
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: Rutoso project
+    url: https://github.com/achetronic/rutoso
+  description: |-
+    REST API control plane for Envoy proxies. Manage route groups and routes;
+    changes are pushed to all connected Envoy instances via xDS in real time.
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  title: Rutoso API
+  version: "1.0"
+paths:
+  /api/v1/groups:
+    get:
+      description: Returns the full list of route groups known to this control plane.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of route groups (may be empty)
+          schema:
+            items:
+              $ref: '#/definitions/model.RouteGroup'
+            type: array
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: List all route groups
+      tags:
+      - groups
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Creates a new route group. The name must be unique across all groups.
+        The ID is auto-generated and returned in the response.
+      parameters:
+      - description: Route group to create
+        in: body
+        name: group
+        required: true
+        schema:
+          $ref: '#/definitions/model.RouteGroup'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Route group created
+          schema:
+            $ref: '#/definitions/model.RouteGroup'
+        "400":
+          description: Invalid payload or missing required fields
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "409":
+          description: A group with the same name already exists
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Create a route group
+      tags:
+      - groups
+  /api/v1/groups/{groupId}:
+    delete:
+      description: |-
+        Deletes a route group and all of its routes. This action is irreversible.
+        The xDS snapshot is updated immediately; Envoy will stop routing those rules.
+      parameters:
+      - description: Group UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        in: path
+        name: groupId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Group deleted
+        "404":
+          description: Group not found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Delete a route group
+      tags:
+      - groups
+    get:
+      description: Returns a single route group by its ID.
+      parameters:
+      - description: Group UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        in: path
+        name: groupId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Route group found
+          schema:
+            $ref: '#/definitions/model.RouteGroup'
+        "404":
+          description: Group not found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Get a route group
+      tags:
+      - groups
+    put:
+      consumes:
+      - application/json
+      description: |-
+        Replaces a route group's metadata (prefix, hostnames, headers, description).
+        The group's routes are not affected by this operation.
+      parameters:
+      - description: Group UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        in: path
+        name: groupId
+        required: true
+        type: string
+      - description: Updated route group
+        in: body
+        name: group
+        required: true
+        schema:
+          $ref: '#/definitions/model.RouteGroup'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Route group updated
+          schema:
+            $ref: '#/definitions/model.RouteGroup'
+        "400":
+          description: Invalid payload
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "404":
+          description: Group not found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Update a route group
+      tags:
+      - groups
+  /api/v1/groups/{groupId}/routes:
+    get:
+      description: Returns all routes that belong to the specified route group.
+      parameters:
+      - description: Group UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        in: path
+        name: groupId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of routes (may be empty)
+          schema:
+            items:
+              $ref: '#/definitions/model.Route'
+            type: array
+        "404":
+          description: Group not found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: List routes in a group
+      tags:
+      - routes
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Adds a new route to the specified group.
+        At least one backend is required. If multiple backends are provided,
+        their weights must sum to exactly 100 (weighted routing / canary).
+        Two routes with the same path rule (path/pathPrefix/pathRegex) in the
+        same group are considered duplicates and will be rejected with 409.
+      parameters:
+      - description: Group UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        in: path
+        name: groupId
+        required: true
+        type: string
+      - description: Route to create
+        in: body
+        name: route
+        required: true
+        schema:
+          $ref: '#/definitions/model.Route'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Route created
+          schema:
+            $ref: '#/definitions/model.Route'
+        "400":
+          description: Invalid payload, missing backend, or invalid weights
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "404":
+          description: Group not found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "409":
+          description: A route with the same match rule already exists
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Create a route
+      tags:
+      - routes
+  /api/v1/groups/{groupId}/routes/{routeId}:
+    delete:
+      description: Removes a route from its group. The xDS snapshot is updated immediately.
+      parameters:
+      - description: Group UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        in: path
+        name: groupId
+        required: true
+        type: string
+      - description: Route UUID
+        example: 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+        in: path
+        name: routeId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: Route deleted
+        "404":
+          description: Group or route not found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Delete a route
+      tags:
+      - routes
+    get:
+      description: Returns a single route by its ID within the specified group.
+      parameters:
+      - description: Group UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        in: path
+        name: groupId
+        required: true
+        type: string
+      - description: Route UUID
+        example: 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+        in: path
+        name: routeId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Route found
+          schema:
+            $ref: '#/definitions/model.Route'
+        "404":
+          description: Group or route not found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Get a route
+      tags:
+      - routes
+    put:
+      consumes:
+      - application/json
+      description: |-
+        Replaces an existing route entirely.
+        If multiple backends are provided, their weights must sum to 100.
+        Changing the match rule to one already used by another route in the same
+        group will be rejected with 409.
+      parameters:
+      - description: Group UUID
+        example: 550e8400-e29b-41d4-a716-446655440000
+        in: path
+        name: groupId
+        required: true
+        type: string
+      - description: Route UUID
+        example: 6ba7b810-9dad-11d1-80b4-00c04fd430c8
+        in: path
+        name: routeId
+        required: true
+        type: string
+      - description: Updated route
+        in: body
+        name: route
+        required: true
+        schema:
+          $ref: '#/definitions/model.Route'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Route updated
+          schema:
+            $ref: '#/definitions/model.Route'
+        "400":
+          description: Invalid payload or invalid weights
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "404":
+          description: Group or route not found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "409":
+          description: Match rule conflicts with another route
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Update a route
+      tags:
+      - routes
+schemes:
+- http
+- https
+swagger: "2.0"

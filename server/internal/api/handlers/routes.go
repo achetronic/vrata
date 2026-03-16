@@ -21,16 +21,17 @@ func NewRoutesHandler(deps Dependencies) *RoutesHandler {
 	return &RoutesHandler{deps: deps}
 }
 
-// HandleListRoutes handles GET /api/v1/route-groups/{groupId}/routes.
+// HandleListRoutes handles GET /api/v1/groups/{groupId}/routes.
 //
 //	@Summary		List routes in a group
+//	@Description	Returns all routes that belong to the specified route group.
 //	@Tags			routes
 //	@Produce		json
-//	@Param			groupId	path		string	true	"Group ID"
-//	@Success		200		{array}		model.Route
-//	@Failure		404		{object}	respond.errorBody
-//	@Failure		500		{object}	respond.errorBody
-//	@Router			/api/v1/route-groups/{groupId}/routes [get]
+//	@Param			groupId	path		string			true	"Group UUID"	example(550e8400-e29b-41d4-a716-446655440000)
+//	@Success		200		{array}		model.Route		"List of routes (may be empty)"
+//	@Failure		404		{object}	respond.ErrorBody	"Group not found"
+//	@Failure		500		{object}	respond.ErrorBody	"Internal error"
+//	@Router			/api/v1/groups/{groupId}/routes [get]
 func (h *RoutesHandler) HandleListRoutes(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 	routes, err := h.deps.Store.ListRoutes(r.Context(), groupID)
@@ -45,17 +46,18 @@ func (h *RoutesHandler) HandleListRoutes(w http.ResponseWriter, r *http.Request)
 	respond.JSON(w, http.StatusOK, routes, h.deps.Logger)
 }
 
-// HandleGetRoute handles GET /api/v1/route-groups/{groupId}/routes/{routeId}.
+// HandleGetRoute handles GET /api/v1/groups/{groupId}/routes/{routeId}.
 //
 //	@Summary		Get a route
+//	@Description	Returns a single route by its ID within the specified group.
 //	@Tags			routes
 //	@Produce		json
-//	@Param			groupId		path		string	true	"Group ID"
-//	@Param			routeId		path		string	true	"Route ID"
-//	@Success		200			{object}	model.Route
-//	@Failure		404			{object}	respond.errorBody
-//	@Failure		500			{object}	respond.errorBody
-//	@Router			/api/v1/route-groups/{groupId}/routes/{routeId} [get]
+//	@Param			groupId		path		string			true	"Group UUID"	example(550e8400-e29b-41d4-a716-446655440000)
+//	@Param			routeId		path		string			true	"Route UUID"	example(6ba7b810-9dad-11d1-80b4-00c04fd430c8)
+//	@Success		200			{object}	model.Route		"Route found"
+//	@Failure		404			{object}	respond.ErrorBody	"Group or route not found"
+//	@Failure		500			{object}	respond.ErrorBody	"Internal error"
+//	@Router			/api/v1/groups/{groupId}/routes/{routeId} [get]
 func (h *RoutesHandler) HandleGetRoute(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 	routeID := r.PathValue("routeId")
@@ -72,20 +74,25 @@ func (h *RoutesHandler) HandleGetRoute(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, route, h.deps.Logger)
 }
 
-// HandleCreateRoute handles POST /api/v1/route-groups/{groupId}/routes.
+// HandleCreateRoute handles POST /api/v1/groups/{groupId}/routes.
 //
 //	@Summary		Create a route
+//	@Description	Adds a new route to the specified group.
+//	@Description	At least one backend is required. If multiple backends are provided,
+//	@Description	their weights must sum to exactly 100 (weighted routing / canary).
+//	@Description	Two routes with the same path rule (path/pathPrefix/pathRegex) in the
+//	@Description	same group are considered duplicates and will be rejected with 409.
 //	@Tags			routes
 //	@Accept			json
 //	@Produce		json
-//	@Param			groupId	path		string		true	"Group ID"
-//	@Param			route	body		model.Route	true	"Route to create"
-//	@Success		201		{object}	model.Route
-//	@Failure		400		{object}	respond.errorBody
-//	@Failure		404		{object}	respond.errorBody
-//	@Failure		409		{object}	respond.errorBody
-//	@Failure		500		{object}	respond.errorBody
-//	@Router			/api/v1/route-groups/{groupId}/routes [post]
+//	@Param			groupId	path		string			true	"Group UUID"	example(550e8400-e29b-41d4-a716-446655440000)
+//	@Param			route	body		model.Route		true	"Route to create"
+//	@Success		201		{object}	model.Route		"Route created"
+//	@Failure		400		{object}	respond.ErrorBody	"Invalid payload, missing backend, or invalid weights"
+//	@Failure		404		{object}	respond.ErrorBody	"Group not found"
+//	@Failure		409		{object}	respond.ErrorBody	"A route with the same match rule already exists"
+//	@Failure		500		{object}	respond.ErrorBody	"Internal error"
+//	@Router			/api/v1/groups/{groupId}/routes [post]
 func (h *RoutesHandler) HandleCreateRoute(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 
@@ -123,21 +130,25 @@ func (h *RoutesHandler) HandleCreateRoute(w http.ResponseWriter, r *http.Request
 	respond.JSON(w, http.StatusCreated, route, h.deps.Logger)
 }
 
-// HandleUpdateRoute handles PUT /api/v1/route-groups/{groupId}/routes/{routeId}.
+// HandleUpdateRoute handles PUT /api/v1/groups/{groupId}/routes/{routeId}.
 //
 //	@Summary		Update a route
+//	@Description	Replaces an existing route entirely.
+//	@Description	If multiple backends are provided, their weights must sum to 100.
+//	@Description	Changing the match rule to one already used by another route in the same
+//	@Description	group will be rejected with 409.
 //	@Tags			routes
 //	@Accept			json
 //	@Produce		json
-//	@Param			groupId		path		string		true	"Group ID"
-//	@Param			routeId		path		string		true	"Route ID"
-//	@Param			route		body		model.Route	true	"Updated route"
-//	@Success		200			{object}	model.Route
-//	@Failure		400			{object}	respond.errorBody
-//	@Failure		404			{object}	respond.errorBody
-//	@Failure		409			{object}	respond.errorBody
-//	@Failure		500			{object}	respond.errorBody
-//	@Router			/api/v1/route-groups/{groupId}/routes/{routeId} [put]
+//	@Param			groupId		path		string			true	"Group UUID"	example(550e8400-e29b-41d4-a716-446655440000)
+//	@Param			routeId		path		string			true	"Route UUID"	example(6ba7b810-9dad-11d1-80b4-00c04fd430c8)
+//	@Param			route		body		model.Route		true	"Updated route"
+//	@Success		200			{object}	model.Route		"Route updated"
+//	@Failure		400			{object}	respond.ErrorBody	"Invalid payload or invalid weights"
+//	@Failure		404			{object}	respond.ErrorBody	"Group or route not found"
+//	@Failure		409			{object}	respond.ErrorBody	"Match rule conflicts with another route"
+//	@Failure		500			{object}	respond.ErrorBody	"Internal error"
+//	@Router			/api/v1/groups/{groupId}/routes/{routeId} [put]
 func (h *RoutesHandler) HandleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 	routeID := r.PathValue("routeId")
@@ -172,16 +183,17 @@ func (h *RoutesHandler) HandleUpdateRoute(w http.ResponseWriter, r *http.Request
 	respond.JSON(w, http.StatusOK, route, h.deps.Logger)
 }
 
-// HandleDeleteRoute handles DELETE /api/v1/route-groups/{groupId}/routes/{routeId}.
+// HandleDeleteRoute handles DELETE /api/v1/groups/{groupId}/routes/{routeId}.
 //
 //	@Summary		Delete a route
+//	@Description	Removes a route from its group. The xDS snapshot is updated immediately.
 //	@Tags			routes
-//	@Param			groupId	path	string	true	"Group ID"
-//	@Param			routeId	path	string	true	"Route ID"
-//	@Success		204
-//	@Failure		404	{object}	respond.errorBody
-//	@Failure		500	{object}	respond.errorBody
-//	@Router			/api/v1/route-groups/{groupId}/routes/{routeId} [delete]
+//	@Param			groupId		path	string	true	"Group UUID"	example(550e8400-e29b-41d4-a716-446655440000)
+//	@Param			routeId		path	string	true	"Route UUID"	example(6ba7b810-9dad-11d1-80b4-00c04fd430c8)
+//	@Success		204		"Route deleted"
+//	@Failure		404		{object}	respond.ErrorBody	"Group or route not found"
+//	@Failure		500		{object}	respond.ErrorBody	"Internal error"
+//	@Router			/api/v1/groups/{groupId}/routes/{routeId} [delete]
 func (h *RoutesHandler) HandleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 	routeID := r.PathValue("routeId")

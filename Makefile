@@ -13,7 +13,18 @@ GOFLAGS     := -ldflags="-s -w -X main.version=$(VERSION)"
 BUILD_DIR   := ./bin
 SERVER_DIR  := ./server
 
-.PHONY: build docker-build docker-push run run-dev clean
+SWAG        := swag
+SWAG_FLAGS  := --generalInfo main.go \
+	--dir $(SERVER_DIR)/cmd/rutoso,$(SERVER_DIR)/internal/api/handlers,$(SERVER_DIR)/internal/api/respond,$(SERVER_DIR)/internal/model \
+	--parseInternal \
+	--output $(SERVER_DIR)/docs \
+	--outputTypes go,json,yaml
+
+.PHONY: build docs docker-build docker-push run run-dev clean
+
+## docs: regenerate OpenAPI docs from handler annotations (requires swag v2 in PATH)
+docs:
+	$(SWAG) init $(SWAG_FLAGS)
 
 ## build: compile the binary into ./bin/rutoso
 build:

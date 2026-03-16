@@ -118,21 +118,23 @@ runtime — all config must flow through the `Config` struct loaded at startup.
 
 ---
 
-## Storage backend: decision pending
+## Storage backend: bbolt (embedded KV store, single-file)
 
-**Date**: 2026-03-15
-**Status**: Pending
+**Date**: 2026-03-16
+**Status**: Implemented
 
-The persistence layer is abstracted behind a `Store` interface. The concrete implementation
-has not been decided yet. Requirements are: (1) backup must be trivially simple, ideally
-a single file copy or export command; (2) multiple Rutoso replicas must be able to share
-and synchronise state for HA; (3) minimal operational overhead.
+The persistent store implementation uses `go.etcd.io/bbolt` — an embedded, pure-Go
+key/value database that stores all data in a single file (`rutoso.db` by default,
+configurable via `--store-path`). Two buckets are used: `groups` and `routes`,
+both storing JSON-encoded domain objects keyed by their UUID.
 
-**Reasoning**: Candidates under consideration include a replicated embedded store
-(e.g. SQLite + Litestream), a lightweight KV store with replication (e.g. etcd), or a
-plain YAML/JSON file with an external sync mechanism. The decision will be made once
-the initial in-memory implementation is working and the HA requirements are clearer.
+**Reasoning**: bbolt requires zero external processes, zero infrastructure, and produces
+a single file that can be backed up with a plain `cp`. It supports concurrent reads (multiple
+readers) with serialised writes, which matches Rutoso's workload. For HA deployments with
+multiple replicas, the database file can be placed on shared storage (NFS, CSI volume)
+or replicated with an external tool. This satisfies all stated requirements with minimum
+operational complexity.
 
-**Do not**: Hard-code any specific storage technology into business logic. All storage
-access must go through the `Store` interface. Do not make this decision unilaterally —
-it requires explicit approval from the project owner.
+**Do not**: Switch to an external database (PostgreSQL, etcd, Redis) without an explicit
+decision. Do not read or write the bbolt file from outside the `store/bolt` package.
+Do not remove the `store.Store` interface — all components must remain storage-agnostic.
