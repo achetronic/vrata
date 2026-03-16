@@ -90,6 +90,7 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelMiddlew
 	// builder can register them in every listener's HCM pipeline and
 	// disable them per-route where not active.
 	usedMwIDs := make(map[string]bool)
+	routesInGroups := make(map[string]bool)
 	for _, g := range groups {
 		for _, id := range g.MiddlewareIDs {
 			usedMwIDs[id] = true
@@ -98,6 +99,7 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelMiddlew
 			usedMwIDs[id] = true
 		}
 		for _, routeID := range g.RouteIDs {
+			routesInGroups[routeID] = true
 			if r, ok := routeByID[routeID]; ok {
 				for _, id := range r.MiddlewareIDs {
 					usedMwIDs[id] = true
@@ -106,6 +108,18 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelMiddlew
 					usedMwIDs[id] = true
 				}
 			}
+		}
+	}
+	// Also collect middlewares from standalone routes (not in any group).
+	for _, r := range routes {
+		if routesInGroups[r.ID] {
+			continue
+		}
+		for _, id := range r.MiddlewareIDs {
+			usedMwIDs[id] = true
+		}
+		for id := range r.MiddlewareOverrides {
+			usedMwIDs[id] = true
 		}
 	}
 
@@ -117,6 +131,15 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelMiddlew
 			}
 			vhosts = append(vhosts, buildVirtualHost(g, r, mwByID, usedMwIDs))
 		}
+	}
+
+	// Standalone routes: not referenced by any group. Each gets its own
+	// VirtualHost using the route's own hostnames (or "*" if none).
+	for _, r := range routes {
+		if routesInGroups[r.ID] {
+			continue
+		}
+		vhosts = append(vhosts, buildStandaloneVirtualHost(r, mwByID, usedMwIDs))
 	}
 
 	// Single RouteConfiguration with all virtual hosts.
@@ -181,6 +204,27 @@ func buildVirtualHost(g model.RouteGroup, r model.Route, mwByID map[string]model
 	}
 
 	return vh
+}
+
+// buildStandaloneVirtualHost creates an Envoy VirtualHost for a route that
+// is not referenced by any group. Uses the route's own hostnames as domains
+// (or "*" if none are defined). No group-level matchers are applied.
+func buildStandaloneVirtualHost(r model.Route, mwByID map[string]model.Middleware, usedMwIDs map[string]bool) *routev3.VirtualHost {
+	domains := r.Match.Hostnames
+	if len(domains) == 0 {
+		domains = []string{"*"}
+	}
+
+	// Use an empty group for the route action builder. The empty group
+	// contributes no path prefix, no headers, no middlewares.
+	emptyGroup := model.RouteGroup{}
+	route := buildRouteAction(emptyGroup, r, mwByID, usedMwIDs)
+
+	return &routev3.VirtualHost{
+		Name:    fmt.Sprintf("standalone__%s", r.ID),
+		Domains: domains,
+		Routes:  []*routev3.Route{route},
+	}
 }
 
 // buildRouteAction builds the Envoy Route message for a single Rutoso Route,
