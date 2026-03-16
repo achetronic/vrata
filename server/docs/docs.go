@@ -312,6 +312,9 @@ const docTemplate = `{
                     "extProc": {
                         "$ref": "#/components/schemas/model.ExtProcConfig"
                     },
+                    "headers": {
+                        "$ref": "#/components/schemas/model.HeadersConfig"
+                    },
                     "id": {
                         "description": "ID is the unique identifier of the filter.",
                         "type": "string"
@@ -322,6 +325,9 @@ const docTemplate = `{
                     "name": {
                         "description": "Name is a human-readable label for the filter.",
                         "type": "string"
+                    },
+                    "rateLimit": {
+                        "$ref": "#/components/schemas/model.RateLimitConfig"
                     },
                     "type": {
                         "$ref": "#/components/schemas/model.FilterType"
@@ -345,9 +351,20 @@ const docTemplate = `{
                     "extProcMode": {
                         "$ref": "#/components/schemas/model.ExtProcMode"
                     },
+                    "headers": {
+                        "$ref": "#/components/schemas/model.HeadersConfig"
+                    },
                     "jwtProvider": {
                         "description": "JWTProvider selects a specific JWT provider by name (instead of requiring all).\nOnly meaningful when the referenced filter is of type \"jwt\".",
                         "type": "string"
+                    },
+                    "rateLimitDescriptors": {
+                        "description": "RateLimitDescriptors defines the rate limit descriptors sent to the\nrate limit service for this route/group.\nOnly meaningful when the referenced filter is of type \"rateLimit\".",
+                        "items": {
+                            "$ref": "#/components/schemas/model.RateLimitDescriptor"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
                     }
                 },
                 "type": "object"
@@ -358,14 +375,18 @@ const docTemplate = `{
                     "cors",
                     "jwt",
                     "extAuthz",
-                    "extProc"
+                    "extProc",
+                    "rateLimit",
+                    "headers"
                 ],
                 "type": "string",
                 "x-enum-varnames": [
                     "FilterTypeCORS",
                     "FilterTypeJWT",
                     "FilterTypeExtAuthz",
-                    "FilterTypeExtProc"
+                    "FilterTypeExtProc",
+                    "FilterTypeRateLimit",
+                    "FilterTypeHeaders"
                 ]
             },
             "model.ForwardAction": {
@@ -447,6 +468,61 @@ const docTemplate = `{
                     "value": {
                         "description": "Value is the exact value the header must have.\nIf empty, only the presence of the header is checked.",
                         "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "model.HeaderValue": {
+                "properties": {
+                    "append": {
+                        "description": "Append controls whether the header is appended (true) or replaced\n(false) if it already exists. Default: true.",
+                        "type": "boolean"
+                    },
+                    "key": {
+                        "description": "Key is the header name.",
+                        "type": "string"
+                    },
+                    "value": {
+                        "description": "Value is the header value.",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "model.HeadersConfig": {
+                "description": "Headers overrides header manipulation for this route/group.\nOnly meaningful when the referenced filter is of type \"headers\".",
+                "properties": {
+                    "requestHeadersToAdd": {
+                        "description": "RequestHeadersToAdd are headers added to the request before forwarding\nto the upstream.",
+                        "items": {
+                            "$ref": "#/components/schemas/model.HeaderValue"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "requestHeadersToRemove": {
+                        "description": "RequestHeadersToRemove are header names removed from the request\nbefore forwarding.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "responseHeadersToAdd": {
+                        "description": "ResponseHeadersToAdd are headers added to the response before\nreturning to the client.",
+                        "items": {
+                            "$ref": "#/components/schemas/model.HeaderValue"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "responseHeadersToRemove": {
+                        "description": "ResponseHeadersToRemove are header names removed from the response\nbefore returning to the client.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
                     }
                 },
                 "type": "object"
@@ -800,6 +876,41 @@ const docTemplate = `{
                     },
                     "value": {
                         "description": "Value is the exact value the parameter must have.",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "model.RateLimitConfig": {
+                "description": "RateLimit holds the rate limit filter configuration.\nSet when Type == \"rateLimit\".",
+                "properties": {
+                    "domain": {
+                        "description": "Domain is the rate limit domain passed to the rate limit service.\nThe service uses this to scope rate limit descriptors.",
+                        "type": "string"
+                    },
+                    "failureModeDeny": {
+                        "description": "FailureModeDeny controls what happens when the rate limit service is\nunreachable. If true, requests are denied (fail-closed).\nDefault is false (fail-open).",
+                        "type": "boolean"
+                    },
+                    "grpcService": {
+                        "description": "GRPCService is the address of the gRPC rate limit service\n(e.g. \"ratelimit.default.svc.cluster.local:8081\").",
+                        "type": "string"
+                    },
+                    "timeout": {
+                        "description": "Timeout is the rate limit request deadline (e.g. \"500ms\").",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "model.RateLimitDescriptor": {
+                "properties": {
+                    "key": {
+                        "description": "Key is the descriptor key (e.g. \"remote_address\", \"header_match\").",
+                        "type": "string"
+                    },
+                    "value": {
+                        "description": "Value is the descriptor value. When empty, Envoy uses the request\nattribute as the value (e.g. the actual header value).",
                         "type": "string"
                     }
                 },

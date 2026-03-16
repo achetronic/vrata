@@ -92,7 +92,7 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters
 				// Route referenced by group does not exist; skip gracefully.
 				continue
 			}
-			vhosts = append(vhosts, buildVirtualHost(g, r))
+			vhosts = append(vhosts, buildVirtualHost(g, r, filterByID))
 		}
 	}
 
@@ -126,7 +126,7 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters
 
 // buildVirtualHost creates an Envoy VirtualHost for a single Route within its group.
 // Group-level hostnames are merged (union) with the route's own hostnames.
-func buildVirtualHost(g model.RouteGroup, r model.Route) *routev3.VirtualHost {
+func buildVirtualHost(g model.RouteGroup, r model.Route, filterByID map[string]model.Filter) *routev3.VirtualHost {
 	// Merge hostnames: start with the route's own, then add any from the group
 	// that are not already present.
 	domains := append([]string{}, r.Match.Hostnames...)
@@ -139,7 +139,7 @@ func buildVirtualHost(g model.RouteGroup, r model.Route) *routev3.VirtualHost {
 		domains = []string{"*"}
 	}
 
-	route := buildRouteAction(g, r)
+	route := buildRouteAction(g, r, filterByID)
 
 	vh := &routev3.VirtualHost{
 		Name:    fmt.Sprintf("%s__%s", g.ID, r.ID),
@@ -163,7 +163,7 @@ func buildVirtualHost(g model.RouteGroup, r model.Route) *routev3.VirtualHost {
 // buildRouteAction builds the Envoy Route message for a single Rutoso Route,
 // including the match conditions and the appropriate action (forward to
 // backends, redirect, or direct response).
-func buildRouteAction(g model.RouteGroup, r model.Route) *routev3.Route {
+func buildRouteAction(g model.RouteGroup, r model.Route, filterByID map[string]model.Filter) *routev3.Route {
 	match := buildRouteMatch(g, r)
 
 	envoyRoute := &routev3.Route{Match: match}
@@ -175,6 +175,11 @@ func buildRouteAction(g model.RouteGroup, r model.Route) *routev3.Route {
 		envoyRoute.Action = buildRedirectAction(r)
 	case r.Forward != nil:
 		envoyRoute.Action = buildForwardAction(r)
+	}
+
+	// Wire per_filter_config from merged FilterOverrides.
+	if pfc := buildPerFilterConfig(g.FilterOverrides, r.FilterOverrides, filterByID); pfc != nil {
+		envoyRoute.TypedPerFilterConfig = pfc
 	}
 
 	return envoyRoute
@@ -1094,45 +1099,9 @@ func buildListenerFromModel(ml model.Listener, filterByID map[string]model.Filte
 }
 
 // buildHTTPFilter converts a model.Filter into an Envoy HttpFilter proto.
-// Returns nil when the filter type is recognised but has no config (no-op).
-// Returns an error only when marshalling fails.
-//
-// NOTE: CORS, JWT, ExtAuthz, and ExtProc full config generation is stubbed here.
-// The filter is registered in the HCM pipeline with an empty typed config so
-// Envoy knows it exists. Per-route overrides will reference these filter names.
-// Full config generation will be wired in a follow-up iteration.
+// Delegates to buildHTTPFilterReal in filters.go for the actual typed config.
 func buildHTTPFilter(f model.Filter) (*hcmv3.HttpFilter, error) {
-	switch f.Type {
-	case model.FilterTypeCORS:
-		// CORS filter with empty config — Envoy applies global defaults.
-		// Full CORSConfig mapping is deferred.
-		return &hcmv3.HttpFilter{
-			Name: "envoy.filters.http.cors",
-		}, nil
-
-	case model.FilterTypeJWT:
-		// JWT authn filter stub — registered so per-route overrides are valid.
-		// Full JWTConfig mapping is deferred.
-		return &hcmv3.HttpFilter{
-			Name: "envoy.filters.http.jwt_authn",
-		}, nil
-
-	case model.FilterTypeExtAuthz:
-		// ext_authz filter stub.
-		return &hcmv3.HttpFilter{
-			Name: "envoy.filters.http.ext_authz",
-		}, nil
-
-	case model.FilterTypeExtProc:
-		// ext_proc filter stub.
-		return &hcmv3.HttpFilter{
-			Name: "envoy.filters.http.ext_proc",
-		}, nil
-
-	default:
-		// Unknown filter type — skip without error.
-		return nil, nil
-	}
+	return buildHTTPFilterReal(f)
 }
 
 // contains reports whether s appears in the slice.

@@ -18,6 +18,15 @@ const (
 	// FilterTypeExtProc configures the Envoy external processing filter
 	// (envoy.filters.http.ext_proc).
 	FilterTypeExtProc FilterType = "extProc"
+
+	// FilterTypeRateLimit configures the Envoy rate limit filter
+	// (envoy.filters.http.ratelimit). Requires an external rate limit service.
+	FilterTypeRateLimit FilterType = "rateLimit"
+
+	// FilterTypeHeaders configures the Envoy header mutation filter
+	// (envoy.filters.http.header_mutation). Adds or removes request/response
+	// headers as a middleware, consistent with the Filter entity pattern.
+	FilterTypeHeaders FilterType = "headers"
 )
 
 // Filter is an independent first-class entity that holds the configuration for a
@@ -48,6 +57,14 @@ type Filter struct {
 	// ExtProc holds the external processing filter configuration.
 	// Set when Type == "extProc".
 	ExtProc *ExtProcConfig `json:"extProc,omitempty" yaml:"extProc,omitempty"`
+
+	// RateLimit holds the rate limit filter configuration.
+	// Set when Type == "rateLimit".
+	RateLimit *RateLimitConfig `json:"rateLimit,omitempty" yaml:"rateLimit,omitempty"`
+
+	// Headers holds the header mutation filter configuration.
+	// Set when Type == "headers".
+	Headers *HeadersConfig `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -228,6 +245,83 @@ type ExtProcMode struct {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Rate Limit
+// ────────────────────────────────────────────────────────────────────────────
+
+// RateLimitConfig holds the configuration for the Envoy rate limit HTTP filter.
+// Requires an external rate limit service (e.g. Envoy's reference ratelimit).
+type RateLimitConfig struct {
+	// Domain is the rate limit domain passed to the rate limit service.
+	// The service uses this to scope rate limit descriptors.
+	Domain string `json:"domain" yaml:"domain"`
+
+	// GRPCService is the address of the gRPC rate limit service
+	// (e.g. "ratelimit.default.svc.cluster.local:8081").
+	GRPCService string `json:"grpcService" yaml:"grpcService"`
+
+	// Timeout is the rate limit request deadline (e.g. "500ms").
+	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+
+	// FailureModeDeny controls what happens when the rate limit service is
+	// unreachable. If true, requests are denied (fail-closed).
+	// Default is false (fail-open).
+	FailureModeDeny bool `json:"failureModeDeny,omitempty" yaml:"failureModeDeny,omitempty"`
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Header Manipulation
+// ────────────────────────────────────────────────────────────────────────────
+
+// HeadersConfig holds the configuration for the Envoy header mutation filter.
+// Adds or removes request/response headers. Modeled as a Filter entity so it
+// follows the same middleware pattern as CORS, JWT, etc.
+type HeadersConfig struct {
+	// RequestHeadersToAdd are headers added to the request before forwarding
+	// to the upstream.
+	RequestHeadersToAdd []HeaderValue `json:"requestHeadersToAdd,omitempty" yaml:"requestHeadersToAdd,omitempty"`
+
+	// RequestHeadersToRemove are header names removed from the request
+	// before forwarding.
+	RequestHeadersToRemove []string `json:"requestHeadersToRemove,omitempty" yaml:"requestHeadersToRemove,omitempty"`
+
+	// ResponseHeadersToAdd are headers added to the response before
+	// returning to the client.
+	ResponseHeadersToAdd []HeaderValue `json:"responseHeadersToAdd,omitempty" yaml:"responseHeadersToAdd,omitempty"`
+
+	// ResponseHeadersToRemove are header names removed from the response
+	// before returning to the client.
+	ResponseHeadersToRemove []string `json:"responseHeadersToRemove,omitempty" yaml:"responseHeadersToRemove,omitempty"`
+}
+
+// HeaderValue is a key-value pair for header manipulation.
+type HeaderValue struct {
+	// Key is the header name.
+	Key string `json:"key" yaml:"key"`
+
+	// Value is the header value.
+	Value string `json:"value" yaml:"value"`
+
+	// Append controls whether the header is appended (true) or replaced
+	// (false) if it already exists. Default: true.
+	Append bool `json:"append,omitempty" yaml:"append,omitempty"`
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Rate Limit Descriptors (for FilterOverride)
+// ────────────────────────────────────────────────────────────────────────────
+
+// RateLimitDescriptor defines a rate limit descriptor entry sent to the
+// rate limit service. Used in FilterOverride to set per-route descriptors.
+type RateLimitDescriptor struct {
+	// Key is the descriptor key (e.g. "remote_address", "header_match").
+	Key string `json:"key" yaml:"key"`
+
+	// Value is the descriptor value. When empty, Envoy uses the request
+	// attribute as the value (e.g. the actual header value).
+	Value string `json:"value,omitempty" yaml:"value,omitempty"`
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // FilterOverride — per-route and per-group overrides
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -254,4 +348,13 @@ type FilterOverride struct {
 	// ExtProcMode overrides the processing mode for this route/group.
 	// Only meaningful when the referenced filter is of type "extProc".
 	ExtProcMode *ExtProcMode `json:"extProcMode,omitempty" yaml:"extProcMode,omitempty"`
+
+	// RateLimitDescriptors defines the rate limit descriptors sent to the
+	// rate limit service for this route/group.
+	// Only meaningful when the referenced filter is of type "rateLimit".
+	RateLimitDescriptors []RateLimitDescriptor `json:"rateLimitDescriptors,omitempty" yaml:"rateLimitDescriptors,omitempty"`
+
+	// Headers overrides header manipulation for this route/group.
+	// Only meaningful when the referenced filter is of type "headers".
+	Headers *HeadersConfig `json:"headers,omitempty" yaml:"headers,omitempty"`
 }
