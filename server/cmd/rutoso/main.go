@@ -79,21 +79,41 @@ func run() error {
 	// xDS control-plane server.
 	xdsSrv := xds.New(logger)
 
-	// Gateway: bridges store events → xDS snapshot updates.
-	gw := gateway.New(gateway.Dependencies{
-		Store:       st,
-		Cache:       xdsSrv.Cache(),
-		XDSServer:   xdsSrv,
-		Logger:      logger,
-		NextVersion: xdsSrv.NextVersion,
-	})
-
 	// Kubernetes client (in-cluster, fallback to ~/.kube/config).
 	k8sClient, err := buildK8sClient()
 	if err != nil {
 		logger.Warn("k8s watcher disabled: could not build k8s client",
 			slog.String("error", err.Error()),
 		)
+	}
+
+	// Build k8s watcher before gateway so we can pass it as EndpointProvider.
+	var k8sWatch *k8swatcher.Watcher
+	if k8sClient != nil {
+		k8sWatch = k8swatcher.New(k8swatcher.Dependencies{
+			Store:  st,
+			Client: k8sClient,
+			Logger: logger,
+			// OnChange is set below after gateway is created.
+		})
+	}
+
+	// Gateway: bridges store events → xDS snapshot updates.
+	var epProvider gateway.EndpointProvider
+	if k8sWatch != nil {
+		epProvider = k8sWatch
+	}
+	gw := gateway.New(gateway.Dependencies{
+		Store:            st,
+		Cache:            xdsSrv.Cache(),
+		XDSServer:        xdsSrv,
+		Logger:           logger,
+		NextVersion:      xdsSrv.NextVersion,
+		EndpointProvider: epProvider,
+	})
+
+	if k8sWatch != nil {
+		k8sWatch.SetOnChange(gw.Rebuild)
 	}
 
 	// HTTP REST API.
@@ -115,15 +135,7 @@ func run() error {
 		}
 	}()
 
-	if k8sClient != nil {
-		k8sWatch := k8swatcher.New(k8swatcher.Dependencies{
-			Store:     st,
-			Cache:     xdsSrv.Cache(),
-			XDSServer: xdsSrv,
-			Client:  k8sClient,
-			Logger:  logger,
-			Rebuild: gw.Rebuild,
-		})
+	if k8sWatch != nil {
 		go func() {
 			if err := k8sWatch.Run(ctx); err != nil {
 				errCh <- fmt.Errorf("k8s watcher: %w", err)

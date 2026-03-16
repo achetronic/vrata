@@ -40,7 +40,7 @@ import (
 //
 // One Cluster + ClusterLoadAssignment is generated per Destination. Routes
 // reference Destinations by ID via BackendRef.
-func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters []model.Filter, groups []model.RouteGroup, routes []model.Route, destinations []model.Destination) (*cachev3.Snapshot, error) {
+func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters []model.Filter, groups []model.RouteGroup, routes []model.Route, destinations []model.Destination, edsCLAs map[string]*endpointv3.ClusterLoadAssignment) (*cachev3.Snapshot, error) {
 	// Build lookup maps for O(1) resolution.
 	routeByID := make(map[string]model.Route, len(routes))
 	for _, r := range routes {
@@ -72,9 +72,12 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelFilters
 		}
 		seen[d.ID] = true
 		clusters = append(clusters, buildClusterFromDestination(d))
-		// Only emit a static ClusterLoadAssignment for non-EDS clusters.
-		// EDS clusters receive endpoint updates via the EndpointSlice watcher.
-		if !isEDS(d) {
+		if isEDS(d) {
+			// Use the CLA provided by the k8s watcher if available.
+			if cla, ok := edsCLAs[d.ID]; ok {
+				endpoints = append(endpoints, cla)
+			}
+		} else {
 			endpoints = append(endpoints, buildEndpointFromDestination(d))
 		}
 	}

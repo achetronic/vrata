@@ -8,18 +8,26 @@ import (
 	"fmt"
 	"log/slog"
 
+	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 
 	"github.com/achetronic/rutoso/internal/store"
 	"github.com/achetronic/rutoso/internal/xds"
 )
 
+// EndpointProvider supplies current EDS ClusterLoadAssignments keyed by
+// Destination ID. The gateway queries this on every rebuild.
+type EndpointProvider interface {
+	Endpoints() map[string]*endpointv3.ClusterLoadAssignment
+}
+
 // Dependencies holds the external collaborators required by the Gateway.
 type Dependencies struct {
-	Store     store.Store
-	Cache     cachev3.SnapshotCache
-	XDSServer *xds.Server
-	Logger    *slog.Logger
+	Store             store.Store
+	Cache             cachev3.SnapshotCache
+	XDSServer         *xds.Server
+	Logger            *slog.Logger
+	EndpointProvider  EndpointProvider
 
 	// NextVersion is called to obtain a monotonically increasing version string
 	// for each new snapshot. Typically backed by xds.Server.NextVersion.
@@ -110,7 +118,13 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	}
 
 	version := gw.deps.NextVersion()
-	snap, err := xds.BuildSnapshot(version, listeners, filters, groups, routes, destinations)
+
+	var edsCLAs map[string]*endpointv3.ClusterLoadAssignment
+	if gw.deps.EndpointProvider != nil {
+		edsCLAs = gw.deps.EndpointProvider.Endpoints()
+	}
+
+	snap, err := xds.BuildSnapshot(version, listeners, filters, groups, routes, destinations, edsCLAs)
 	if err != nil {
 		return fmt.Errorf("building snapshot: %w", err)
 	}

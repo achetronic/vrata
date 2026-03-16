@@ -1,6 +1,12 @@
 // Package k8s watches Kubernetes EndpointSlices for Destinations whose
-// discovery type is "kubernetes" and pushes ClusterLoadAssignment updates
-// to the xDS snapshot cache whenever the set of ready endpoints changes.
+// discovery type is "kubernetes" and maintains an up-to-date map of
+// ClusterLoadAssignments keyed by Destination ID.
+//
+// The Watcher is a pure endpoint provider: it does not touch the xDS cache,
+// does not build snapshots, and does not know about Envoy. It exposes
+// Endpoints() so the gateway can query the current state during rebuild,
+// and calls deps.OnChange() whenever the endpoint set changes so the gateway
+// knows to trigger a rebuild.
 package k8s
 
 import (
@@ -12,11 +18,6 @@ import (
 
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
-	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
-	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
-	resourcev3 "github.com/envoyproxy/go-control-plane/pkg/resource/v3"
-
-	"github.com/achetronic/rutoso/internal/xds"
 
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,28 +32,55 @@ import (
 
 // Dependencies holds the collaborators required by the Watcher.
 type Dependencies struct {
-	Store     store.Store
-	Client    kubernetes.Interface
-	Cache     cachev3.SnapshotCache
-	XDSServer *xds.Server
-	Logger    *slog.Logger
-	Rebuild   func(ctx context.Context) error
+	// Store is used to list Destinations and subscribe to changes.
+	Store store.Store
+
+	// Client is the Kubernetes API client used to create informers.
+	Client kubernetes.Interface
+
+	// Logger receives structured log output.
+	Logger *slog.Logger
+
+	// OnChange is called whenever the endpoint set for any destination changes.
+	// Typically this triggers a gateway rebuild.
+	OnChange func(ctx context.Context) error
 }
 
-// Watcher observes Kubernetes EndpointSlices for EDS-backed Destinations and
-// pushes ClusterLoadAssignment updates to the xDS snapshot cache.
+// Watcher observes Kubernetes EndpointSlices for EDS-backed Destinations
+// and maintains a current map of ClusterLoadAssignments.
 type Watcher struct {
-	deps    Dependencies
-	mu      sync.Mutex
-	cancels map[string]context.CancelFunc // keyed by Destination ID
+	deps Dependencies
+
+	mu        sync.RWMutex
+	endpoints map[string]*endpointv3.ClusterLoadAssignment // keyed by Destination ID
+	cancels   map[string]context.CancelFunc                // keyed by Destination ID
 }
 
 // New creates a new Watcher. Call Run to start it.
 func New(deps Dependencies) *Watcher {
 	return &Watcher{
-		deps:    deps,
-		cancels: make(map[string]context.CancelFunc),
+		deps:      deps,
+		endpoints: make(map[string]*endpointv3.ClusterLoadAssignment),
+		cancels:   make(map[string]context.CancelFunc),
 	}
+}
+
+// SetOnChange sets the callback invoked when endpoints change.
+// Must be called before Run.
+func (w *Watcher) SetOnChange(fn func(ctx context.Context) error) {
+	w.deps.OnChange = fn
+}
+
+// Endpoints returns a snapshot of the current ClusterLoadAssignments,
+// keyed by Destination ID. Safe for concurrent use.
+func (w *Watcher) Endpoints() map[string]*endpointv3.ClusterLoadAssignment {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	out := make(map[string]*endpointv3.ClusterLoadAssignment, len(w.endpoints))
+	for k, v := range w.endpoints {
+		out[k] = v
+	}
+	return out
 }
 
 // Run subscribes to the store and reconciles EndpointSlice watches until ctx
@@ -120,6 +148,7 @@ func (w *Watcher) reconcile(ctx context.Context) error {
 			w.deps.Logger.Info("k8s watcher: stopping watch", slog.String("destID", id))
 			cancel()
 			delete(w.cancels, id)
+			delete(w.endpoints, id)
 		}
 	}
 
@@ -144,10 +173,8 @@ func (w *Watcher) reconcile(ctx context.Context) error {
 	return nil
 }
 
-// watchEndpointSlices starts a k8s informer for EndpointSlices belonging to
-// the given service. On every event it rebuilds the full xDS snapshot (so
-// cluster/route/listener resources stay consistent) and then overwrites the
-// EDS endpoint resource for this destination in all known node snapshots.
+// watchEndpointSlices runs an informer for the given service's EndpointSlices.
+// On every event it updates the internal CLA map and calls OnChange.
 func (w *Watcher) watchEndpointSlices(ctx context.Context, destID string, destPort uint32, namespace, service string) {
 	w.deps.Logger.Info("k8s watcher: starting EndpointSlice watch",
 		slog.String("destID", destID),
@@ -168,73 +195,32 @@ func (w *Watcher) watchEndpointSlices(ctx context.Context, destID string, destPo
 
 	informer := factory.Discovery().V1().EndpointSlices().Informer()
 
-	push := func(_ interface{}) {
-		// First do a full snapshot rebuild so cluster/route/listener are current.
-		if err := w.deps.Rebuild(ctx); err != nil {
-			w.deps.Logger.Error("k8s watcher: rebuild failed",
+	onEvent := func(_ interface{}) {
+		objs := informer.GetStore().List()
+		cla := buildCLA(destID, destPort, objs)
+
+		w.mu.Lock()
+		w.endpoints[destID] = cla
+		w.mu.Unlock()
+
+		w.deps.Logger.Info("k8s watcher: endpoints updated",
+			slog.String("destID", destID),
+			slog.String("service", service),
+			slog.Int("lb_endpoints", len(cla.Endpoints[0].LbEndpoints)),
+		)
+
+		if err := w.deps.OnChange(ctx); err != nil {
+			w.deps.Logger.Error("k8s watcher: OnChange failed",
 				slog.String("destID", destID),
 				slog.String("error", err.Error()),
 			)
 		}
-
-		objs := informer.GetStore().List()
-		cla := buildCLA(destID, destPort, objs)
-
-		w.deps.Logger.Info("k8s watcher: pushing EDS endpoints",
-			slog.String("destID", destID),
-			slog.Int("endpoints", len(cla.Endpoints)),
-		)
-
-		// Build an updated snapshot merging the CLA into lastSnapshot.
-		// This is used both for connected nodes and for nodes that connect later.
-		var snapWithEDS *cachev3.Snapshot
-		if last := w.deps.XDSServer.Snapshot(); last != nil {
-			existing, ok := last.(*cachev3.Snapshot)
-			if ok {
-				resources := existing.GetResources(resourcev3.EndpointType)
-				updated := make(map[string]types.Resource, len(resources)+1)
-				for k, v := range resources {
-					updated[k] = v
-				}
-				updated[destID] = cla
-				endpointList := resourcesToSlice(updated)
-				newSnap, err := cachev3.NewSnapshot(
-					existing.GetVersion(resourcev3.EndpointType)+"e",
-					map[resourcev3.Type][]types.Resource{
-						resourcev3.ClusterType:  resourcesToSlice(existing.GetResources(resourcev3.ClusterType)),
-						resourcev3.EndpointType: endpointList,
-						resourcev3.RouteType:    resourcesToSlice(existing.GetResources(resourcev3.RouteType)),
-						resourcev3.ListenerType: resourcesToSlice(existing.GetResources(resourcev3.ListenerType)),
-					},
-				)
-				if err == nil {
-					snapWithEDS = newSnap
-				}
-			}
-		}
-
-		if snapWithEDS == nil {
-			return
-		}
-
-		// Always update lastSnapshot so new nodes get endpoints on connect.
-		w.deps.XDSServer.SetLastSnapshot(snapWithEDS)
-
-		// Push to already-connected nodes.
-		for _, nodeID := range w.deps.Cache.GetStatusKeys() {
-			if err := w.deps.Cache.SetSnapshot(ctx, nodeID, snapWithEDS); err != nil {
-				w.deps.Logger.Error("k8s watcher: set snapshot failed",
-					slog.String("nodeId", nodeID),
-					slog.String("error", err.Error()),
-				)
-			}
-		}
 	}
 
 	informer.AddEventHandler(kcache.ResourceEventHandlerFuncs{ //nolint:errcheck
-		AddFunc:    push,
-		UpdateFunc: func(_, newObj interface{}) { push(newObj) },
-		DeleteFunc: push,
+		AddFunc:    onEvent,
+		UpdateFunc: func(_, newObj interface{}) { onEvent(newObj) },
+		DeleteFunc: onEvent,
 	})
 
 	factory.Start(ctx.Done())
@@ -246,8 +232,19 @@ func (w *Watcher) watchEndpointSlices(ctx context.Context, destID string, destPo
 	)
 }
 
-// buildCLA builds a ClusterLoadAssignment from the EndpointSlice objects
-// currently held by the informer store. Only Ready endpoints are included.
+// stopAll cancels all active watches and clears endpoint state.
+func (w *Watcher) stopAll() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for id, cancel := range w.cancels {
+		cancel()
+		delete(w.cancels, id)
+		delete(w.endpoints, id)
+	}
+}
+
+// buildCLA builds a ClusterLoadAssignment from EndpointSlice objects.
+// Only Ready endpoints are included.
 func buildCLA(destID string, destPort uint32, objs []interface{}) *endpointv3.ClusterLoadAssignment {
 	var lbEndpoints []*endpointv3.LbEndpoint
 
@@ -256,8 +253,6 @@ func buildCLA(destID string, destPort uint32, objs []interface{}) *endpointv3.Cl
 		if !ok {
 			continue
 		}
-
-		// Determine which port to use from the slice's port list.
 		port := destPort
 		for _, p := range slice.Ports {
 			if p.Port != nil {
@@ -265,7 +260,6 @@ func buildCLA(destID string, destPort uint32, objs []interface{}) *endpointv3.Cl
 				break
 			}
 		}
-
 		for _, ep := range slice.Endpoints {
 			if ep.Conditions.Ready != nil && !*ep.Conditions.Ready {
 				continue
@@ -293,19 +287,7 @@ func buildCLA(destID string, destPort uint32, objs []interface{}) *endpointv3.Cl
 
 	return &endpointv3.ClusterLoadAssignment{
 		ClusterName: destID,
-		Endpoints: []*endpointv3.LocalityLbEndpoints{
-			{LbEndpoints: lbEndpoints},
-		},
-	}
-}
-
-// stopAll cancels all active watches.
-func (w *Watcher) stopAll() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	for id, cancel := range w.cancels {
-		cancel()
-		delete(w.cancels, id)
+		Endpoints:   []*endpointv3.LocalityLbEndpoints{{LbEndpoints: lbEndpoints}},
 	}
 }
 
@@ -321,13 +303,4 @@ func parseFQDN(host string) (namespace, service string, err error) {
 		return "", "", fmt.Errorf("expected at least <service>.<namespace> in %q", host)
 	}
 	return parts[1], parts[0], nil
-}
-
-// resourcesToSlice converts a map[string]types.Resource to a []types.Resource.
-func resourcesToSlice(m map[string]types.Resource) []types.Resource {
-	s := make([]types.Resource, 0, len(m))
-	for _, v := range m {
-		s = append(s, v)
-	}
-	return s
 }
