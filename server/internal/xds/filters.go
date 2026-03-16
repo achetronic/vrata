@@ -90,6 +90,13 @@ func buildHTTPFilterReal(f model.Middleware) (*hcmv3.HttpFilter, error) {
 // ─── CORS ────────────────────────────────────────────────────────────────────
 
 func marshalCORS(c *model.CORSConfig) (*anypb.Any, error) {
+	// CORS filter in HCM is always the empty Cors{} wrapper.
+	// The actual CORS policy goes in per_filter_config on each route.
+	return anypb.New(&corsv3.Cors{})
+}
+
+// marshalCORSPolicy builds the per-route CorsPolicy from the model config.
+func marshalCORSPolicy(c *model.CORSConfig) (*anypb.Any, error) {
 	p := &corsv3.CorsPolicy{}
 	if c != nil {
 		for _, o := range c.AllowOrigins {
@@ -425,7 +432,8 @@ func buildPerFilterConfig(
 			continue
 		}
 
-		// Middleware is active. Apply override if present.
+		// Middleware is active. Apply override if present, or inject config for
+		// filter types that require per-route config (e.g. CORS).
 		if ov, hasOv := mergedOv[mwID]; hasOv {
 			if ov.Disabled {
 				if a, err := marshalDisabledOverride(mw.Type); err == nil && a != nil {
@@ -435,6 +443,12 @@ func buildPerFilterConfig(
 				if a, err := marshalMiddlewareOverride(mw.Type, ov); err == nil && a != nil {
 					result[name] = a
 				}
+			}
+		} else if mw.Type == model.MiddlewareTypeCORS {
+			// CORS is special: HCM gets empty Cors{}, the actual policy MUST go
+			// in per_filter_config on every route where it's active.
+			if a, err := marshalCORSPolicy(mw.CORS); err == nil && a != nil {
+				result[name] = a
 			}
 		}
 		// If no override, the middleware runs with its global config (no per_filter_config needed).
