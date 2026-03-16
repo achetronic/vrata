@@ -27,7 +27,8 @@ ENVOY_NODE_ID  := envoy-dev-0
 
 # Host IP as seen from inside Kind pods (Docker 'kind' network gateway).
 # Auto-detected after cluster creation. Override: make dev-up HOST_IP=1.2.3.4
-HOST_IP ?= $(shell docker network inspect kind --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null)
+HOST_IP ?= $(shell docker network inspect kind --format '{{range .IPAM.Config}}{{.Gateway}}
+{{end}}' 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$$' | head -1)
 
 .PHONY: build docs docker-build docker-push run run-dev clean \
         dev-up dev-down dev-envoy-logs dev-envoy-admin
@@ -92,7 +93,8 @@ dev-up: build
 	@# ── 2. Detect host IP, substitute in template, deploy Envoy ───────────
 	@HOST_IP="$(HOST_IP)"; \
 	if [ -z "$$HOST_IP" ]; then \
-		HOST_IP=$$(docker network inspect kind --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null); \
+		HOST_IP=$$(docker network inspect kind --format '{{range .IPAM.Config}}{{.Gateway}}
+{{end}}' 2>/dev/null | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | head -1); \
 	fi; \
 	if [ -z "$$HOST_IP" ]; then \
 		echo "ERROR: could not detect host IP from Docker 'kind' network."; \
