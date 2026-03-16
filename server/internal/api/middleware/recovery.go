@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/achetronic/rutoso/server/internal/api/respond"
+	"github.com/achetronic/rutoso/internal/api/respond"
 )
 
 // Recovery returns a middleware that catches any panic in a handler, logs the

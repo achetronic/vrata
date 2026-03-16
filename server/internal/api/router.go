@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/achetronic/rutoso/server/internal/api/handlers"
-	"github.com/achetronic/rutoso/server/internal/api/middleware"
-	"github.com/achetronic/rutoso/server/internal/store"
+	"github.com/achetronic/rutoso/internal/api/handlers"
+	"github.com/achetronic/rutoso/internal/api/middleware"
+	"github.com/achetronic/rutoso/internal/store"
 )
 
 // NewRouter creates and returns the root http.Handler for the Rutoso REST API.

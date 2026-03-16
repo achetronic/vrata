@@ -20,7 +20,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/achetronic/rutoso/server/internal/model"
+	"github.com/achetronic/rutoso/internal/model"
 )
 
 // BuildSnapshot converts a slice of RouteGroups into a complete Envoy xDS Snapshot.

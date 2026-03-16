@@ -11,13 +11,14 @@ XDS_ADDR    ?= 0.0.0.0:18000
 GO          := go
 GOFLAGS     := -ldflags="-s -w -X main.version=$(VERSION)"
 BUILD_DIR   := ./bin
+SERVER_DIR  := ./server
 
 .PHONY: build docker-build docker-push run run-dev clean
 
 ## build: compile the binary into ./bin/rutoso
 build:
 	mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=0 $(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY) ./server/cmd/$(BINARY)
+	cd $(SERVER_DIR) && CGO_ENABLED=0 $(GO) build $(GOFLAGS) -o ../$(BUILD_DIR)/$(BINARY) ./cmd/$(BINARY)
 
 ## docker-build: build the Docker image
 docker-build:

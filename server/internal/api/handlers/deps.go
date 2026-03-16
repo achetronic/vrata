@@ -5,7 +5,7 @@ package handlers
 import (
 	"log/slog"
 
-	"github.com/achetronic/rutoso/server/internal/store"
+	"github.com/achetronic/rutoso/internal/store"
 )
 
 // Dependencies holds all external collaborators shared by the HTTP handlers.

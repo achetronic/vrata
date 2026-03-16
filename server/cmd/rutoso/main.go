@@ -17,11 +17,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/achetronic/rutoso/server/internal/api"
-	"github.com/achetronic/rutoso/server/internal/config"
-	"github.com/achetronic/rutoso/server/internal/gateway"
-	"github.com/achetronic/rutoso/server/internal/store/memory"
-	"github.com/achetronic/rutoso/server/internal/xds"
+	"github.com/achetronic/rutoso/internal/api"
+	"github.com/achetronic/rutoso/internal/config"
+	"github.com/achetronic/rutoso/internal/gateway"
+	"github.com/achetronic/rutoso/internal/store/memory"
+	"github.com/achetronic/rutoso/internal/xds"
 )
 
 func main() {

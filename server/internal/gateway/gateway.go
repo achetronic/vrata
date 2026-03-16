@@ -10,8 +10,8 @@ import (
 
 	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 
-	"github.com/achetronic/rutoso/server/internal/store"
-	"github.com/achetronic/rutoso/server/internal/xds"
+	"github.com/achetronic/rutoso/internal/store"
+	"github.com/achetronic/rutoso/internal/xds"
 )
 
 // Dependencies holds the external collaborators required by the Gateway.

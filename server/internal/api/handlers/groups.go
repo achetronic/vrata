@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/achetronic/rutoso/server/internal/api/respond"
-	"github.com/achetronic/rutoso/server/internal/model"
+	"github.com/achetronic/rutoso/internal/api/respond"
+	"github.com/achetronic/rutoso/internal/model"
 )
 
 // GroupsHandler handles CRUD operations for route groups.

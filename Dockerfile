@@ -6,15 +6,15 @@ FROM golang:1.25-alpine AS builder
 WORKDIR /src
 
 # Download dependencies first (cached layer).
-COPY go.mod go.sum ./
+COPY server/go.mod server/go.sum ./
 RUN go mod download
 
 # Copy source and build a static binary.
-COPY server/ ./server/
+COPY server/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w" \
     -o /bin/rutoso \
-    ./server/cmd/rutoso
+    ./cmd/rutoso
 
 # ---- runtime stage ----
 FROM gcr.io/distroless/static-debian12:nonroot
