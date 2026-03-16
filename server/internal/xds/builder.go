@@ -4,7 +4,9 @@ package xds
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"regexp"
+	"strings"
 	"time"
 
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
@@ -15,6 +17,7 @@ import (
 	routerv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/router/v3"
 	hcmv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	matcherv3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
+	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
 	"github.com/envoyproxy/go-control-plane/pkg/cache/types"
 	resourcev3 "github.com/envoyproxy/go-control-plane/pkg/resource/v3"
@@ -156,15 +159,23 @@ func buildVirtualHost(g model.RouteGroup, r model.Route) *routev3.VirtualHost {
 }
 
 // buildRouteAction builds the Envoy Route message for a single Rutoso Route,
-// including the match conditions and the weighted cluster action.
+// including the match conditions and the appropriate action (forward to
+// backends, redirect, or direct response).
 func buildRouteAction(g model.RouteGroup, r model.Route) *routev3.Route {
 	match := buildRouteMatch(g, r)
-	action := buildWeightedClusterAction(r)
 
-	return &routev3.Route{
-		Match:  match,
-		Action: action,
+	envoyRoute := &routev3.Route{Match: match}
+
+	switch {
+	case r.DirectResponse != nil:
+		envoyRoute.Action = buildDirectResponseAction(r)
+	case r.Redirect != nil:
+		envoyRoute.Action = buildRedirectAction(r)
+	case r.Forward != nil:
+		envoyRoute.Action = buildForwardAction(r)
 	}
+
+	return envoyRoute
 }
 
 // buildRouteMatch converts a MatchRule (plus group-level matchers) into an
@@ -253,33 +264,236 @@ func buildRouteMatch(g model.RouteGroup, r model.Route) *routev3.RouteMatch {
 	return rm
 }
 
-// buildWeightedClusterAction creates a weighted cluster route action.
-// Cluster names match Destination IDs. If only one backend is defined,
-// a simple cluster action is used instead of a weighted cluster.
-func buildWeightedClusterAction(r model.Route) *routev3.Route_Route {
-	if len(r.Backends) == 1 {
-		return &routev3.Route_Route{
-			Route: &routev3.RouteAction{
-				ClusterSpecifier: &routev3.RouteAction_Cluster{
-					Cluster: r.Backends[0].DestinationID,
-				},
+// buildForwardAction creates a Route_Route action that forwards traffic to
+// one or more upstream Destinations. It also wires timeouts, retry policy,
+// URL rewriting, and request mirroring when configured on the ForwardAction.
+func buildForwardAction(r model.Route) *routev3.Route_Route {
+	f := r.Forward
+	ra := &routev3.RouteAction{}
+
+	if len(f.Backends) == 1 {
+		ra.ClusterSpecifier = &routev3.RouteAction_Cluster{
+			Cluster: f.Backends[0].DestinationID,
+		}
+	} else if len(f.Backends) > 1 {
+		var wcs []*routev3.WeightedCluster_ClusterWeight
+		for _, b := range f.Backends {
+			wcs = append(wcs, &routev3.WeightedCluster_ClusterWeight{
+				Name:   b.DestinationID,
+				Weight: wrapperspb.UInt32(b.Weight),
+			})
+		}
+		ra.ClusterSpecifier = &routev3.RouteAction_WeightedClusters{
+			WeightedClusters: &routev3.WeightedCluster{
+				Clusters: wcs,
 			},
 		}
 	}
 
-	var wcs []*routev3.WeightedCluster_ClusterWeight
-	for _, b := range r.Backends {
-		wcs = append(wcs, &routev3.WeightedCluster_ClusterWeight{
-			Name:   b.DestinationID,
-			Weight: wrapperspb.UInt32(b.Weight),
-		})
+	applyTimeouts(ra, f.Timeouts)
+	applyRetryPolicy(ra, f.Retry)
+	applyRewrite(ra, f.Rewrite)
+	applyMirror(ra, f.Mirror)
+
+	return &routev3.Route_Route{Route: ra}
+}
+
+// buildRedirectAction creates a Route_Redirect action from the Route's
+// Redirect config. When URL is set it is parsed and decomposed into its
+// scheme, host, and path components; the individual fields are ignored.
+func buildRedirectAction(r model.Route) *routev3.Route_Redirect {
+	rd := r.Redirect
+	ra := &routev3.RedirectAction{
+		StripQuery: rd.StripQuery,
 	}
 
-	return &routev3.Route_Route{
-		Route: &routev3.RouteAction{
-			ClusterSpecifier: &routev3.RouteAction_WeightedClusters{
-				WeightedClusters: &routev3.WeightedCluster{
-					Clusters: wcs,
+	if rd.URL != "" {
+		if u, err := url.Parse(rd.URL); err == nil {
+			if u.Scheme != "" {
+				ra.SchemeRewriteSpecifier = &routev3.RedirectAction_SchemeRedirect{
+					SchemeRedirect: u.Scheme,
+				}
+			}
+			if u.Host != "" {
+				ra.HostRedirect = u.Host
+			}
+			if u.Path != "" {
+				ra.PathRewriteSpecifier = &routev3.RedirectAction_PathRedirect{
+					PathRedirect: u.Path,
+				}
+			}
+		}
+	} else {
+		if rd.Host != "" {
+			ra.HostRedirect = rd.Host
+		}
+		if rd.Path != "" {
+			ra.PathRewriteSpecifier = &routev3.RedirectAction_PathRedirect{
+				PathRedirect: rd.Path,
+			}
+		}
+		if rd.Scheme != "" {
+			ra.SchemeRewriteSpecifier = &routev3.RedirectAction_SchemeRedirect{
+				SchemeRedirect: rd.Scheme,
+			}
+		}
+	}
+
+	switch rd.Code {
+	case 302:
+		ra.ResponseCode = routev3.RedirectAction_FOUND
+	case 303:
+		ra.ResponseCode = routev3.RedirectAction_SEE_OTHER
+	case 307:
+		ra.ResponseCode = routev3.RedirectAction_TEMPORARY_REDIRECT
+	case 308:
+		ra.ResponseCode = routev3.RedirectAction_PERMANENT_REDIRECT
+	default:
+		ra.ResponseCode = routev3.RedirectAction_MOVED_PERMANENTLY
+	}
+
+	return &routev3.Route_Redirect{Redirect: ra}
+}
+
+// buildDirectResponseAction creates a Route_DirectResponse action from the
+// Route's DirectResponse config.
+func buildDirectResponseAction(r model.Route) *routev3.Route_DirectResponse {
+	dr := r.DirectResponse
+	action := &routev3.DirectResponseAction{
+		Status: dr.Status,
+	}
+	if dr.Body != "" {
+		action.Body = &corev3.DataSource{
+			Specifier: &corev3.DataSource_InlineString{
+				InlineString: dr.Body,
+			},
+		}
+	}
+	return &routev3.Route_DirectResponse{DirectResponse: action}
+}
+
+// applyTimeouts sets the request and idle timeouts on the RouteAction.
+func applyTimeouts(ra *routev3.RouteAction, t *model.RouteTimeouts) {
+	if t == nil {
+		return
+	}
+	if t.Request != "" {
+		if dur, err := time.ParseDuration(t.Request); err == nil {
+			ra.Timeout = durationpb.New(dur)
+		}
+	}
+	if t.Idle != "" {
+		if dur, err := time.ParseDuration(t.Idle); err == nil {
+			ra.IdleTimeout = durationpb.New(dur)
+		}
+	}
+}
+
+// retryConditionMap translates semantic retry condition names into the
+// comma-separated values Envoy expects in RetryPolicy.retry_on.
+var retryConditionMap = map[model.RetryCondition]string{
+	model.RetryOnServerError:       "5xx",
+	model.RetryOnConnectionFailure: "connect-failure,reset",
+	model.RetryOnGatewayError:      "gateway-error",
+	model.RetryOnRetriableCodes:    "retriable-status-codes",
+}
+
+// applyRetryPolicy sets the retry policy on the RouteAction.
+func applyRetryPolicy(ra *routev3.RouteAction, retry *model.RouteRetry) {
+	if retry == nil {
+		return
+	}
+	rp := &routev3.RetryPolicy{
+		NumRetries: wrapperspb.UInt32(retry.Attempts),
+	}
+
+	var conditions []string
+	for _, c := range retry.On {
+		if envoyVal, ok := retryConditionMap[c]; ok {
+			conditions = append(conditions, envoyVal)
+		}
+	}
+	if len(conditions) > 0 {
+		rp.RetryOn = strings.Join(conditions, ",")
+	}
+
+	if retry.PerAttemptTimeout != "" {
+		if dur, err := time.ParseDuration(retry.PerAttemptTimeout); err == nil {
+			rp.PerTryTimeout = durationpb.New(dur)
+		}
+	}
+
+	if len(retry.RetriableCodes) > 0 {
+		rp.RetriableStatusCodes = retry.RetriableCodes
+	}
+
+	if retry.Backoff != nil {
+		bo := &routev3.RetryPolicy_RetryBackOff{}
+		if retry.Backoff.Base != "" {
+			if dur, err := time.ParseDuration(retry.Backoff.Base); err == nil {
+				bo.BaseInterval = durationpb.New(dur)
+			}
+		}
+		if retry.Backoff.Max != "" {
+			if dur, err := time.ParseDuration(retry.Backoff.Max); err == nil {
+				bo.MaxInterval = durationpb.New(dur)
+			}
+		}
+		rp.RetryBackOff = bo
+	}
+
+	ra.RetryPolicy = rp
+}
+
+// applyRewrite sets prefix rewrite, regex rewrite, and host rewrite on the
+// RouteAction.
+func applyRewrite(ra *routev3.RouteAction, rw *model.RouteRewrite) {
+	if rw == nil {
+		return
+	}
+
+	switch {
+	case rw.PathRegex != nil:
+		ra.RegexRewrite = &matcherv3.RegexMatchAndSubstitute{
+			Pattern:      &matcherv3.RegexMatcher{Regex: rw.PathRegex.Pattern},
+			Substitution: rw.PathRegex.Substitution,
+		}
+	case rw.Path != "":
+		ra.PrefixRewrite = rw.Path
+	}
+
+	switch {
+	case rw.AutoHost:
+		ra.HostRewriteSpecifier = &routev3.RouteAction_AutoHostRewrite{
+			AutoHostRewrite: wrapperspb.Bool(true),
+		}
+	case rw.HostFromHeader != "":
+		ra.HostRewriteSpecifier = &routev3.RouteAction_HostRewriteHeader{
+			HostRewriteHeader: rw.HostFromHeader,
+		}
+	case rw.Host != "":
+		ra.HostRewriteSpecifier = &routev3.RouteAction_HostRewriteLiteral{
+			HostRewriteLiteral: rw.Host,
+		}
+	}
+}
+
+// applyMirror sets the request mirror policy on the RouteAction.
+func applyMirror(ra *routev3.RouteAction, m *model.RouteMirror) {
+	if m == nil {
+		return
+	}
+	pct := m.Percentage
+	if pct == 0 {
+		pct = 100
+	}
+	ra.RequestMirrorPolicies = []*routev3.RouteAction_RequestMirrorPolicy{
+		{
+			Cluster: m.DestinationID,
+			RuntimeFraction: &corev3.RuntimeFractionalPercent{
+				DefaultValue: &typev3.FractionalPercent{
+					Numerator:   pct,
+					Denominator: typev3.FractionalPercent_HUNDRED,
 				},
 			},
 		},

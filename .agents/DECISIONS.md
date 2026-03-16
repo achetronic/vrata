@@ -207,6 +207,33 @@ flat-replace: always merge (group base + route delta).
 
 ---
 
+## Route action grouped under ForwardAction (not flat on Route)
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+All forwarding behaviour (backends, timeouts, retry, rewrite, mirror) lives inside
+a `ForwardAction` struct nested under `Route.Forward`, rather than as flat fields
+on `Route`. The three action modes are:
+
+- `Route.Forward *ForwardAction` — proxy to upstream(s)
+- `Route.Redirect *RouteRedirect` — HTTP redirect to client
+- `Route.DirectResponse *RouteDirectResponse` — fixed response, no upstream
+
+**Reasoning**: In Envoy's proto, `RouteAction` (the forward action) owns
+`timeout`, `retry_policy`, `prefix_rewrite`, `request_mirror_policies`, etc.
+They are not siblings of `redirect` or `direct_response` — they are children of
+the forward action. Flattening them onto `Route` broke that hierarchy, made it
+possible to set `retry` alongside `redirect` (nonsensical), and obscured the
+one-of nature of the three action modes. Grouping them under `ForwardAction`
+reflects the proto structure exactly and makes the API self-documenting.
+
+**Do not**: Move `Timeouts`, `Retry`, `Rewrite`, or `Mirror` back to the `Route`
+root level. Do not add a `type` discriminator field — the presence of the relevant
+pointer is the discriminator. Always validate mutual exclusivity at the handler level.
+
+---
+
 ## TLS termination modeled but deferred from xDS builder
 
 **Date**: 2026-03-16
@@ -358,3 +385,59 @@ double duty.
 **Do not**: Add `namespace`, `serviceName`, or `serviceAccount` fields to
 `Destination` or `Discovery`. Do not parse the FQDN outside of the k8s watcher
 package — the xDS builder receives the FQDN as-is and passes it to Envoy.
+
+---
+
+## Route has three mutually exclusive action modes
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+A `Route` operates in exactly one of three modes, determined by which field is set:
+- `backends` — forward traffic to one or more upstream `Destination` entities.
+- `redirect` — return an HTTP redirect (3xx) to the client.
+- `directResponse` — return a fixed HTTP response without contacting any upstream.
+
+Setting more than one of these fields, or none at all, is a validation error
+(`ErrConflictingAction`, HTTP 400).
+
+**Reasoning**: These three are genuinely mutually exclusive at the Envoy protocol
+level (`Route.action` is a protobuf oneof). Allowing all three to coexist on the
+model would produce ambiguous behaviour and require silent tie-breaking rules.
+Making it explicit at validation time gives the API user a clear, actionable error.
+
+**Do not**: Add a `type` discriminator field to `Route` — the presence of the
+relevant struct pointer is the discriminator. Do not silently ignore extra fields
+if more than one mode is set. Do not add a fourth action mode without a decision entry.
+
+---
+
+## Route action fields use semantic naming, not Envoy internals
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+Route-level behaviour (timeouts, retries, URL rewriting, mirroring) is modeled
+with user-facing semantic names. Envoy's internal field names are never exposed:
+
+- `retry.on` uses `["server-error", "connection-failure", "gateway-error", "retriable-codes"]`
+  instead of Envoy's `"5xx,reset,connect-failure,gateway-error,retriable-status-codes"`.
+- `rewrite.path` covers both `prefix_rewrite` and is paired with `rewrite.pathRegex`
+  for regex rewrites — no `prefixRewrite`/`regexRewrite` split exposed.
+- `rewrite.host`, `rewrite.hostFromHeader`, `rewrite.autoHost` map to Envoy's
+  `host_rewrite_literal`, `host_rewrite_header`, `auto_host_rewrite` oneofs.
+- `timeouts.request` / `timeouts.idle` map to `timeout` / `idle_timeout`.
+- `mirror.percentage` (0–100 integer) maps to Envoy's `RuntimeFractionalPercent`
+  with `HUNDRED` denominator internally.
+
+The translation lives entirely in `xds/builder.go`. Model types never reference
+Envoy proto field names.
+
+**Reasoning**: Rutoso is an API on top of Envoy. Users think in terms of
+"retry on server errors" and "rewrite the path prefix", not in terms of
+`retry_on: "5xx,reset"` or `prefix_rewrite`. Semantic naming also insulates the
+API from Envoy internal restructuring across versions.
+
+**Do not**: Expose Envoy's raw `retry_on` string format in the API. Do not add
+`prefixRewrite`, `regexRewrite`, `hostRewriteLiteral`, or `autoHostRewrite` as
+top-level fields on `Route`. All translation stays in the xDS builder.

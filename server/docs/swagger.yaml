@@ -1,808 +1,1022 @@
-components:
-  schemas:
-    model.BackendRef:
-      properties:
-        destinationId:
-          description: DestinationID is the ID of the Destination this backend points
-            to.
+basePath: /
+definitions:
+  model.BackendRef:
+    properties:
+      destinationId:
+        description: DestinationID is the ID of the Destination this backend points
+          to.
+        type: string
+      hashPolicy:
+        allOf:
+        - $ref: '#/definitions/model.HashPolicy'
+        description: |-
+          HashPolicy defines how Envoy computes the sticky-session key for this
+          backend. Only relevant when the referenced Destination uses RING_HASH
+          or MAGLEV balancing. Maps to RouteAction.hash_policy in Envoy.
+      weight:
+        description: |-
+          Weight controls the proportion of traffic sent to this Destination
+          when multiple backends are defined. Values across all BackendRefs in
+          a Route must sum to 100.
+        type: integer
+    type: object
+  model.BalancingOptions:
+    properties:
+      algorithm:
+        allOf:
+        - $ref: '#/definitions/model.LBPolicy'
+        description: |-
+          Algorithm selects the load-balancing policy.
+          Default: ROUND_ROBIN.
+          Maps to Cluster.lb_policy.
+      maglevTableSize:
+        description: |-
+          MaglevTableSize sets the Maglev hash table size.
+          Must be a prime number. Default: 65537.
+          Ignored unless Algorithm is MAGLEV.
+          Maps to Cluster.maglev_lb_config.table_size.
+        type: integer
+      ringSize:
+        allOf:
+        - $ref: '#/definitions/model.RingSizeOptions'
+        description: |-
+          RingSize tunes the consistent hash ring used by RING_HASH.
+          Ignored unless Algorithm is RING_HASH.
+          Maps to Cluster.ring_hash_lb_config.
+    type: object
+  model.CORSConfig:
+    properties:
+      allowCredentials:
+        description: AllowCredentials indicates whether the request can include user
+          credentials.
+        type: boolean
+      allowHeaders:
+        description: AllowHeaders lists the request headers allowed in CORS requests.
+        items:
           type: string
-        hashPolicy:
-          $ref: '#/components/schemas/model.HashPolicy'
-        weight:
-          description: |-
-            Weight controls the proportion of traffic sent to this Destination
-            when multiple backends are defined. Values across all BackendRefs in
-            a Route must sum to 100.
+        type: array
+      allowMethods:
+        description: |-
+          AllowMethods lists the HTTP methods allowed in CORS requests.
+          Example: ["GET", "POST", "OPTIONS"]
+        items:
+          type: string
+        type: array
+      allowOrigins:
+        description: |-
+          AllowOrigins lists the allowed origin patterns.
+          Each entry is matched as an exact string or a regex if Regex is true.
+        items:
+          $ref: '#/definitions/model.CORSOrigin'
+        type: array
+      exposeHeaders:
+        description: ExposeHeaders lists the response headers the browser is allowed
+          to access.
+        items:
+          type: string
+        type: array
+      maxAge:
+        description: |-
+          MaxAge sets the preflight cache duration in seconds.
+          Maps to the Access-Control-Max-Age response header.
+        type: integer
+    type: object
+  model.CORSOrigin:
+    properties:
+      regex:
+        description: Regex indicates that Value should be treated as a regular expression.
+        type: boolean
+      value:
+        description: Value is the origin string or regex pattern.
+        type: string
+    type: object
+  model.CircuitBreakerOptions:
+    properties:
+      maxConnections:
+        description: |-
+          MaxConnections is the maximum number of concurrent TCP connections.
+          Maps to max_connections.
+        type: integer
+      maxPendingRequests:
+        description: |-
+          MaxPendingRequests is the maximum number of requests queued while
+          waiting for a connection. Maps to max_pending_requests.
+        type: integer
+      maxRequests:
+        description: |-
+          MaxRequests is the maximum number of concurrent requests.
+          Maps to max_requests.
+        type: integer
+      maxRetries:
+        description: |-
+          MaxRetries is the maximum number of concurrent retries.
+          Maps to max_retries.
+        type: integer
+    type: object
+  model.Destination:
+    properties:
+      host:
+        description: |-
+          Host is the upstream FQDN or IP address.
+          For Kubernetes Services use the full FQDN:
+            pepe.default.svc.cluster.local
+          When Options.Discovery.Type is "kubernetes" the service name and
+          namespace are parsed from this field automatically.
+        type: string
+      id:
+        description: ID is the unique identifier of this destination.
+        type: string
+      name:
+        description: Name is a human-readable label.
+        type: string
+      options:
+        allOf:
+        - $ref: '#/definitions/model.DestinationOptions'
+        description: |-
+          Options contains advanced Envoy cluster configuration.
+          All fields are optional — sensible defaults are applied when omitted.
+      port:
+        description: Port is the upstream TCP port.
+        type: integer
+    type: object
+  model.DestinationDiscovery:
+    properties:
+      type:
+        allOf:
+        - $ref: '#/definitions/model.DiscoveryType'
+        description: |-
+          Type selects the discovery mechanism.
+          Currently only "kubernetes" is supported.
+    type: object
+  model.DestinationOptions:
+    properties:
+      balancing:
+        allOf:
+        - $ref: '#/definitions/model.BalancingOptions'
+        description: |-
+          Balancing controls the load-balancing algorithm and its parameters.
+          Maps to Cluster.lb_policy + ring_hash_lb_config / maglev_lb_config.
+      circuitBreaker:
+        allOf:
+        - $ref: '#/definitions/model.CircuitBreakerOptions'
+        description: |-
+          CircuitBreaker limits in-flight traffic to protect the upstream.
+          Maps to Cluster.circuit_breakers.thresholds.
+      connectTimeout:
+        description: |-
+          ConnectTimeout is the timeout for establishing a new TCP connection
+          to the upstream. Accepts Go duration strings (e.g. "3s", "500ms").
+          Maps to Cluster.connect_timeout. Default: 5s.
+        type: string
+      discovery:
+        allOf:
+        - $ref: '#/definitions/model.DestinationDiscovery'
+        description: |-
+          Discovery enables dynamic endpoint resolution.
+          When nil, Rutoso derives the Envoy cluster type from the host value:
+            IP address  → STATIC
+            FQDN        → STRICT_DNS
+      healthCheck:
+        allOf:
+        - $ref: '#/definitions/model.HealthCheckOptions'
+        description: |-
+          HealthCheck configures active HTTP health checking against the upstream.
+          Maps to Cluster.health_checks.
+      outlierDetection:
+        allOf:
+        - $ref: '#/definitions/model.OutlierDetectionOptions'
+        description: |-
+          OutlierDetection automatically ejects endpoints that return consecutive
+          errors, without requiring active health checks.
+          Maps to Cluster.outlier_detection.
+      tls:
+        allOf:
+        - $ref: '#/definitions/model.TLSOptions'
+        description: |-
+          TLS controls upstream TLS / mTLS configuration.
+          Maps to Cluster.transport_socket (envoy.transport_sockets.tls).
+    type: object
+  model.DiscoveryType:
+    enum:
+    - kubernetes
+    type: string
+    x-enum-varnames:
+    - DiscoveryTypeKubernetes
+  model.ExtAuthzConfig:
+    properties:
+      failureModeAllow:
+        description: |-
+          FailureModeAllow controls what happens when the authz service is
+          unreachable. If true, requests are allowed through (fail-open).
+          Default is false (fail-closed).
+        type: boolean
+      grpcService:
+        description: |-
+          GRPCService is the address of the gRPC authorisation service
+          (e.g. "authz.default.svc.cluster.local:50051").
+          Mutually exclusive with HTTPService.
+        type: string
+      httpService:
+        description: |-
+          HTTPService is the URL of the HTTP authorisation service
+          (e.g. "http://opa.default.svc.cluster.local:8181/v1/authz").
+          Mutually exclusive with GRPCService.
+        type: string
+      includeRequestBodyInCheck:
+        description: IncludeRequestBodyInCheck forwards the request body to the authz
+          service.
+        type: boolean
+      timeout:
+        description: Timeout is the authorisation request deadline (e.g. "5s", "500ms").
+        type: string
+    type: object
+  model.ExtProcConfig:
+    properties:
+      grpcService:
+        description: |-
+          GRPCService is the address of the gRPC processing service
+          (e.g. "ext-proc.default.svc.cluster.local:9000").
+        type: string
+      processingMode:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcMode'
+        description: |-
+          ProcessingMode controls which parts of the HTTP transaction are sent to
+          the external processor.
+      timeout:
+        description: Timeout is the processing request deadline (e.g. "2s").
+        type: string
+    type: object
+  model.ExtProcMode:
+    properties:
+      requestBodyMode:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcPhase'
+        description: RequestBodyMode controls processing of the request body.
+      requestHeaderMode:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcPhase'
+        description: RequestHeaderMode controls processing of request headers.
+      responseBodyMode:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcPhase'
+        description: ResponseBodyMode controls processing of the response body.
+      responseHeaderMode:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcPhase'
+        description: ResponseHeaderMode controls processing of response headers.
+    type: object
+  model.ExtProcPhase:
+    enum:
+    - SKIP
+    - SEND
+    - BUFFERED
+    type: string
+    x-enum-varnames:
+    - ExtProcPhaseSkip
+    - ExtProcPhaseSend
+    - ExtProcPhaseBuffered
+  model.Filter:
+    properties:
+      cors:
+        allOf:
+        - $ref: '#/definitions/model.CORSConfig'
+        description: CORS holds the CORS filter configuration. Set when Type == "cors".
+      extAuthz:
+        allOf:
+        - $ref: '#/definitions/model.ExtAuthzConfig'
+        description: |-
+          ExtAuthz holds the external authorisation filter configuration.
+          Set when Type == "extAuthz".
+      extProc:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcConfig'
+        description: |-
+          ExtProc holds the external processing filter configuration.
+          Set when Type == "extProc".
+      id:
+        description: ID is the unique identifier of the filter.
+        type: string
+      jwt:
+        allOf:
+        - $ref: '#/definitions/model.JWTConfig'
+        description: JWT holds the JWT authn filter configuration. Set when Type ==
+          "jwt".
+      name:
+        description: Name is a human-readable label for the filter.
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/model.FilterType'
+        description: |-
+          Type identifies which Envoy HTTP filter this entity configures.
+          Exactly one of the Config* fields below must match this type.
+    type: object
+  model.FilterOverride:
+    properties:
+      disabled:
+        description: |-
+          Disabled completely disables the filter for this route/group.
+          When true, no other field is evaluated.
+        type: boolean
+      extAuthzContextExtensions:
+        additionalProperties:
+          type: string
+        description: |-
+          ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.
+          Only meaningful when the referenced filter is of type "extAuthz".
+        type: object
+      extProcMode:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcMode'
+        description: |-
+          ExtProcMode overrides the processing mode for this route/group.
+          Only meaningful when the referenced filter is of type "extProc".
+      jwtProvider:
+        description: |-
+          JWTProvider selects a specific JWT provider by name (instead of requiring all).
+          Only meaningful when the referenced filter is of type "jwt".
+        type: string
+    type: object
+  model.FilterType:
+    enum:
+    - cors
+    - jwt
+    - extAuthz
+    - extProc
+    type: string
+    x-enum-varnames:
+    - FilterTypeCORS
+    - FilterTypeJWT
+    - FilterTypeExtAuthz
+    - FilterTypeExtProc
+  model.ForwardAction:
+    properties:
+      backends:
+        description: |-
+          Backends lists the upstream Destinations for this route.
+          Each entry references a Destination by ID and carries a traffic weight.
+          Weights across all backends must sum to 100 when more than one backend
+          is defined. If only one backend is provided its weight is ignored.
+        items:
+          $ref: '#/definitions/model.BackendRef'
+        type: array
+      mirror:
+        allOf:
+        - $ref: '#/definitions/model.RouteMirror'
+        description: |-
+          Mirror sends a copy of the traffic to an additional Destination for
+          observability or testing. The mirrored request is fire-and-forget;
+          its response is discarded and never affects the client.
+      retry:
+        allOf:
+        - $ref: '#/definitions/model.RouteRetry'
+        description: Retry controls automatic retry behaviour when the upstream fails.
+      rewrite:
+        allOf:
+        - $ref: '#/definitions/model.RouteRewrite'
+        description: Rewrite transforms the URL before sending the request upstream.
+      timeouts:
+        allOf:
+        - $ref: '#/definitions/model.RouteTimeouts'
+        description: Timeouts controls how long the request is allowed to take.
+    type: object
+  model.HashPolicy:
+    properties:
+      cookie:
+        description: |-
+          Cookie uses the named cookie as the hash key. If the cookie is absent
+          Envoy creates it with the given TTL (e.g. "3600s").
+        type: string
+      cookieTtl:
+        description: |-
+          CookieTTL is the TTL Envoy sets when generating a new sticky cookie.
+          Ignored unless Cookie is set. Accepts Go duration strings.
+        type: string
+      header:
+        description: Header uses the value of the named request header as the hash
+          key.
+        type: string
+      sourceIP:
+        description: SourceIP uses the downstream client IP as the hash key.
+        type: boolean
+    type: object
+  model.HeaderMatcher:
+    properties:
+      name:
+        description: Name is the header name (case-insensitive).
+        type: string
+      regex:
+        description: Regex indicates that Value should be treated as a regular expression.
+        type: boolean
+      value:
+        description: |-
+          Value is the exact value the header must have.
+          If empty, only the presence of the header is checked.
+        type: string
+    type: object
+  model.HealthCheckOptions:
+    properties:
+      healthyThreshold:
+        description: |-
+          HealthyThreshold is the number of consecutive successes before an
+          unhealthy endpoint is returned to the pool. Default: 2.
+          Maps to healthy_threshold.
+        type: integer
+      interval:
+        description: |-
+          Interval is how often Envoy sends a health-check request.
+          Accepts Go duration strings. Default: "10s".
+          Maps to interval.
+        type: string
+      path:
+        description: |-
+          Path is the HTTP path Envoy sends health-check requests to.
+          Example: "/healthz". Required.
+          Maps to http_health_check.path.
+        type: string
+      timeout:
+        description: |-
+          Timeout is how long Envoy waits for a health-check response.
+          Accepts Go duration strings. Default: "5s".
+          Maps to timeout.
+        type: string
+      unhealthyThreshold:
+        description: |-
+          UnhealthyThreshold is the number of consecutive failures before an
+          endpoint is marked unhealthy. Default: 3.
+          Maps to unhealthy_threshold.
+        type: integer
+    type: object
+  model.JWTClaimHeader:
+    properties:
+      claim:
+        description: Claim is the JWT claim name (e.g. "sub", "email").
+        type: string
+      header:
+        description: Header is the request header name that receives the claim value.
+        type: string
+    type: object
+  model.JWTConfig:
+    properties:
+      providers:
+        additionalProperties:
+          $ref: '#/definitions/model.JWTProvider'
+        description: |-
+          Providers is a map of provider name to JWTProvider configuration.
+          The map key is referenced from per-route overrides to select a specific
+          provider (or disable authentication for that route).
+        type: object
+      rules:
+        description: |-
+          Rules defines which request paths require JWT validation and which
+          provider to apply. If empty, all paths are validated by all providers.
+        items:
+          $ref: '#/definitions/model.JWTRule'
+        type: array
+    type: object
+  model.JWTProvider:
+    properties:
+      audiences:
+        description: |-
+          Audiences lists the expected "aud" claim values. If empty, audience
+          validation is skipped.
+        items:
+          type: string
+        type: array
+      claimToHeaders:
+        description: |-
+          ClaimToHeaders maps JWT claim names to upstream request header names.
+          The claim value is set as the header value before forwarding.
+        items:
+          $ref: '#/definitions/model.JWTClaimHeader'
+        type: array
+      forwardJwt:
+        description: |-
+          ForwardJWT indicates whether the original Authorization header should be
+          forwarded to the upstream after successful validation.
+        type: boolean
+      issuer:
+        description: Issuer is the expected value of the "iss" claim.
+        type: string
+      jwksInline:
+        description: |-
+          JWKsInline is a literal JSON Web Key Set document.
+          Mutually exclusive with JWKsURI.
+        type: string
+      jwksUri:
+        description: |-
+          JWKsURI is the URL from which the JSON Web Key Set is fetched.
+          Mutually exclusive with JWKsInline.
+        type: string
+    type: object
+  model.JWTRule:
+    properties:
+      allowMissing:
+        description: |-
+          AllowMissing allows requests without a JWT token to pass through.
+          Useful for public endpoints that coexist in the same listener.
+        type: boolean
+      match:
+        description: Match is the path prefix this rule applies to.
+        type: string
+      requires:
+        description: |-
+          Requires lists the provider names that must validate the request.
+          All listed providers must succeed (AND semantics).
+        items:
+          type: string
+        type: array
+    type: object
+  model.LBPolicy:
+    enum:
+    - ROUND_ROBIN
+    - LEAST_REQUEST
+    - RING_HASH
+    - MAGLEV
+    - RANDOM
+    type: string
+    x-enum-varnames:
+    - LBPolicyRoundRobin
+    - LBPolicyLeastRequest
+    - LBPolicyRingHash
+    - LBPolicyMaglev
+    - LBPolicyRandom
+  model.Listener:
+    properties:
+      address:
+        description: |-
+          Address is the IP address the listener binds to.
+          Defaults to "0.0.0.0" if empty.
+        type: string
+      filterIds:
+        description: |-
+          FilterIDs lists the IDs of Filter entities to activate on this listener,
+          in evaluation order. The router filter is always added last automatically.
+        items:
+          type: string
+        type: array
+      id:
+        description: ID is the unique identifier of the listener.
+        type: string
+      name:
+        description: Name is a human-readable label for the listener.
+        type: string
+      port:
+        description: Port is the TCP port the listener binds to.
+        type: integer
+      tls:
+        allOf:
+        - $ref: '#/definitions/model.ListenerTLS'
+        description: |-
+          TLS holds optional TLS termination configuration.
+          When nil, the listener operates in plaintext mode.
+          NOTE: TLS support is modelled here but not yet implemented in the xDS
+          builder. The field is accepted and stored; it has no effect until the
+          builder is updated to emit a DownstreamTlsContext.
+    type: object
+  model.ListenerTLS:
+    properties:
+      certPath:
+        description: CertPath is the path to the PEM-encoded TLS certificate file.
+        type: string
+      keyPath:
+        description: KeyPath is the path to the PEM-encoded private key file.
+        type: string
+      maxVersion:
+        description: |-
+          MaxVersion is the maximum TLS protocol version to accept.
+          Accepted values: same as MinVersion. If empty, no upper bound is set.
+        type: string
+      minVersion:
+        description: |-
+          MinVersion is the minimum TLS protocol version to accept.
+          Accepted values: "TLSv1_0", "TLSv1_1", "TLSv1_2", "TLSv1_3".
+          Defaults to "TLSv1_2" if empty.
+        type: string
+    type: object
+  model.MatchRule:
+    properties:
+      headers:
+        description: Headers are request header matchers that must all match.
+        items:
+          $ref: '#/definitions/model.HeaderMatcher'
+        type: array
+      hostnames:
+        description: |-
+          Hostnames restricts the match to specific virtual host names.
+          An empty slice matches all virtual hosts.
+        items:
+          type: string
+        type: array
+      methods:
+        description: |-
+          Methods lists the HTTP methods this rule applies to.
+          An empty slice matches all methods.
+        items:
+          type: string
+        type: array
+      path:
+        description: Path is the exact path that must match.
+        type: string
+      pathPrefix:
+        description: |-
+          PathPrefix is a prefix that the request path must start with.
+          Mutually exclusive with Path and PathRegex.
+        type: string
+      pathRegex:
+        description: |-
+          PathRegex is a regular expression the request path must match.
+          Mutually exclusive with Path and PathPrefix.
+        type: string
+      ports:
+        description: Ports restricts the match to specific listener ports.
+        items:
           type: integer
-      type: object
-    model.BalancingOptions:
-      description: |-
-        Balancing controls the load-balancing algorithm and its parameters.
-        Maps to Cluster.lb_policy + ring_hash_lb_config / maglev_lb_config.
-      properties:
-        algorithm:
-          $ref: '#/components/schemas/model.LBPolicy'
-        maglevTableSize:
-          description: |-
-            MaglevTableSize sets the Maglev hash table size.
-            Must be a prime number. Default: 65537.
-            Ignored unless Algorithm is MAGLEV.
-            Maps to Cluster.maglev_lb_config.table_size.
+        type: array
+      queryParams:
+        description: QueryParams are query parameter matchers that must all match.
+        items:
+          $ref: '#/definitions/model.QueryParamMatcher'
+        type: array
+    type: object
+  model.OutlierDetectionOptions:
+    properties:
+      baseEjectionTime:
+        description: |-
+          BaseEjectionTime is how long an endpoint stays ejected the first time.
+          Each subsequent ejection multiplies this value by the ejection count.
+          Accepts Go duration strings. Default: "30s".
+          Maps to base_ejection_time.
+        type: string
+      consecutive5xx:
+        description: |-
+          Consecutive5xx is the number of consecutive 5xx responses that trigger
+          ejection. Default: 5. Maps to consecutive_5xx.
+        type: integer
+      consecutiveGatewayErrors:
+        description: |-
+          ConsecutiveGatewayErrors is the number of consecutive gateway errors
+          (502, 503, 504) that trigger ejection.
+          Maps to consecutive_gateway_failure.
+        type: integer
+      interval:
+        description: |-
+          Interval is how often Envoy evaluates ejection conditions.
+          Accepts Go duration strings. Default: "10s".
+          Maps to interval.
+        type: string
+      maxEjectionPercent:
+        description: |-
+          MaxEjectionPercent is the maximum percentage of endpoints that can be
+          ejected simultaneously. Default: 10.
+          Maps to max_ejection_percent.
+        type: integer
+    type: object
+  model.QueryParamMatcher:
+    properties:
+      name:
+        description: Name is the query parameter name.
+        type: string
+      regex:
+        description: Regex indicates that Value should be treated as a regular expression.
+        type: boolean
+      value:
+        description: Value is the exact value the parameter must have.
+        type: string
+    type: object
+  model.RetryBackoff:
+    properties:
+      base:
+        description: |-
+          Base is the initial delay before the first retry.
+          Accepts Go duration strings (e.g. "100ms").
+        type: string
+      max:
+        description: |-
+          Max is the upper bound on the backoff delay.
+          Accepts Go duration strings (e.g. "1s").
+        type: string
+    type: object
+  model.RetryCondition:
+    enum:
+    - server-error
+    - connection-failure
+    - gateway-error
+    - retriable-codes
+    type: string
+    x-enum-varnames:
+    - RetryOnServerError
+    - RetryOnConnectionFailure
+    - RetryOnGatewayError
+    - RetryOnRetriableCodes
+  model.RewriteRegex:
+    properties:
+      pattern:
+        description: Pattern is the RE2 regular expression matched against the request
+          path.
+        type: string
+      substitution:
+        description: |-
+          Substitution is the replacement string. Capture groups from Pattern
+          can be referenced as \1, \2, etc.
+        type: string
+    type: object
+  model.RingSizeOptions:
+    properties:
+      max:
+        description: |-
+          Max is the maximum number of virtual nodes in the ring.
+          Default: 8388608. Maps to maximum_ring_size.
+        type: integer
+      min:
+        description: |-
+          Min is the minimum number of virtual nodes in the ring.
+          Default: 1024. Maps to minimum_ring_size.
+        type: integer
+    type: object
+  model.Route:
+    properties:
+      directResponse:
+        allOf:
+        - $ref: '#/definitions/model.RouteDirectResponse'
+        description: |-
+          DirectResponse instructs Envoy to return a fixed HTTP response without
+          contacting any upstream. Useful for health-check endpoints, maintenance
+          pages, or returning a static 404.
+          Mutually exclusive with Forward and Redirect.
+      filterOverrides:
+        additionalProperties:
+          $ref: '#/definitions/model.FilterOverride'
+        description: |-
+          FilterOverrides carries per-route overrides for filters registered on
+          the listener. The map key is the Filter ID. When both the route's group
+          and the route itself carry an override for the same filter, the route
+          override wins entirely (more specific takes precedence).
+        type: object
+      forward:
+        allOf:
+        - $ref: '#/definitions/model.ForwardAction'
+        description: |-
+          Forward instructs Envoy to proxy the request to one or more upstream
+          Destinations. Contains all forwarding behaviour: backends, timeouts,
+          retries, URL rewriting, and traffic mirroring.
+          Mutually exclusive with Redirect and DirectResponse.
+      id:
+        description: ID is the unique identifier of the route.
+        type: string
+      match:
+        allOf:
+        - $ref: '#/definitions/model.MatchRule'
+        description: Match defines the conditions that a request must satisfy.
+      name:
+        description: Name is a human-readable label for the route.
+        type: string
+      redirect:
+        allOf:
+        - $ref: '#/definitions/model.RouteRedirect'
+        description: |-
+          Redirect instructs Envoy to return an HTTP redirect to the client
+          instead of forwarding to an upstream.
+          Mutually exclusive with Forward and DirectResponse.
+    type: object
+  model.RouteDirectResponse:
+    properties:
+      body:
+        description: Body is the response body returned to the client. Optional.
+        type: string
+      status:
+        description: Status is the HTTP status code to return. Required.
+        type: integer
+    type: object
+  model.RouteGroup:
+    properties:
+      filterOverrides:
+        additionalProperties:
+          $ref: '#/definitions/model.FilterOverride'
+        description: |-
+          FilterOverrides carries per-group overrides for filters registered on
+          the listener. The map key is the Filter ID. These overrides apply to all
+          routes in the group. If a route also carries an override for the same
+          filter, the route override wins entirely.
+        type: object
+      headers:
+        description: Headers are appended to each referenced route's own header matchers.
+        items:
+          $ref: '#/definitions/model.HeaderMatcher'
+        type: array
+      hostnames:
+        description: |-
+          Hostnames are merged (union) with each referenced route's own hostnames.
+          An empty slice means only the route's own hostnames apply.
+        items:
+          type: string
+        type: array
+      id:
+        description: ID is the unique identifier of the group.
+        type: string
+      name:
+        description: Name is a human-readable label for the group.
+        type: string
+      pathPrefix:
+        description: |-
+          PathPrefix is prepended literally to the path/pathPrefix/pathRegex of
+          every referenced route. Mutually exclusive with PathRegex.
+        type: string
+      pathRegex:
+        description: |-
+          PathRegex is a RE2 regular expression that defines the group's path
+          namespace. It is composed with the route's own path specifier according
+          to the rules described above. Mutually exclusive with PathPrefix.
+        type: string
+      routeIds:
+        description: |-
+          RouteIDs lists the IDs of the routes that belong to this group.
+          Routes are independent entities and may be referenced by multiple groups.
+        items:
+          type: string
+        type: array
+    type: object
+  model.RouteMirror:
+    properties:
+      destinationId:
+        description: |-
+          DestinationID is the ID of the Destination that receives the
+          mirrored traffic.
+        type: string
+      percentage:
+        description: |-
+          Percentage is the fraction of requests to mirror, from 0 to 100.
+          Default: 100 (mirror all matched traffic).
+        type: integer
+    type: object
+  model.RouteRedirect:
+    properties:
+      code:
+        description: |-
+          Code is the HTTP status code returned to the client.
+          Accepted values: 301, 302, 303, 307, 308. Default: 301.
+        type: integer
+      host:
+        description: Host overrides only the hostname in the redirect target.
+        type: string
+      path:
+        description: Path replaces the path component of the redirect target.
+        type: string
+      scheme:
+        description: Scheme overrides only the scheme (e.g. "http" → "https").
+        type: string
+      stripQuery:
+        description: StripQuery removes the query string from the redirect target.
+        type: boolean
+      url:
+        description: |-
+          URL is the complete target URL. When set, Scheme, Host, Path, and
+          StripQuery are ignored — the client is sent directly to this URL.
+        type: string
+    type: object
+  model.RouteRetry:
+    properties:
+      attempts:
+        description: |-
+          Attempts is the maximum number of times the request is retried.
+          The original request does not count — setting 3 means up to 3 retries
+          after the first failure (4 total attempts).
+        type: integer
+      backoff:
+        allOf:
+        - $ref: '#/definitions/model.RetryBackoff'
+        description: Backoff controls the delay between retry attempts.
+      "on":
+        description: |-
+          On lists the conditions that trigger a retry. When empty, defaults
+          to ["server-error", "connection-failure"].
+        items:
+          $ref: '#/definitions/model.RetryCondition'
+        type: array
+      perAttemptTimeout:
+        description: |-
+          PerAttemptTimeout is the deadline for each individual attempt.
+          Accepts Go duration strings (e.g. "5s").
+        type: string
+      retriableCodes:
+        description: |-
+          RetriableCodes is the explicit list of HTTP status codes that trigger
+          a retry. Only evaluated when On contains "retriable-codes".
+        items:
           type: integer
-        ringSize:
-          $ref: '#/components/schemas/model.RingSizeOptions'
-      type: object
-    model.CORSConfig:
-      description: CORS holds the CORS filter configuration. Set when Type == "cors".
-      properties:
-        allowCredentials:
-          description: AllowCredentials indicates whether the request can include
-            user credentials.
-          type: boolean
-        allowHeaders:
-          description: AllowHeaders lists the request headers allowed in CORS requests.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        allowMethods:
-          description: |-
-            AllowMethods lists the HTTP methods allowed in CORS requests.
-            Example: ["GET", "POST", "OPTIONS"]
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        allowOrigins:
-          description: |-
-            AllowOrigins lists the allowed origin patterns.
-            Each entry is matched as an exact string or a regex if Regex is true.
-          items:
-            $ref: '#/components/schemas/model.CORSOrigin'
-          type: array
-          uniqueItems: false
-        exposeHeaders:
-          description: ExposeHeaders lists the response headers the browser is allowed
-            to access.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        maxAge:
-          description: |-
-            MaxAge sets the preflight cache duration in seconds.
-            Maps to the Access-Control-Max-Age response header.
-          type: integer
-      type: object
-    model.CORSOrigin:
-      properties:
-        regex:
-          description: Regex indicates that Value should be treated as a regular expression.
-          type: boolean
-        value:
-          description: Value is the origin string or regex pattern.
-          type: string
-      type: object
-    model.CircuitBreakerOptions:
-      description: |-
-        CircuitBreaker limits in-flight traffic to protect the upstream.
-        Maps to Cluster.circuit_breakers.thresholds.
-      properties:
-        maxConnections:
-          description: |-
-            MaxConnections is the maximum number of concurrent TCP connections.
-            Maps to max_connections.
-          type: integer
-        maxPendingRequests:
-          description: |-
-            MaxPendingRequests is the maximum number of requests queued while
-            waiting for a connection. Maps to max_pending_requests.
-          type: integer
-        maxRequests:
-          description: |-
-            MaxRequests is the maximum number of concurrent requests.
-            Maps to max_requests.
-          type: integer
-        maxRetries:
-          description: |-
-            MaxRetries is the maximum number of concurrent retries.
-            Maps to max_retries.
-          type: integer
-      type: object
-    model.Destination:
-      properties:
-        host:
-          description: |-
-            Host is the upstream FQDN or IP address.
-            For Kubernetes Services use the full FQDN:
-              pepe.default.svc.cluster.local
-            When Options.Discovery.Type is "kubernetes" the service name and
-            namespace are parsed from this field automatically.
-          type: string
-        id:
-          description: ID is the unique identifier of this destination.
-          type: string
-        name:
-          description: Name is a human-readable label.
-          type: string
-        options:
-          $ref: '#/components/schemas/model.DestinationOptions'
-        port:
-          description: Port is the upstream TCP port.
-          type: integer
-      type: object
-    model.DestinationDiscovery:
-      description: |-
-        Discovery enables dynamic endpoint resolution.
-        When nil, Rutoso derives the Envoy cluster type from the host value:
-          IP address  → STATIC
-          FQDN        → STRICT_DNS
-      properties:
-        type:
-          $ref: '#/components/schemas/model.DiscoveryType'
-      type: object
-    model.DestinationOptions:
-      description: |-
-        Options contains advanced Envoy cluster configuration.
-        All fields are optional — sensible defaults are applied when omitted.
-      properties:
-        balancing:
-          $ref: '#/components/schemas/model.BalancingOptions'
-        circuitBreaker:
-          $ref: '#/components/schemas/model.CircuitBreakerOptions'
-        connectTimeout:
-          description: |-
-            ConnectTimeout is the timeout for establishing a new TCP connection
-            to the upstream. Accepts Go duration strings (e.g. "3s", "500ms").
-            Maps to Cluster.connect_timeout. Default: 5s.
-          type: string
-        discovery:
-          $ref: '#/components/schemas/model.DestinationDiscovery'
-        healthCheck:
-          $ref: '#/components/schemas/model.HealthCheckOptions'
-        outlierDetection:
-          $ref: '#/components/schemas/model.OutlierDetectionOptions'
-        tls:
-          $ref: '#/components/schemas/model.TLSOptions'
-      type: object
-    model.DiscoveryType:
-      description: |-
-        Type selects the discovery mechanism.
-        Currently only "kubernetes" is supported.
-      enum:
-      - kubernetes
-      type: string
-      x-enum-varnames:
-      - DiscoveryTypeKubernetes
-    model.ExtAuthzConfig:
-      description: |-
-        ExtAuthz holds the external authorisation filter configuration.
-        Set when Type == "extAuthz".
-      properties:
-        failureModeAllow:
-          description: |-
-            FailureModeAllow controls what happens when the authz service is
-            unreachable. If true, requests are allowed through (fail-open).
-            Default is false (fail-closed).
-          type: boolean
-        grpcService:
-          description: |-
-            GRPCService is the address of the gRPC authorisation service
-            (e.g. "authz.default.svc.cluster.local:50051").
-            Mutually exclusive with HTTPService.
-          type: string
-        httpService:
-          description: |-
-            HTTPService is the URL of the HTTP authorisation service
-            (e.g. "http://opa.default.svc.cluster.local:8181/v1/authz").
-            Mutually exclusive with GRPCService.
-          type: string
-        includeRequestBodyInCheck:
-          description: IncludeRequestBodyInCheck forwards the request body to the
-            authz service.
-          type: boolean
-        timeout:
-          description: Timeout is the authorisation request deadline (e.g. "5s", "500ms").
-          type: string
-      type: object
-    model.ExtProcConfig:
-      description: |-
-        ExtProc holds the external processing filter configuration.
-        Set when Type == "extProc".
-      properties:
-        grpcService:
-          description: |-
-            GRPCService is the address of the gRPC processing service
-            (e.g. "ext-proc.default.svc.cluster.local:9000").
-          type: string
-        processingMode:
-          $ref: '#/components/schemas/model.ExtProcMode'
-        timeout:
-          description: Timeout is the processing request deadline (e.g. "2s").
-          type: string
-      type: object
-    model.ExtProcMode:
-      description: |-
-        ExtProcMode overrides the processing mode for this route/group.
-        Only meaningful when the referenced filter is of type "extProc".
-      properties:
-        requestBodyMode:
-          $ref: '#/components/schemas/model.ExtProcPhase'
-        requestHeaderMode:
-          $ref: '#/components/schemas/model.ExtProcPhase'
-        responseBodyMode:
-          $ref: '#/components/schemas/model.ExtProcPhase'
-        responseHeaderMode:
-          $ref: '#/components/schemas/model.ExtProcPhase'
-      type: object
-    model.ExtProcPhase:
-      description: ResponseBodyMode controls processing of the response body.
-      enum:
-      - SKIP
-      - SEND
-      - BUFFERED
-      type: string
-      x-enum-varnames:
-      - ExtProcPhaseSkip
-      - ExtProcPhaseSend
-      - ExtProcPhaseBuffered
-    model.Filter:
-      properties:
-        cors:
-          $ref: '#/components/schemas/model.CORSConfig'
-        extAuthz:
-          $ref: '#/components/schemas/model.ExtAuthzConfig'
-        extProc:
-          $ref: '#/components/schemas/model.ExtProcConfig'
-        id:
-          description: ID is the unique identifier of the filter.
-          type: string
-        jwt:
-          $ref: '#/components/schemas/model.JWTConfig'
-        name:
-          description: Name is a human-readable label for the filter.
-          type: string
-        type:
-          $ref: '#/components/schemas/model.FilterType'
-      type: object
-    model.FilterOverride:
-      properties:
-        disabled:
-          description: |-
-            Disabled completely disables the filter for this route/group.
-            When true, no other field is evaluated.
-          type: boolean
-        extAuthzContextExtensions:
-          additionalProperties:
-            type: string
-          description: |-
-            ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.
-            Only meaningful when the referenced filter is of type "extAuthz".
-          type: object
-        extProcMode:
-          $ref: '#/components/schemas/model.ExtProcMode'
-        jwtProvider:
-          description: |-
-            JWTProvider selects a specific JWT provider by name (instead of requiring all).
-            Only meaningful when the referenced filter is of type "jwt".
-          type: string
-      type: object
-    model.FilterType:
-      description: |-
-        Type identifies which Envoy HTTP filter this entity configures.
-        Exactly one of the Config* fields below must match this type.
-      enum:
-      - cors
-      - jwt
-      - extAuthz
-      - extProc
-      type: string
-      x-enum-varnames:
-      - FilterTypeCORS
-      - FilterTypeJWT
-      - FilterTypeExtAuthz
-      - FilterTypeExtProc
-    model.HashPolicy:
-      description: |-
-        HashPolicy defines how Envoy computes the sticky-session key for this
-        backend. Only relevant when the referenced Destination uses RING_HASH
-        or MAGLEV balancing. Maps to RouteAction.hash_policy in Envoy.
-      properties:
-        cookie:
-          description: |-
-            Cookie uses the named cookie as the hash key. If the cookie is absent
-            Envoy creates it with the given TTL (e.g. "3600s").
-          type: string
-        cookieTtl:
-          description: |-
-            CookieTTL is the TTL Envoy sets when generating a new sticky cookie.
-            Ignored unless Cookie is set. Accepts Go duration strings.
-          type: string
-        header:
-          description: Header uses the value of the named request header as the hash
-            key.
-          type: string
-        sourceIP:
-          description: SourceIP uses the downstream client IP as the hash key.
-          type: boolean
-      type: object
-    model.HeaderMatcher:
-      properties:
-        name:
-          description: Name is the header name (case-insensitive).
-          type: string
-        regex:
-          description: Regex indicates that Value should be treated as a regular expression.
-          type: boolean
-        value:
-          description: |-
-            Value is the exact value the header must have.
-            If empty, only the presence of the header is checked.
-          type: string
-      type: object
-    model.HealthCheckOptions:
-      description: |-
-        HealthCheck configures active HTTP health checking against the upstream.
-        Maps to Cluster.health_checks.
-      properties:
-        healthyThreshold:
-          description: |-
-            HealthyThreshold is the number of consecutive successes before an
-            unhealthy endpoint is returned to the pool. Default: 2.
-            Maps to healthy_threshold.
-          type: integer
-        interval:
-          description: |-
-            Interval is how often Envoy sends a health-check request.
-            Accepts Go duration strings. Default: "10s".
-            Maps to interval.
-          type: string
-        path:
-          description: |-
-            Path is the HTTP path Envoy sends health-check requests to.
-            Example: "/healthz". Required.
-            Maps to http_health_check.path.
-          type: string
-        timeout:
-          description: |-
-            Timeout is how long Envoy waits for a health-check response.
-            Accepts Go duration strings. Default: "5s".
-            Maps to timeout.
-          type: string
-        unhealthyThreshold:
-          description: |-
-            UnhealthyThreshold is the number of consecutive failures before an
-            endpoint is marked unhealthy. Default: 3.
-            Maps to unhealthy_threshold.
-          type: integer
-      type: object
-    model.JWTClaimHeader:
-      properties:
-        claim:
-          description: Claim is the JWT claim name (e.g. "sub", "email").
-          type: string
-        header:
-          description: Header is the request header name that receives the claim value.
-          type: string
-      type: object
-    model.JWTConfig:
-      description: JWT holds the JWT authn filter configuration. Set when Type ==
-        "jwt".
-      properties:
-        providers:
-          additionalProperties:
-            $ref: '#/components/schemas/model.JWTProvider'
-          description: |-
-            Providers is a map of provider name to JWTProvider configuration.
-            The map key is referenced from per-route overrides to select a specific
-            provider (or disable authentication for that route).
-          type: object
-        rules:
-          description: |-
-            Rules defines which request paths require JWT validation and which
-            provider to apply. If empty, all paths are validated by all providers.
-          items:
-            $ref: '#/components/schemas/model.JWTRule'
-          type: array
-          uniqueItems: false
-      type: object
-    model.JWTProvider:
-      properties:
-        audiences:
-          description: |-
-            Audiences lists the expected "aud" claim values. If empty, audience
-            validation is skipped.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        claimToHeaders:
-          description: |-
-            ClaimToHeaders maps JWT claim names to upstream request header names.
-            The claim value is set as the header value before forwarding.
-          items:
-            $ref: '#/components/schemas/model.JWTClaimHeader'
-          type: array
-          uniqueItems: false
-        forwardJwt:
-          description: |-
-            ForwardJWT indicates whether the original Authorization header should be
-            forwarded to the upstream after successful validation.
-          type: boolean
-        issuer:
-          description: Issuer is the expected value of the "iss" claim.
-          type: string
-        jwksInline:
-          description: |-
-            JWKsInline is a literal JSON Web Key Set document.
-            Mutually exclusive with JWKsURI.
-          type: string
-        jwksUri:
-          description: |-
-            JWKsURI is the URL from which the JSON Web Key Set is fetched.
-            Mutually exclusive with JWKsInline.
-          type: string
-      type: object
-    model.JWTRule:
-      properties:
-        allowMissing:
-          description: |-
-            AllowMissing allows requests without a JWT token to pass through.
-            Useful for public endpoints that coexist in the same listener.
-          type: boolean
-        match:
-          description: Match is the path prefix this rule applies to.
-          type: string
-        requires:
-          description: |-
-            Requires lists the provider names that must validate the request.
-            All listed providers must succeed (AND semantics).
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-      type: object
-    model.LBPolicy:
-      description: |-
-        Algorithm selects the load-balancing policy.
-        Default: ROUND_ROBIN.
-        Maps to Cluster.lb_policy.
-      enum:
-      - ROUND_ROBIN
-      - LEAST_REQUEST
-      - RING_HASH
-      - MAGLEV
-      - RANDOM
-      type: string
-      x-enum-varnames:
-      - LBPolicyRoundRobin
-      - LBPolicyLeastRequest
-      - LBPolicyRingHash
-      - LBPolicyMaglev
-      - LBPolicyRandom
-    model.Listener:
-      properties:
-        address:
-          description: |-
-            Address is the IP address the listener binds to.
-            Defaults to "0.0.0.0" if empty.
-          type: string
-        filterIds:
-          description: |-
-            FilterIDs lists the IDs of Filter entities to activate on this listener,
-            in evaluation order. The router filter is always added last automatically.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        id:
-          description: ID is the unique identifier of the listener.
-          type: string
-        name:
-          description: Name is a human-readable label for the listener.
-          type: string
-        port:
-          description: Port is the TCP port the listener binds to.
-          type: integer
-        tls:
-          $ref: '#/components/schemas/model.ListenerTLS'
-      type: object
-    model.ListenerTLS:
-      description: |-
-        TLS holds optional TLS termination configuration.
-        When nil, the listener operates in plaintext mode.
-        NOTE: TLS support is modelled here but not yet implemented in the xDS
-        builder. The field is accepted and stored; it has no effect until the
-        builder is updated to emit a DownstreamTlsContext.
-      properties:
-        certPath:
-          description: CertPath is the path to the PEM-encoded TLS certificate file.
-          type: string
-        keyPath:
-          description: KeyPath is the path to the PEM-encoded private key file.
-          type: string
-        maxVersion:
-          description: |-
-            MaxVersion is the maximum TLS protocol version to accept.
-            Accepted values: same as MinVersion. If empty, no upper bound is set.
-          type: string
-        minVersion:
-          description: |-
-            MinVersion is the minimum TLS protocol version to accept.
-            Accepted values: "TLSv1_0", "TLSv1_1", "TLSv1_2", "TLSv1_3".
-            Defaults to "TLSv1_2" if empty.
-          type: string
-      type: object
-    model.MatchRule:
-      description: Match defines the conditions that a request must satisfy.
-      properties:
-        headers:
-          description: Headers are request header matchers that must all match.
-          items:
-            $ref: '#/components/schemas/model.HeaderMatcher'
-          type: array
-          uniqueItems: false
-        hostnames:
-          description: |-
-            Hostnames restricts the match to specific virtual host names.
-            An empty slice matches all virtual hosts.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        methods:
-          description: |-
-            Methods lists the HTTP methods this rule applies to.
-            An empty slice matches all methods.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        path:
-          description: Path is the exact path that must match.
-          type: string
-        pathPrefix:
-          description: |-
-            PathPrefix is a prefix that the request path must start with.
-            Mutually exclusive with Path and PathRegex.
-          type: string
-        pathRegex:
-          description: |-
-            PathRegex is a regular expression the request path must match.
-            Mutually exclusive with Path and PathPrefix.
-          type: string
-        ports:
-          description: Ports restricts the match to specific listener ports.
-          items:
-            type: integer
-          type: array
-          uniqueItems: false
-        queryParams:
-          description: QueryParams are query parameter matchers that must all match.
-          items:
-            $ref: '#/components/schemas/model.QueryParamMatcher'
-          type: array
-          uniqueItems: false
-      type: object
-    model.OutlierDetectionOptions:
-      description: |-
-        OutlierDetection automatically ejects endpoints that return consecutive
-        errors, without requiring active health checks.
-        Maps to Cluster.outlier_detection.
-      properties:
-        baseEjectionTime:
-          description: |-
-            BaseEjectionTime is how long an endpoint stays ejected the first time.
-            Each subsequent ejection multiplies this value by the ejection count.
-            Accepts Go duration strings. Default: "30s".
-            Maps to base_ejection_time.
-          type: string
-        consecutive5xx:
-          description: |-
-            Consecutive5xx is the number of consecutive 5xx responses that trigger
-            ejection. Default: 5. Maps to consecutive_5xx.
-          type: integer
-        consecutiveGatewayErrors:
-          description: |-
-            ConsecutiveGatewayErrors is the number of consecutive gateway errors
-            (502, 503, 504) that trigger ejection.
-            Maps to consecutive_gateway_failure.
-          type: integer
-        interval:
-          description: |-
-            Interval is how often Envoy evaluates ejection conditions.
-            Accepts Go duration strings. Default: "10s".
-            Maps to interval.
-          type: string
-        maxEjectionPercent:
-          description: |-
-            MaxEjectionPercent is the maximum percentage of endpoints that can be
-            ejected simultaneously. Default: 10.
-            Maps to max_ejection_percent.
-          type: integer
-      type: object
-    model.QueryParamMatcher:
-      properties:
-        name:
-          description: Name is the query parameter name.
-          type: string
-        regex:
-          description: Regex indicates that Value should be treated as a regular expression.
-          type: boolean
-        value:
-          description: Value is the exact value the parameter must have.
-          type: string
-      type: object
-    model.RingSizeOptions:
-      description: |-
-        RingSize tunes the consistent hash ring used by RING_HASH.
-        Ignored unless Algorithm is RING_HASH.
-        Maps to Cluster.ring_hash_lb_config.
-      properties:
-        max:
-          description: |-
-            Max is the maximum number of virtual nodes in the ring.
-            Default: 8388608. Maps to maximum_ring_size.
-          type: integer
-        min:
-          description: |-
-            Min is the minimum number of virtual nodes in the ring.
-            Default: 1024. Maps to minimum_ring_size.
-          type: integer
-      type: object
-    model.Route:
-      properties:
-        backends:
-          description: |-
-            Backends lists the upstream destinations for this route.
-            Each entry references a Destination by ID and carries a traffic weight.
-            Weights across all backends should sum to 100 when more than one backend
-            is defined. If only one backend is provided its weight is ignored.
-          items:
-            $ref: '#/components/schemas/model.BackendRef'
-          type: array
-          uniqueItems: false
-        filterOverrides:
-          additionalProperties:
-            $ref: '#/components/schemas/model.FilterOverride'
-          description: |-
-            FilterOverrides carries per-route overrides for filters registered on
-            the listener. The map key is the Filter ID. When both the route's group
-            and the route itself carry an override for the same filter, the route
-            override wins entirely (more specific takes precedence).
-          type: object
-        id:
-          description: ID is the unique identifier of the route.
-          type: string
-        match:
-          $ref: '#/components/schemas/model.MatchRule'
-        name:
-          description: Name is a human-readable label for the route.
-          type: string
-      type: object
-    model.RouteGroup:
-      properties:
-        filterOverrides:
-          additionalProperties:
-            $ref: '#/components/schemas/model.FilterOverride'
-          description: |-
-            FilterOverrides carries per-group overrides for filters registered on
-            the listener. The map key is the Filter ID. These overrides apply to all
-            routes in the group. If a route also carries an override for the same
-            filter, the route override wins entirely.
-          type: object
-        headers:
-          description: Headers are appended to each referenced route's own header
-            matchers.
-          items:
-            $ref: '#/components/schemas/model.HeaderMatcher'
-          type: array
-          uniqueItems: false
-        hostnames:
-          description: |-
-            Hostnames are merged (union) with each referenced route's own hostnames.
-            An empty slice means only the route's own hostnames apply.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        id:
-          description: ID is the unique identifier of the group.
-          type: string
-        name:
-          description: Name is a human-readable label for the group.
-          type: string
-        pathPrefix:
-          description: |-
-            PathPrefix is prepended literally to the path/pathPrefix/pathRegex of
-            every referenced route. Mutually exclusive with PathRegex.
-          type: string
-        pathRegex:
-          description: |-
-            PathRegex is a RE2 regular expression that defines the group's path
-            namespace. It is composed with the route's own path specifier according
-            to the rules described above. Mutually exclusive with PathPrefix.
-          type: string
-        routeIds:
-          description: |-
-            RouteIDs lists the IDs of the routes that belong to this group.
-            Routes are independent entities and may be referenced by multiple groups.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-      type: object
-    model.TLSMode:
-      description: |-
-        Mode selects the connection security model.
-        Default: none (plaintext).
-      enum:
-      - none
-      - tls
-      - mtls
-      type: string
-      x-enum-comments:
-        TLSModeMTLS: mutual TLS — present client certificate
-        TLSModeNone: plaintext (default)
-        TLSModeTLS: TLS — verify server certificate
-      x-enum-varnames:
-      - TLSModeNone
-      - TLSModeTLS
-      - TLSModeMTLS
-    model.TLSOptions:
-      description: |-
-        TLS controls upstream TLS / mTLS configuration.
-        Maps to Cluster.transport_socket (envoy.transport_sockets.tls).
-      properties:
-        caFile:
-          description: |-
-            CAFile is the path to the CA certificate PEM file used to verify
-            the server certificate. Applies to both tls and mtls modes.
-            Maps to common_tls_context.validation_context.trusted_ca.filename.
-          type: string
-        certFile:
-          description: |-
-            CertFile is the path to the client certificate PEM file.
-            Required when Mode is mtls.
-            Maps to common_tls_context.tls_certificates[0].certificate_chain.filename.
-          type: string
-        keyFile:
-          description: |-
-            KeyFile is the path to the client private key PEM file.
-            Required when Mode is mtls.
-            Maps to common_tls_context.tls_certificates[0].private_key.filename.
-          type: string
-        maxVersion:
-          description: |-
-            MaxVersion is the maximum TLS protocol version Envoy will negotiate.
-            Accepted values: same as MinVersion.
-            Maps to common_tls_context.tls_params.tls_maximum_protocol_version.
-          type: string
-        minVersion:
-          description: |-
-            MinVersion is the minimum TLS protocol version Envoy will negotiate.
-            Accepted values: "TLSv1_0", "TLSv1_1", "TLSv1_2", "TLSv1_3".
-            Maps to common_tls_context.tls_params.tls_minimum_protocol_version.
-          type: string
-        mode:
-          $ref: '#/components/schemas/model.TLSMode'
-        sni:
-          description: |-
-            SNI overrides the Server Name Indication sent during the TLS handshake.
-            When empty, Envoy uses the upstream host value.
-            Maps to UpstreamTlsContext.sni.
-          type: string
-      type: object
-    respond.ErrorBody:
-      properties:
-        error:
-          description: Error contains a human-readable description of what went wrong.
-          example: group "abc" not found
-          type: string
-      type: object
-externalDocs:
-  description: ""
-  url: ""
+        type: array
+    type: object
+  model.RouteRewrite:
+    properties:
+      autoHost:
+        description: |-
+          AutoHost sets the Host header to the hostname of the upstream
+          Destination automatically. Useful when the backend requires its own
+          hostname (e.g. an external SaaS API).
+        type: boolean
+      host:
+        description: Host overrides the Host header sent to the upstream with a fixed
+          value.
+        type: string
+      hostFromHeader:
+        description: |-
+          HostFromHeader takes the value of the named request header and uses it
+          as the Host header sent to the upstream.
+        type: string
+      path:
+        description: |-
+          Path replaces the matched path prefix with the given value.
+          For example, if the route matches "/api/v1" and Path is "/internal",
+          a request to "/api/v1/users" arrives at the backend as "/internal/users".
+        type: string
+      pathRegex:
+        allOf:
+        - $ref: '#/definitions/model.RewriteRegex'
+        description: PathRegex rewrites the path using a regular expression substitution.
+    type: object
+  model.RouteTimeouts:
+    properties:
+      idle:
+        description: |-
+          Idle is the maximum time a connection may remain open with no data
+          flowing. Accepts Go duration strings. Useful for long-lived streaming
+          connections that may stall.
+        type: string
+      request:
+        description: |-
+          Request is the total time the entire request may take from the moment
+          Envoy receives the first byte from the client until the response is
+          fully sent. Accepts Go duration strings (e.g. "30s", "1m").
+        type: string
+    type: object
+  model.TLSMode:
+    enum:
+    - none
+    - tls
+    - mtls
+    type: string
+    x-enum-comments:
+      TLSModeMTLS: mutual TLS — present client certificate
+      TLSModeNone: plaintext (default)
+      TLSModeTLS: TLS — verify server certificate
+    x-enum-varnames:
+    - TLSModeNone
+    - TLSModeTLS
+    - TLSModeMTLS
+  model.TLSOptions:
+    properties:
+      caFile:
+        description: |-
+          CAFile is the path to the CA certificate PEM file used to verify
+          the server certificate. Applies to both tls and mtls modes.
+          Maps to common_tls_context.validation_context.trusted_ca.filename.
+        type: string
+      certFile:
+        description: |-
+          CertFile is the path to the client certificate PEM file.
+          Required when Mode is mtls.
+          Maps to common_tls_context.tls_certificates[0].certificate_chain.filename.
+        type: string
+      keyFile:
+        description: |-
+          KeyFile is the path to the client private key PEM file.
+          Required when Mode is mtls.
+          Maps to common_tls_context.tls_certificates[0].private_key.filename.
+        type: string
+      maxVersion:
+        description: |-
+          MaxVersion is the maximum TLS protocol version Envoy will negotiate.
+          Accepted values: same as MinVersion.
+          Maps to common_tls_context.tls_params.tls_maximum_protocol_version.
+        type: string
+      minVersion:
+        description: |-
+          MinVersion is the minimum TLS protocol version Envoy will negotiate.
+          Accepted values: "TLSv1_0", "TLSv1_1", "TLSv1_2", "TLSv1_3".
+          Maps to common_tls_context.tls_params.tls_minimum_protocol_version.
+        type: string
+      mode:
+        allOf:
+        - $ref: '#/definitions/model.TLSMode'
+        description: |-
+          Mode selects the connection security model.
+          Default: none (plaintext).
+      sni:
+        description: |-
+          SNI overrides the Server Name Indication sent during the TLS handshake.
+          When empty, Envoy uses the upstream host value.
+          Maps to UpstreamTlsContext.sni.
+        type: string
+    type: object
+  respond.ErrorBody:
+    properties:
+      error:
+        description: Error contains a human-readable description of what went wrong.
+        example: group "abc" not found
+        type: string
+    type: object
+host: localhost:8080
 info:
   contact:
     name: Rutoso project
@@ -815,61 +1029,52 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0
   title: Rutoso API
   version: "1.0"
-openapi: 3.1.0
 paths:
   /destinations:
     get:
       description: Returns the full list of destinations.
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/model.Destination'
-                type: array
           description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.Destination'
+            type: array
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: List destinations
       tags:
       - destinations
     post:
+      consumes:
+      - application/json
       description: Creates a new upstream destination entity.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.Destination'
-                description: Destination definition
-                summary: destination
-        description: Destination definition
+      parameters:
+      - description: Destination definition
+        in: body
+        name: destination
         required: true
+        schema:
+          $ref: '#/definitions/model.Destination'
+      produces:
+      - application/json
       responses:
         "201":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Destination'
           description: Created
+          schema:
+            $ref: '#/definitions/model.Destination'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Create a destination
       tags:
       - destinations
@@ -881,23 +1086,20 @@ paths:
         in: path
         name: destinationId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "204":
           description: No Content
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Delete a destination
       tags:
       - destinations
@@ -908,131 +1110,108 @@ paths:
         in: path
         name: destinationId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Destination'
           description: OK
+          schema:
+            $ref: '#/definitions/model.Destination'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Get a destination
       tags:
       - destinations
     put:
+      consumes:
+      - application/json
       description: Replaces the destination with the given ID.
       parameters:
       - description: Destination ID
         in: path
         name: destinationId
         required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.Destination'
-                description: Updated destination definition
-                summary: destination
-        description: Updated destination definition
+        type: string
+      - description: Updated destination definition
+        in: body
+        name: destination
         required: true
+        schema:
+          $ref: '#/definitions/model.Destination'
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Destination'
           description: OK
+          schema:
+            $ref: '#/definitions/model.Destination'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Update a destination
       tags:
       - destinations
   /filters:
     get:
       description: Returns the full list of filters.
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/model.Filter'
-                type: array
           description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.Filter'
+            type: array
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: List filters
       tags:
       - filters
     post:
+      consumes:
+      - application/json
       description: Creates a new HTTP filter entity.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.Filter'
-                description: Filter definition
-                summary: filter
-        description: Filter definition
+      parameters:
+      - description: Filter definition
+        in: body
+        name: filter
         required: true
+        schema:
+          $ref: '#/definitions/model.Filter'
+      produces:
+      - application/json
       responses:
         "201":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Filter'
           description: Created
+          schema:
+            $ref: '#/definitions/model.Filter'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Create a filter
       tags:
       - filters
@@ -1044,23 +1223,20 @@ paths:
         in: path
         name: filterId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "204":
           description: No Content
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Delete a filter
       tags:
       - filters
@@ -1071,131 +1247,108 @@ paths:
         in: path
         name: filterId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Filter'
           description: OK
+          schema:
+            $ref: '#/definitions/model.Filter'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Get a filter
       tags:
       - filters
     put:
+      consumes:
+      - application/json
       description: Replaces the filter with the given ID.
       parameters:
       - description: Filter ID
         in: path
         name: filterId
         required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.Filter'
-                description: Updated filter definition
-                summary: filter
-        description: Updated filter definition
+        type: string
+      - description: Updated filter definition
+        in: body
+        name: filter
         required: true
+        schema:
+          $ref: '#/definitions/model.Filter'
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Filter'
           description: OK
+          schema:
+            $ref: '#/definitions/model.Filter'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Update a filter
       tags:
       - filters
   /groups:
     get:
       description: Returns the full list of route groups.
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/model.RouteGroup'
-                type: array
           description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.RouteGroup'
+            type: array
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: List groups
       tags:
       - groups
     post:
+      consumes:
+      - application/json
       description: Creates a new group referencing existing routes by ID.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.RouteGroup'
-                description: Group definition
-                summary: group
-        description: Group definition
+      parameters:
+      - description: Group definition
+        in: body
+        name: group
         required: true
+        schema:
+          $ref: '#/definitions/model.RouteGroup'
+      produces:
+      - application/json
       responses:
         "201":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.RouteGroup'
           description: Created
+          schema:
+            $ref: '#/definitions/model.RouteGroup'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Create a group
       tags:
       - groups
@@ -1207,23 +1360,20 @@ paths:
         in: path
         name: groupId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "204":
           description: No Content
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Delete a group
       tags:
       - groups
@@ -1234,131 +1384,108 @@ paths:
         in: path
         name: groupId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.RouteGroup'
           description: OK
+          schema:
+            $ref: '#/definitions/model.RouteGroup'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Get a group
       tags:
       - groups
     put:
+      consumes:
+      - application/json
       description: Replaces the group with the given ID.
       parameters:
       - description: Group ID
         in: path
         name: groupId
         required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.RouteGroup'
-                description: Updated group definition
-                summary: group
-        description: Updated group definition
+        type: string
+      - description: Updated group definition
+        in: body
+        name: group
         required: true
+        schema:
+          $ref: '#/definitions/model.RouteGroup'
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.RouteGroup'
           description: OK
+          schema:
+            $ref: '#/definitions/model.RouteGroup'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Update a group
       tags:
       - groups
   /listeners:
     get:
       description: Returns the full list of listeners.
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/model.Listener'
-                type: array
           description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.Listener'
+            type: array
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: List listeners
       tags:
       - listeners
     post:
+      consumes:
+      - application/json
       description: Creates a new Envoy listener entity.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.Listener'
-                description: Listener definition
-                summary: listener
-        description: Listener definition
+      parameters:
+      - description: Listener definition
+        in: body
+        name: listener
         required: true
+        schema:
+          $ref: '#/definitions/model.Listener'
+      produces:
+      - application/json
       responses:
         "201":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Listener'
           description: Created
+          schema:
+            $ref: '#/definitions/model.Listener'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Create a listener
       tags:
       - listeners
@@ -1370,23 +1497,20 @@ paths:
         in: path
         name: listenerId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "204":
           description: No Content
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Delete a listener
       tags:
       - listeners
@@ -1397,131 +1521,108 @@ paths:
         in: path
         name: listenerId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Listener'
           description: OK
+          schema:
+            $ref: '#/definitions/model.Listener'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Get a listener
       tags:
       - listeners
     put:
+      consumes:
+      - application/json
       description: Replaces the listener with the given ID.
       parameters:
       - description: Listener ID
         in: path
         name: listenerId
         required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.Listener'
-                description: Updated listener definition
-                summary: listener
-        description: Updated listener definition
+        type: string
+      - description: Updated listener definition
+        in: body
+        name: listener
         required: true
+        schema:
+          $ref: '#/definitions/model.Listener'
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Listener'
           description: OK
+          schema:
+            $ref: '#/definitions/model.Listener'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Update a listener
       tags:
       - listeners
   /routes:
     get:
       description: Returns the full list of routes.
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: '#/components/schemas/model.Route'
-                type: array
           description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.Route'
+            type: array
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: List routes
       tags:
       - routes
     post:
+      consumes:
+      - application/json
       description: Creates a new independent route.
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.Route'
-                description: Route definition
-                summary: route
-        description: Route definition
+      parameters:
+      - description: Route definition
+        in: body
+        name: route
         required: true
+        schema:
+          $ref: '#/definitions/model.Route'
+      produces:
+      - application/json
       responses:
         "201":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Route'
           description: Created
+          schema:
+            $ref: '#/definitions/model.Route'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Create a route
       tags:
       - routes
@@ -1533,23 +1634,20 @@ paths:
         in: path
         name: routeId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "204":
           description: No Content
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Delete a route
       tags:
       - routes
@@ -1560,77 +1658,64 @@ paths:
         in: path
         name: routeId
         required: true
-        schema:
-          type: string
+        type: string
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Route'
           description: OK
+          schema:
+            $ref: '#/definitions/model.Route'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Get a route
       tags:
       - routes
     put:
+      consumes:
+      - application/json
       description: Replaces the route with the given ID.
       parameters:
       - description: Route ID
         in: path
         name: routeId
         required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              oneOf:
-              - type: object
-              - $ref: '#/components/schemas/model.Route'
-                description: Updated route definition
-                summary: route
-        description: Updated route definition
+        type: string
+      - description: Updated route definition
+        in: body
+        name: route
         required: true
+        schema:
+          $ref: '#/definitions/model.Route'
+      produces:
+      - application/json
       responses:
         "200":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/model.Route'
           description: OK
+          schema:
+            $ref: '#/definitions/model.Route'
         "400":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
         "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
           description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: Update a route
       tags:
       - routes
-servers:
-- url: localhost:8080/
+schemes:
+- http
+- https
+swagger: "2.0"

@@ -38,11 +38,7 @@ turn `FilterIDs` into real Envoy HTTP filter objects.
 DONE — implemented as `Destination` entity. See Done section below.
 
 ### RouteAction — fill missing fields
-- [ ] `rewrite` — `prefixRewrite` or `regexRewrite` (pattern + substitution)
-- [ ] `hostRewrite` — override the Host header sent upstream
-- [ ] `retryPolicy` — retry-on conditions, num retries, per-try timeout
-- [ ] `timeout` — total route timeout
-- [ ] `requestMirror` — shadow traffic to a second cluster at a given percentage
+DONE — all route action fields implemented. See Done section below.
 
 ## Done
 
@@ -109,3 +105,19 @@ DONE — implemented as `Destination` entity. See Done section below.
   - `xds/builder.go`: `BuildSnapshot` signature updated; `buildClusterFromDestination` and `buildEndpointFromDestination` implemented; EDS/STATIC/STRICT_DNS auto-derivation via `clusterTypeFor`; old `buildCluster(model.Backend)` and `buildEndpoint(model.Backend)` removed
   - `go build ./...` and `go vet ./...` pass clean
   - Swagger docs regenerated
+
+- [x] **Route action modes + full RouteAction fields**
+  - `model/route.go`: `Route` now supports three mutually exclusive action modes: `Backends` (forward), `Redirect`, `DirectResponse`
+  - New model types: `RouteTimeouts`, `RouteRetry`, `RetryCondition`, `RetryBackoff`, `RouteRewrite`, `RewriteRegex`, `RouteRedirect`, `RouteDirectResponse`, `RouteMirror`
+  - `model/errors.go`: `ErrConflictingAction` added
+  - `xds/builder.go`: `buildRouteAction` dispatches to `buildForwardAction`, `buildRedirectAction`, `buildDirectResponseAction`; helpers `applyTimeouts`, `applyRetryPolicy`, `applyRewrite`, `applyMirror` wired into `RouteAction`; `retryConditionMap` translates semantic names to Envoy `retry_on` values; added `typev3` and `strings` imports
+  - `handlers/routes.go`: `validateRouteAction` enforces mutual exclusivity on create and update (400 if violated)
+  - `go build ./...` and `go vet ./...` pass clean
+  - Swagger docs regenerated via `make docs`
+
+- [x] **ForwardAction refactor** — forwarding behaviour grouped under `Route.Forward`
+  - `model/route.go`: `Backends`, `Timeouts`, `Retry`, `Rewrite`, `Mirror` moved into new `ForwardAction` struct; `Route` now has `Forward *ForwardAction`, `Redirect *RouteRedirect`, `DirectResponse *RouteDirectResponse`
+  - `xds/builder.go`: `buildForwardAction` reads from `r.Forward`; `buildRouteAction` checks `r.Forward != nil` instead of `default`
+  - `handlers/routes.go`: `validateRouteAction` checks `route.Forward != nil`
+  - `go build ./...` and `go vet ./...` pass clean
+  - Swagger docs regenerated via `make docs`

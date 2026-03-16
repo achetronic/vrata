@@ -49,6 +49,11 @@ func (d *Dependencies) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateRouteAction(route); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		return
+	}
+
 	if route.ID == "" {
 		route.ID = uuid.NewString()
 	}
@@ -112,12 +117,37 @@ func (d *Dependencies) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	route.ID = routeID
 
+	if err := validateRouteAction(route); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		return
+	}
+
 	if err := d.Store.SaveRoute(context.Background(), route); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
 
 	respond.JSON(w, http.StatusOK, route, d.Logger)
+}
+
+// validateRouteAction checks that the route defines exactly one action mode:
+// forward, redirect, or directResponse. Returns model.ErrConflictingAction
+// when more than one is set, or when none is set.
+func validateRouteAction(route model.Route) error {
+	set := 0
+	if route.Forward != nil {
+		set++
+	}
+	if route.Redirect != nil {
+		set++
+	}
+	if route.DirectResponse != nil {
+		set++
+	}
+	if set != 1 {
+		return model.ErrConflictingAction
+	}
+	return nil
 }
 
 // DeleteRoute removes the route identified by routeId.
