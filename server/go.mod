@@ -22,7 +22,7 @@ require (
 	github.com/swaggo/files/v2 v2.0.0 // indirect
 	github.com/swaggo/http-swagger/v2 v2.0.2 // indirect
 	github.com/swaggo/swag v1.8.1 // indirect
-	github.com/swaggo/swag/v2 v2.0.0-rc5 // indirect
+	github.com/swaggo/swag/v2 v2.0.0-rc5
 	go.etcd.io/bbolt v1.4.3 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sys v0.39.0 // indirect
