@@ -6,41 +6,54 @@ _(nothing)_
 
 ## Pending
 
+### Route — new fields
+- [ ] WebSocket upgrade: `ForwardAction.Websocket bool` → RouteAction.upgrade_configs
+- [ ] Max gRPC timeout: `ForwardAction.MaxGRPCTimeout string` or in `RouteTimeouts` → RouteAction.max_grpc_timeout
+- [ ] Internal redirects: `ForwardAction.InternalRedirect *InternalRedirectPolicy` → RouteAction.internal_redirect_policy
+- [ ] gRPC match: `MatchRule.GRPC bool` → RouteMatch.grpc
+
+### Group — new fields
+- [ ] Default retry policy: `RouteGroup.RetryDefault *RouteRetry` → VirtualHost.retry_policy (route overrides if set)
+- [ ] Include request attempt count: `RouteGroup.IncludeAttemptCount bool` → VirtualHost.include_request_attempt_count
+
+### Destination — new fields
+- [ ] HTTP/2 upstream: `DestinationOptions.HTTP2 bool` → Cluster.http2_protocol_options (required for gRPC backends)
+- [ ] DNS refresh rate: `DestinationOptions.DNSRefreshRate string` → Cluster.dns_refresh_rate (STRICT_DNS only)
+- [ ] DNS lookup family: `DestinationOptions.DNSLookupFamily string` (AUTO/V4_ONLY/V6_ONLY) → Cluster.dns_lookup_family
+- [ ] Max requests per connection: `DestinationOptions.MaxRequestsPerConnection uint32` → Cluster.max_requests_per_connection
+- [ ] Slow start: `DestinationOptions.SlowStart *SlowStartOptions` → Cluster.slow_start_config
+- [ ] TLS upstream: wire existing `DestinationOptions.TLS` into UpstreamTlsContext / transport_socket in builder
+
+### Listener — new fields
+- [ ] Access log: `Listener.AccessLog *AccessLogConfig` → HCM.access_log (file or stdout, format template)
+- [ ] HTTP/2 on listener: `Listener.HTTP2 bool` → HCM.http2_protocol_options / codec_type AUTO (required for gRPC clients)
+- [ ] Listener filters TCP: `Listener.ListenerFilters []ListenerFilter` → tls_inspector, proxy_protocol, etc.
+- [ ] TLS downstream: wire existing `Listener.TLS` into DownstreamTlsContext in builder
+- [ ] Server name: `Listener.ServerName string` → HCM.server_name
+- [ ] Multiple filter chains: support SNI routing (one cert per domain) via multiple FilterChains
+- [ ] Max request headers size: `Listener.MaxRequestHeadersKB uint32` → HCM.max_request_headers_kb
+
+### Filters — new types + full wiring
+- [ ] Wire existing filter types with real Envoy configs (CORS, JWT, ExtAuthz, ExtProc) — replace stubs in buildHTTPFilter
+- [ ] FilterOverrides merge logic in builder: group is base, route wins → per_filter_config on Envoy routes
+- [ ] New FilterType: rate limiting (`rateLimit`) — Filter config for rate limit service + FilterOverrides for descriptors
+- [ ] New FilterType: header manipulation (`headers`) — Filter config for add/remove request/response headers
+
 ### Housekeeping
 - [ ] Add authentication to the REST API
 - [ ] Write unit and integration tests
 - [ ] HA storage: document shared-volume / Litestream pattern for multi-replica deployments
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
 
-### xDS builder — wire actual Envoy HTTP filter objects
-Filters are stored and referenced from Listeners, but the builder does not yet
-turn `FilterIDs` into real Envoy HTTP filter objects.
-
-- [ ] In `xds/builder.go`, for each `filterID` in `listener.FilterIDs`, look up the filter
-  in the filters slice passed to `BuildSnapshot`
-- [ ] Build the corresponding `envoy_listener.Filter` based on `filter.Type`:
-  - `cors` → `envoy.filters.http.cors`
-  - `jwt` → `envoy.filters.http.jwt_authn`
-  - `ext_authz` → `envoy.filters.http.ext_authz`
-  - `ext_proc` → `envoy.filters.http.ext_proc`
-- [ ] Append to the filter chain before the router filter (order: CORS → JWT → ext_authz → ext_proc → router)
-
-### xDS builder — FilterOverrides merge logic (per_filter_config)
-- [ ] When building a route's xDS representation, merge `RouteGroup.FilterOverrides` (base)
-  with `Route.FilterOverrides` (wins on collision) to produce `per_filter_config`
-- [ ] Serialize each override into the appropriate Envoy typed config proto
-
-### TLS termination in xDS builder
-- [ ] Decide cert delivery mechanism: file mount (static `certPath`/`keyPath`) vs SDS
-- [ ] Wire `model.Listener.TLS` into Envoy's `DownstreamTlsContext` in the builder
-
-### Cluster — first-class entity
-DONE — implemented as `Destination` entity. See Done section below.
-
-### RouteAction — fill missing fields
-DONE — all route action fields implemented. See Done section below.
-
 ## Done
+
+- [x] **Wire methods, queryParams, hashPolicy in xDS builder** (cd083bb)
+  - `buildRouteMatch`: maps `MatchRule.Methods` to `:method` header matcher (exact for 1, regex OR for multiple)
+  - `buildRouteMatch`: maps `MatchRule.QueryParams` via `buildQueryParamMatcher` (exact, regex, presence-only)
+  - `HashPolicy` moved from `BackendRef` to `ForwardAction` — hash_policy is evaluated at routing time, not at cluster level. `BackendRef` now only carries `destinationId` and `weight`
+  - `applyHashPolicy`: maps header, cookie (with TTL), and sourceIP to Envoy `RouteAction.hash_policy`
+  - `MatchRule.Ports` removed — Envoy has no port matching in RouteMatch
+  - OpenAPI docs regenerated
 
 - [x] Scaffold project structure: `server/` layout, `go.mod`, `Makefile`, `Dockerfile`, `config.yaml`
 - [x] Implement `internal/config`: Config struct, `Load()` with `os.ExpandEnv`, defaults, `--config` flag wiring in main

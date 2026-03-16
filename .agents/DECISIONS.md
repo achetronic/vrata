@@ -344,22 +344,24 @@ The derivation logic lives solely in `xds/builder.go:clusterTypeFor`.
 
 ---
 
-## hashPolicy lives on BackendRef, not on Destination
+## hashPolicy lives on ForwardAction, not on BackendRef or Destination
 
 **Date**: 2026-03-16
 **Status**: Implemented
 
-`HashPolicy` (header/cookie/sourceIP) is a field of `BackendRef`, not of
-`Destination`. The LB algorithm (`RING_HASH`, `MAGLEV`) that consumes hash
-policies lives on `Destination.Options.Balancing.Algorithm`.
+`HashPolicy` (header/cookie/sourceIP) is a field of `ForwardAction`, not of
+`BackendRef` or `Destination`. The LB algorithm (`RING_HASH`, `MAGLEV`) that
+consumes hash policies lives on `Destination.Options.Balancing.Algorithm`.
 
 **Reasoning**: In the Envoy data model, `hash_policy` is part of `RouteAction`
-(i.e. per-route), not per-cluster. A single destination configured with RING_HASH
-may be reached by different routes that want to hash on different things (one on a
-header, another on source IP). Placing `hashPolicy` on `BackendRef` accurately
-reflects where Envoy applies it and allows per-route control.
+(i.e. per-route), not per-cluster. Envoy evaluates hash_policy at routing time
+using request attributes (headers, cookies, client IP) that are only available
+in the RouteAction context. A single Destination configured with RING_HASH may
+be reached by different routes that want to hash on different things. Placing
+`HashPolicy` on `ForwardAction` accurately reflects where Envoy applies it.
+`BackendRef` carries only `destinationId` and `weight`.
 
-**Do not**: Move `HashPolicy` to `Destination` or `DestinationOptions`.
+**Do not**: Move `HashPolicy` to `BackendRef`, `Destination`, or `DestinationOptions`.
 Do not add hash_policy at the cluster level.
 
 ---
@@ -473,5 +475,30 @@ a single code path for all snapshot mutations.
 **Do not**: Implement a partial EDS update that patches only `ClusterLoadAssignment`
 resources in the last snapshot. Do not bypass `gateway.rebuild` to write directly to the
 snapshot cache from the watcher.
+
+---
+
+## Header manipulation is a Filter, not a Route/Group field
+
+**Date**: 2026-03-16
+**Status**: Decided
+
+Request/response header add/remove is modeled as a `Filter` entity (type
+`headers`) using the existing Filter + FilterOverrides system — not as direct
+fields on `Route` or `RouteGroup`. The Filter carries the base manipulation
+rules; FilterOverrides on groups and routes adjust or disable per-scope.
+
+**Reasoning**: Header manipulation is a behaviour applied to a request, not an
+intrinsic property of the route's matching or forwarding logic. Modeling it as
+a Filter is consistent with every other request-modifying behaviour (CORS, JWT,
+ext_authz, ext_proc, rate limiting). Users learn one pattern for all middleware.
+Envoy happens to offer header add/remove as direct fields on RouteAction and
+VirtualHost, but that is an implementation detail — the builder maps the Filter
+config to those fields internally.
+
+**Do not**: Add `requestHeadersToAdd`, `requestHeadersToRemove`,
+`responseHeadersToAdd`, or `responseHeadersToRemove` as direct fields on
+`Route`, `ForwardAction`, or `RouteGroup`. Header manipulation always goes
+through the Filter entity.
 
 ---
