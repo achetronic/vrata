@@ -17,6 +17,7 @@ import (
 	ratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ratelimit/v3"
 	hcmv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	matcherv3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
+	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -125,6 +126,14 @@ func marshalCORSPolicy(c *model.CORSConfig) (*anypb.Any, error) {
 		if c.AllowCredentials {
 			p.AllowCredentials = wrapperspb.Bool(true)
 		}
+	}
+	// filter_enabled must be set to 100% or Envoy treats the CORS policy as
+	// disabled. Without this field the preflight is forwarded to the upstream.
+	p.FilterEnabled = &corev3.RuntimeFractionalPercent{
+		DefaultValue: &typev3.FractionalPercent{
+			Numerator:   100,
+			Denominator: typev3.FractionalPercent_HUNDRED,
+		},
 	}
 	return anypb.New(p)
 }
