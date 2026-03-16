@@ -63,7 +63,7 @@ func (gw *Gateway) Run(ctx context.Context) error {
 			gw.deps.Logger.Debug("gateway: store event received",
 				slog.String("type", string(ev.Type)),
 				slog.String("resource", string(ev.Resource)),
-				slog.String("groupId", ev.GroupID),
+				slog.String("id", ev.ID),
 			)
 			if err := gw.rebuild(ctx); err != nil {
 				gw.deps.Logger.Error("gateway: snapshot rebuild failed",
@@ -74,25 +74,21 @@ func (gw *Gateway) Run(ctx context.Context) error {
 	}
 }
 
-// rebuild fetches all groups from the store, builds a fresh xDS snapshot, and
-// pushes it to every Envoy node ID currently tracked in the cache.
+// rebuild fetches all groups and routes from the store, builds a fresh xDS snapshot,
+// and pushes it to every Envoy node ID currently tracked in the cache.
 func (gw *Gateway) rebuild(ctx context.Context) error {
 	groups, err := gw.deps.Store.ListGroups(ctx)
 	if err != nil {
 		return fmt.Errorf("listing groups: %w", err)
 	}
 
-	// Attach routes to each group so BuildSnapshot has the full picture.
-	for i, g := range groups {
-		routes, err := gw.deps.Store.ListRoutes(ctx, g.ID)
-		if err != nil {
-			return fmt.Errorf("listing routes for group %q: %w", g.ID, err)
-		}
-		groups[i].Routes = routes
+	routes, err := gw.deps.Store.ListRoutes(ctx)
+	if err != nil {
+		return fmt.Errorf("listing routes: %w", err)
 	}
 
 	version := gw.deps.NextVersion()
-	snap, err := xds.BuildSnapshot(version, groups)
+	snap, err := xds.BuildSnapshot(version, groups, routes)
 	if err != nil {
 		return fmt.Errorf("building snapshot: %w", err)
 	}
@@ -111,6 +107,7 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	gw.deps.Logger.Info("gateway: snapshot pushed",
 		slog.String("version", version),
 		slog.Int("groups", len(groups)),
+		slog.Int("routes", len(routes)),
 		slog.Int("nodes", len(gw.deps.Cache.GetStatusKeys())),
 	)
 	return nil

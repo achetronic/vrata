@@ -1,5 +1,5 @@
 // Package store defines the persistence interface used by Rutoso to read and
-// write route groups and routes, and to subscribe to state change events.
+// write routes and route groups, and to subscribe to state change events.
 package store
 
 import (
@@ -42,17 +42,30 @@ type StoreEvent struct {
 	// Resource indicates whether a group or a route changed.
 	Resource ResourceType
 
-	// GroupID is the ID of the affected group (always set).
-	GroupID string
-
-	// RouteID is the ID of the affected route. Empty when Resource is ResourceGroup.
-	RouteID string
+	// ID is the identifier of the affected resource.
+	ID string
 }
 
 // Store is the persistence interface for all Rutoso state.
 // All reads and writes must go through this interface; no component accesses
 // storage directly. Implementations must be safe for concurrent use.
 type Store interface {
+	// --- Routes ---
+
+	// ListRoutes returns all routes. The returned slice is never nil.
+	ListRoutes(ctx context.Context) ([]model.Route, error)
+
+	// GetRoute returns the route with the given ID.
+	// Returns model.ErrNotFound if no such route exists.
+	GetRoute(ctx context.Context, id string) (model.Route, error)
+
+	// SaveRoute creates or replaces the route identified by route.ID.
+	SaveRoute(ctx context.Context, r model.Route) error
+
+	// DeleteRoute removes the route with the given ID.
+	// Returns model.ErrNotFound if the route does not exist.
+	DeleteRoute(ctx context.Context, id string) error
+
 	// --- Route Groups ---
 
 	// ListGroups returns all route groups. The returned slice is never nil.
@@ -62,41 +75,12 @@ type Store interface {
 	// Returns model.ErrNotFound if no such group exists.
 	GetGroup(ctx context.Context, id string) (model.RouteGroup, error)
 
-	// CreateGroup persists a new route group.
-	// Returns model.ErrDuplicateGroup if a group with the same name already exists.
-	CreateGroup(ctx context.Context, g model.RouteGroup) error
+	// SaveGroup creates or replaces the group identified by group.ID.
+	SaveGroup(ctx context.Context, g model.RouteGroup) error
 
-	// UpdateGroup replaces an existing group's attributes (not its routes).
-	// Returns model.ErrNotFound if the group does not exist.
-	UpdateGroup(ctx context.Context, g model.RouteGroup) error
-
-	// DeleteGroup removes a group and all its routes.
+	// DeleteGroup removes the group with the given ID.
 	// Returns model.ErrNotFound if the group does not exist.
 	DeleteGroup(ctx context.Context, id string) error
-
-	// --- Routes ---
-
-	// ListRoutes returns all routes belonging to the given group.
-	// Returns model.ErrNotFound if the group does not exist.
-	ListRoutes(ctx context.Context, groupID string) ([]model.Route, error)
-
-	// GetRoute returns a single route by group and route ID.
-	// Returns model.ErrNotFound if either the group or the route does not exist.
-	GetRoute(ctx context.Context, groupID, routeID string) (model.Route, error)
-
-	// CreateRoute adds a new route to the given group.
-	// Returns model.ErrNotFound if the group does not exist.
-	// Returns model.ErrDuplicateRoute if a route with the same MatchRule already exists.
-	CreateRoute(ctx context.Context, r model.Route) error
-
-	// UpdateRoute replaces an existing route.
-	// Returns model.ErrNotFound if the group or route does not exist.
-	// Returns model.ErrDuplicateRoute if the updated MatchRule conflicts with another route.
-	UpdateRoute(ctx context.Context, r model.Route) error
-
-	// DeleteRoute removes a route from its group.
-	// Returns model.ErrNotFound if the group or route does not exist.
-	DeleteRoute(ctx context.Context, groupID, routeID string) error
 
 	// --- Subscriptions ---
 

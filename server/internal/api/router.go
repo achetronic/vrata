@@ -20,42 +20,39 @@ import (
 //
 // Route structure:
 //
-//	GET  /api/v1/groups                              → list groups
-//	POST /api/v1/groups                              → create group
-//	GET  /api/v1/groups/{groupId}                    → get group
-//	PUT  /api/v1/groups/{groupId}                    → update group
-//	DEL  /api/v1/groups/{groupId}                    → delete group
-//	GET  /api/v1/groups/{groupId}/routes             → list routes
-//	POST /api/v1/groups/{groupId}/routes             → create route
-//	GET  /api/v1/groups/{groupId}/routes/{routeId}   → get route
-//	PUT  /api/v1/groups/{groupId}/routes/{routeId}   → update route
-//	DEL  /api/v1/groups/{groupId}/routes/{routeId}   → delete route
-//	GET  /api/v1/docs/                               → Swagger UI
-//	GET  /api/v1/docs/doc.json                       → OpenAPI spec (JSON)
+//	GET    /api/v1/routes              → list routes
+//	POST   /api/v1/routes              → create route
+//	GET    /api/v1/routes/{routeId}    → get route
+//	PUT    /api/v1/routes/{routeId}    → update route
+//	DELETE /api/v1/routes/{routeId}    → delete route
+//	GET    /api/v1/groups              → list groups
+//	POST   /api/v1/groups              → create group
+//	GET    /api/v1/groups/{groupId}    → get group
+//	PUT    /api/v1/groups/{groupId}    → update group
+//	DELETE /api/v1/groups/{groupId}    → delete group
+//	GET    /api/v1/docs/               → Swagger UI
+//	GET    /api/v1/docs/doc.json       → OpenAPI spec (JSON)
 func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 
-	deps := handlers.Dependencies{
+	deps := &handlers.Dependencies{
 		Store:  st,
 		Logger: logger,
 	}
 
-	groups := handlers.NewGroupsHandler(deps)
-	routes := handlers.NewRoutesHandler(deps)
-
-	// Route group endpoints
-	mux.HandleFunc("GET /api/v1/groups", groups.HandleListGroups)
-	mux.HandleFunc("POST /api/v1/groups", groups.HandleCreateGroup)
-	mux.HandleFunc("GET /api/v1/groups/{groupId}", groups.HandleGetGroup)
-	mux.HandleFunc("PUT /api/v1/groups/{groupId}", groups.HandleUpdateGroup)
-	mux.HandleFunc("DELETE /api/v1/groups/{groupId}", groups.HandleDeleteGroup)
-
 	// Route endpoints
-	mux.HandleFunc("GET /api/v1/groups/{groupId}/routes", routes.HandleListRoutes)
-	mux.HandleFunc("POST /api/v1/groups/{groupId}/routes", routes.HandleCreateRoute)
-	mux.HandleFunc("GET /api/v1/groups/{groupId}/routes/{routeId}", routes.HandleGetRoute)
-	mux.HandleFunc("PUT /api/v1/groups/{groupId}/routes/{routeId}", routes.HandleUpdateRoute)
-	mux.HandleFunc("DELETE /api/v1/groups/{groupId}/routes/{routeId}", routes.HandleDeleteRoute)
+	mux.HandleFunc("GET /api/v1/routes", deps.ListRoutes)
+	mux.HandleFunc("POST /api/v1/routes", deps.CreateRoute)
+	mux.HandleFunc("GET /api/v1/routes/{routeId}", deps.GetRoute)
+	mux.HandleFunc("PUT /api/v1/routes/{routeId}", deps.UpdateRoute)
+	mux.HandleFunc("DELETE /api/v1/routes/{routeId}", deps.DeleteRoute)
+
+	// Group endpoints
+	mux.HandleFunc("GET /api/v1/groups", deps.ListGroups)
+	mux.HandleFunc("POST /api/v1/groups", deps.CreateGroup)
+	mux.HandleFunc("GET /api/v1/groups/{groupId}", deps.GetGroup)
+	mux.HandleFunc("PUT /api/v1/groups/{groupId}", deps.UpdateGroup)
+	mux.HandleFunc("DELETE /api/v1/groups/{groupId}", deps.DeleteGroup)
 
 	// Swagger UI — static assets (HTML, JS, CSS). http-swagger/v2 reads the spec
 	// URL from the config; the actual JSON is served by the handler below.

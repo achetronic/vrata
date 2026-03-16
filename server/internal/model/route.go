@@ -1,28 +1,22 @@
 package model
 
-// Route represents a single routing rule inside a RouteGroup.
-// It defines how incoming requests are matched and which backends receive the traffic.
-// A route can split traffic across multiple backends using weights (e.g. for canary deployments).
+// Route is an independent first-class entity. It describes how a specific set
+// of HTTP requests should be matched and where traffic should be forwarded.
+// Routes are not owned by a single group; they can be referenced by any number
+// of RouteGroups via RouteGroup.RouteIDs.
 type Route struct {
-	// ID is the unique identifier of the route within its group.
+	// ID is the unique identifier of the route.
 	ID string `json:"id" yaml:"id"`
-
-	// GroupID is the identifier of the RouteGroup this route belongs to.
-	GroupID string `json:"groupId" yaml:"groupId"`
 
 	// Name is a human-readable label for the route.
 	Name string `json:"name" yaml:"name"`
 
-	// Description is an optional explanation of the route's purpose.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
-
-	// Match defines the conditions that a request must satisfy to be handled
-	// by this route. Path, method, hostname, and header matchers are supported.
+	// Match defines the conditions that a request must satisfy.
 	Match MatchRule `json:"match" yaml:"match"`
 
 	// Backends lists the upstream destinations for this route.
-	// Weights across all backends should sum to 100. If only one backend is
-	// provided its weight is ignored and all traffic goes to it.
+	// Weights across all backends should sum to 100 when more than one backend
+	// is defined. If only one backend is provided its weight is ignored.
 	Backends []Backend `json:"backends" yaml:"backends"`
 }
 

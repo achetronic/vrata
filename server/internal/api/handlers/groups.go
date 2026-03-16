@@ -1,165 +1,144 @@
+// Package handlers wires HTTP request/response logic for the groups resource.
+// A group references routes by ID and optionally adds extra matching constraints
+// (PathPrefix, Hostnames, Headers) on top of all the referenced routes.
 package handlers
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
-
-	"github.com/google/uuid"
 
 	"github.com/achetronic/rutoso/internal/api/respond"
 	"github.com/achetronic/rutoso/internal/model"
+	"github.com/google/uuid"
 )
 
-// GroupsHandler handles CRUD operations for route groups.
-type GroupsHandler struct {
-	deps Dependencies
-}
-
-// NewGroupsHandler creates a GroupsHandler with the given dependencies.
-func NewGroupsHandler(deps Dependencies) *GroupsHandler {
-	return &GroupsHandler{deps: deps}
-}
-
-// HandleListGroups handles GET /api/v1/groups.
+// ListGroups returns all groups stored in the database.
 //
-//	@Summary		List all route groups
-//	@Description	Returns the full list of route groups known to this control plane.
-//	@Tags			groups
-//	@Produce		json
-//	@Success		200	{array}		model.RouteGroup	"List of route groups (may be empty)"
-//	@Failure		500	{object}	respond.ErrorBody	"Internal error"
-//	@Router			/api/v1/groups [get]
-func (h *GroupsHandler) HandleListGroups(w http.ResponseWriter, r *http.Request) {
-	groups, err := h.deps.Store.ListGroups(r.Context())
+// @Summary     List groups
+// @Description Returns the full list of route groups.
+// @Tags        groups
+// @Produce     json
+// @Success     200 {array}   model.RouteGroup
+// @Failure     500 {object}  respond.ErrorBody
+// @Router      /groups [get]
+func (d *Dependencies) ListGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := d.Store.ListGroups(context.Background())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), h.deps.Logger)
+		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
-	respond.JSON(w, http.StatusOK, groups, h.deps.Logger)
+	respond.JSON(w, http.StatusOK, groups, d.Logger)
 }
 
-// HandleGetGroup handles GET /api/v1/groups/{groupId}.
+// CreateGroup creates a new route group.
 //
-//	@Summary		Get a route group
-//	@Description	Returns a single route group by its ID.
-//	@Tags			groups
-//	@Produce		json
-//	@Param			groupId	path		string				true	"Group UUID"	example(550e8400-e29b-41d4-a716-446655440000)
-//	@Success		200		{object}	model.RouteGroup	"Route group found"
-//	@Failure		404		{object}	respond.ErrorBody	"Group not found"
-//	@Failure		500		{object}	respond.ErrorBody	"Internal error"
-//	@Router			/api/v1/groups/{groupId} [get]
-func (h *GroupsHandler) HandleGetGroup(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("groupId")
-	g, err := h.deps.Store.GetGroup(r.Context(), id)
+// @Summary     Create a group
+// @Description Creates a new group referencing existing routes by ID.
+// @Tags        groups
+// @Accept      json
+// @Produce     json
+// @Param       group body      model.RouteGroup true "Group definition"
+// @Success     201   {object}  model.RouteGroup
+// @Failure     400   {object}  respond.ErrorBody
+// @Failure     500   {object}  respond.ErrorBody
+// @Router      /groups [post]
+func (d *Dependencies) CreateGroup(w http.ResponseWriter, r *http.Request) {
+	var group model.RouteGroup
+	if err := json.NewDecoder(r.Body).Decode(&group); err != nil {
+		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		return
+	}
+
+	if group.ID == "" {
+		group.ID = uuid.NewString()
+	}
+
+	if err := d.Store.SaveGroup(context.Background(), group); err != nil {
+		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		return
+	}
+
+	respond.JSON(w, http.StatusCreated, group, d.Logger)
+}
+
+// GetGroup returns the group identified by groupId.
+//
+// @Summary     Get a group
+// @Description Returns the group with the given ID.
+// @Tags        groups
+// @Produce     json
+// @Param       groupId path     string true "Group ID"
+// @Success     200     {object} model.RouteGroup
+// @Failure     404     {object} respond.ErrorBody
+// @Failure     500     {object} respond.ErrorBody
+// @Router      /groups/{groupId} [get]
+func (d *Dependencies) GetGroup(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("groupId")
+
+	group, err := d.Store.GetGroup(context.Background(), groupID)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			respond.Error(w, http.StatusNotFound, err.Error(), h.deps.Logger)
-			return
-		}
-		respond.Error(w, http.StatusInternalServerError, err.Error(), h.deps.Logger)
+		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
-	respond.JSON(w, http.StatusOK, g, h.deps.Logger)
+	respond.JSON(w, http.StatusOK, group, d.Logger)
 }
 
-// HandleCreateGroup handles POST /api/v1/groups.
+// UpdateGroup replaces an existing group.
 //
-//	@Summary		Create a route group
-//	@Description	Creates a new route group. The name must be unique across all groups.
-//	@Description	The ID is auto-generated and returned in the response.
-//	@Tags			groups
-//	@Accept			json
-//	@Produce		json
-//	@Param			group	body		model.RouteGroup	true	"Route group to create"
-//	@Success		201		{object}	model.RouteGroup	"Route group created"
-//	@Failure		400		{object}	respond.ErrorBody	"Invalid payload or missing required fields"
-//	@Failure		409		{object}	respond.ErrorBody	"A group with the same name already exists"
-//	@Failure		500		{object}	respond.ErrorBody	"Internal error"
-//	@Router			/api/v1/groups [post]
-func (h *GroupsHandler) HandleCreateGroup(w http.ResponseWriter, r *http.Request) {
-	var g model.RouteGroup
-	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), h.deps.Logger)
+// @Summary     Update a group
+// @Description Replaces the group with the given ID.
+// @Tags        groups
+// @Accept      json
+// @Produce     json
+// @Param       groupId path     string           true "Group ID"
+// @Param       group   body     model.RouteGroup true "Updated group definition"
+// @Success     200     {object} model.RouteGroup
+// @Failure     400     {object} respond.ErrorBody
+// @Failure     404     {object} respond.ErrorBody
+// @Failure     500     {object} respond.ErrorBody
+// @Router      /groups/{groupId} [put]
+func (d *Dependencies) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("groupId")
+
+	if _, err := d.Store.GetGroup(context.Background(), groupID); err != nil {
+		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
 
-	if g.Name == "" {
-		respond.Error(w, http.StatusBadRequest, "name is required", h.deps.Logger)
+	var group model.RouteGroup
+	if err := json.NewDecoder(r.Body).Decode(&group); err != nil {
+		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		return
+	}
+	group.ID = groupID
+
+	if err := d.Store.SaveGroup(context.Background(), group); err != nil {
+		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
 
-	g.ID = uuid.NewString()
-
-	if err := h.deps.Store.CreateGroup(r.Context(), g); err != nil {
-		if errors.Is(err, model.ErrDuplicateGroup) {
-			respond.Error(w, http.StatusConflict, err.Error(), h.deps.Logger)
-			return
-		}
-		respond.Error(w, http.StatusInternalServerError, err.Error(), h.deps.Logger)
-		return
-	}
-	respond.JSON(w, http.StatusCreated, g, h.deps.Logger)
+	respond.JSON(w, http.StatusOK, group, d.Logger)
 }
 
-// HandleUpdateGroup handles PUT /api/v1/groups/{groupId}.
+// DeleteGroup removes the group identified by groupId.
 //
-//	@Summary		Update a route group
-//	@Description	Replaces a route group's metadata (prefix, hostnames, headers, description).
-//	@Description	The group's routes are not affected by this operation.
-//	@Tags			groups
-//	@Accept			json
-//	@Produce		json
-//	@Param			groupId	path		string				true	"Group UUID"	example(550e8400-e29b-41d4-a716-446655440000)
-//	@Param			group	body		model.RouteGroup	true	"Updated route group"
-//	@Success		200		{object}	model.RouteGroup	"Route group updated"
-//	@Failure		400		{object}	respond.ErrorBody	"Invalid payload"
-//	@Failure		404		{object}	respond.ErrorBody	"Group not found"
-//	@Failure		500		{object}	respond.ErrorBody	"Internal error"
-//	@Router			/api/v1/groups/{groupId} [put]
-func (h *GroupsHandler) HandleUpdateGroup(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("groupId")
+// @Summary     Delete a group
+// @Description Deletes the group with the given ID.
+// @Tags        groups
+// @Produce     json
+// @Param       groupId path     string true "Group ID"
+// @Success     204     "No Content"
+// @Failure     404     {object} respond.ErrorBody
+// @Failure     500     {object} respond.ErrorBody
+// @Router      /groups/{groupId} [delete]
+func (d *Dependencies) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+	groupID := r.PathValue("groupId")
 
-	var g model.RouteGroup
-	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), h.deps.Logger)
+	if err := d.Store.DeleteGroup(context.Background(), groupID); err != nil {
+		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
-	g.ID = id
 
-	if err := h.deps.Store.UpdateGroup(r.Context(), g); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			respond.Error(w, http.StatusNotFound, err.Error(), h.deps.Logger)
-			return
-		}
-		respond.Error(w, http.StatusInternalServerError, err.Error(), h.deps.Logger)
-		return
-	}
-	respond.JSON(w, http.StatusOK, g, h.deps.Logger)
-}
-
-// HandleDeleteGroup handles DELETE /api/v1/groups/{groupId}.
-//
-//	@Summary		Delete a route group
-//	@Description	Deletes a route group and all of its routes. This action is irreversible.
-//	@Description	The xDS snapshot is updated immediately; Envoy will stop routing those rules.
-//	@Tags			groups
-//	@Param			groupId	path	string	true	"Group UUID"	example(550e8400-e29b-41d4-a716-446655440000)
-//	@Success		204		"Group deleted"
-//	@Failure		404		{object}	respond.ErrorBody	"Group not found"
-//	@Failure		500		{object}	respond.ErrorBody	"Internal error"
-//	@Router			/api/v1/groups/{groupId} [delete]
-func (h *GroupsHandler) HandleDeleteGroup(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("groupId")
-
-	if err := h.deps.Store.DeleteGroup(r.Context(), id); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			respond.Error(w, http.StatusNotFound, err.Error(), h.deps.Logger)
-			return
-		}
-		respond.Error(w, http.StatusInternalServerError, err.Error(), h.deps.Logger)
-		return
-	}
 	w.WriteHeader(http.StatusNoContent)
 }

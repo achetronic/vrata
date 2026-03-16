@@ -23,11 +23,22 @@ import (
 	"github.com/achetronic/rutoso/internal/model"
 )
 
-// BuildSnapshot converts a slice of RouteGroups into a complete Envoy xDS Snapshot.
-// It generates one Cluster + ClusterLoadAssignment per unique Backend, one global
-// RouteConfiguration containing all VirtualHosts, and one Listener on port 80
-// that forwards all traffic to that RouteConfiguration.
-func BuildSnapshot(version string, groups []model.RouteGroup) (*cachev3.Snapshot, error) {
+// BuildSnapshot converts groups and routes into a complete Envoy xDS Snapshot.
+//
+// For each group, the referenced routes are resolved by ID. The group's extra
+// matchers (PathPrefix, Hostnames, Headers) are merged on top of each route's
+// own matchers before building the Envoy virtual host.
+//
+// One Cluster + ClusterLoadAssignment is generated per unique Backend name.
+// All virtual hosts share a single RouteConfiguration, referenced by a single
+// Listener on port 80.
+func BuildSnapshot(version string, groups []model.RouteGroup, routes []model.Route) (*cachev3.Snapshot, error) {
+	// Build a lookup map so we can resolve route IDs in O(1).
+	routeByID := make(map[string]model.Route, len(routes))
+	for _, r := range routes {
+		routeByID[r.ID] = r
+	}
+
 	var (
 		clusters  []types.Resource
 		endpoints []types.Resource
@@ -36,7 +47,13 @@ func BuildSnapshot(version string, groups []model.RouteGroup) (*cachev3.Snapshot
 	)
 
 	for _, g := range groups {
-		for _, r := range g.Routes {
+		for _, routeID := range g.RouteIDs {
+			r, ok := routeByID[routeID]
+			if !ok {
+				// Route referenced by group does not exist; skip gracefully.
+				continue
+			}
+
 			vhost := buildVirtualHost(g, r)
 			vhosts = append(vhosts, vhost)
 
@@ -77,12 +94,15 @@ func BuildSnapshot(version string, groups []model.RouteGroup) (*cachev3.Snapshot
 }
 
 // buildVirtualHost creates an Envoy VirtualHost for a single Route within its group.
-// The group's prefix is prepended to the route's path/prefix. Group-level hostnames
-// are used if the route does not override them.
+// Group-level hostnames are merged (union) with the route's own hostnames.
 func buildVirtualHost(g model.RouteGroup, r model.Route) *routev3.VirtualHost {
-	domains := r.Match.Hostnames
-	if len(domains) == 0 {
-		domains = g.Hostnames
+	// Merge hostnames: start with the route's own, then add any from the group
+	// that are not already present.
+	domains := append([]string{}, r.Match.Hostnames...)
+	for _, h := range g.Hostnames {
+		if !contains(domains, h) {
+			domains = append(domains, h)
+		}
 	}
 	if len(domains) == 0 {
 		domains = []string{"*"}
@@ -109,11 +129,13 @@ func buildRouteAction(g model.RouteGroup, r model.Route) *routev3.Route {
 	}
 }
 
-// buildRouteMatch converts a MatchRule (plus group prefix) into an Envoy RouteMatch.
+// buildRouteMatch converts a MatchRule (plus group-level prefix and headers) into
+// an Envoy RouteMatch. The group's PathPrefix is prepended to the route's path spec.
+// Group headers are appended to the route's own headers.
 func buildRouteMatch(g model.RouteGroup, r model.Route) *routev3.RouteMatch {
 	rm := &routev3.RouteMatch{}
 
-	prefix := g.Prefix
+	prefix := g.PathPrefix
 
 	switch {
 	case r.Match.Path != "":
@@ -133,8 +155,8 @@ func buildRouteMatch(g model.RouteGroup, r model.Route) *routev3.RouteMatch {
 		rm.PathSpecifier = &routev3.RouteMatch_Prefix{Prefix: p}
 	}
 
-	// Header matchers: group-level first, then route-level.
-	allHeaders := append(g.Headers, r.Match.Headers...)
+	// Route headers first, then group headers on top.
+	allHeaders := append(r.Match.Headers, g.Headers...)
 	for _, h := range allHeaders {
 		rm.Headers = append(rm.Headers, buildHeaderMatcher(h))
 	}
@@ -195,8 +217,7 @@ func buildHeaderMatcher(h model.HeaderMatcher) *routev3.HeaderMatcher {
 	return hm
 }
 
-// buildCluster creates an Envoy Cluster for a Backend.
-// Uses EDS for endpoint discovery so the endpoint can be updated independently.
+// buildCluster creates an Envoy Cluster for a Backend using EDS discovery.
 func buildCluster(b model.Backend) *clusterv3.Cluster {
 	return &clusterv3.Cluster{
 		Name:                 b.Name,
@@ -293,4 +314,14 @@ func buildListener(routeConfigName string) (*listenerv3.Listener, error) {
 			},
 		},
 	}, nil
+}
+
+// contains reports whether s appears in the slice.
+func contains(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }

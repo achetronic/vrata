@@ -2,9 +2,11 @@
 // These are pure data structures with no I/O or business logic.
 package model
 
-// RouteGroup represents a named collection of routes that share common
-// attributes such as a path prefix, hostname matchers, and headers.
-// These shared attributes are automatically inherited by all child routes.
+// RouteGroup is a logical grouping of routes referenced by their IDs.
+// It can optionally add extra matching constraints on top of all referenced routes:
+//   - PathPrefix is prepended to each route's path/pathPrefix.
+//   - Hostnames are merged (union) with each route's own hostnames.
+//   - Headers are appended to each route's own header matchers.
 type RouteGroup struct {
 	// ID is the unique identifier of the group.
 	ID string `json:"id" yaml:"id"`
@@ -12,23 +14,19 @@ type RouteGroup struct {
 	// Name is a human-readable label for the group.
 	Name string `json:"name" yaml:"name"`
 
-	// Description is an optional explanation of the group's purpose.
-	Description string `json:"description,omitempty" yaml:"description,omitempty"`
+	// RouteIDs lists the IDs of the routes that belong to this group.
+	// Routes are independent entities and may be referenced by multiple groups.
+	RouteIDs []string `json:"routeIds" yaml:"routeIds"`
 
-	// Prefix is a path prefix applied to all routes in this group.
-	// Example: "/api/v1" will make a route with path "/users" match "/api/v1/users".
-	Prefix string `json:"prefix,omitempty" yaml:"prefix,omitempty"`
+	// PathPrefix is prepended to the path/pathPrefix of every referenced route.
+	PathPrefix string `json:"pathPrefix,omitempty" yaml:"pathPrefix,omitempty"`
 
-	// Hostnames restricts this group to requests targeting specific virtual hosts.
-	// An empty slice means the group matches all hostnames.
+	// Hostnames are merged (union) with each referenced route's own hostnames.
+	// An empty slice means only the route's own hostnames apply.
 	Hostnames []string `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
 
-	// Headers are additional request header matchers applied to all routes in
-	// this group. Routes can define their own headers on top of these.
+	// Headers are appended to each referenced route's own header matchers.
 	Headers []HeaderMatcher `json:"headers,omitempty" yaml:"headers,omitempty"`
-
-	// Routes holds all routes that belong to this group.
-	Routes []Route `json:"routes,omitempty" yaml:"routes,omitempty"`
 }
 
 // HeaderMatcher describes a condition on a single HTTP request header.
@@ -44,8 +42,20 @@ type HeaderMatcher struct {
 	Regex bool `json:"regex,omitempty" yaml:"regex,omitempty"`
 }
 
-// MatchRule uniquely identifies a route within its group.
-// Two routes with identical MatchRules within the same group are considered duplicates.
+// QueryParamMatcher describes a condition on a single HTTP query parameter.
+type QueryParamMatcher struct {
+	// Name is the query parameter name.
+	Name string `json:"name" yaml:"name"`
+
+	// Value is the exact value the parameter must have.
+	Value string `json:"value,omitempty" yaml:"value,omitempty"`
+
+	// Regex indicates that Value should be treated as a regular expression.
+	Regex bool `json:"regex,omitempty" yaml:"regex,omitempty"`
+}
+
+// MatchRule defines all the conditions a request must satisfy to be matched by a Route.
+// At most one of Path, PathPrefix, or PathRegex should be set.
 type MatchRule struct {
 	// Path is the exact path that must match.
 	Path string `json:"path,omitempty" yaml:"path,omitempty"`
@@ -62,11 +72,16 @@ type MatchRule struct {
 	// An empty slice matches all methods.
 	Methods []string `json:"methods,omitempty" yaml:"methods,omitempty"`
 
-	// Hostnames overrides the group-level hostname matchers for this specific route.
-	// An empty slice inherits the group's hostnames.
+	// Hostnames restricts the match to specific virtual host names.
+	// An empty slice matches all virtual hosts.
 	Hostnames []string `json:"hostnames,omitempty" yaml:"hostnames,omitempty"`
 
-	// Headers are additional header matchers specific to this route.
-	// These are evaluated in addition to the group-level headers.
+	// Headers are request header matchers that must all match.
 	Headers []HeaderMatcher `json:"headers,omitempty" yaml:"headers,omitempty"`
+
+	// Ports restricts the match to specific listener ports.
+	Ports []uint32 `json:"ports,omitempty" yaml:"ports,omitempty"`
+
+	// QueryParams are query parameter matchers that must all match.
+	QueryParams []QueryParamMatcher `json:"queryParams,omitempty" yaml:"queryParams,omitempty"`
 }

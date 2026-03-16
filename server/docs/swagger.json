@@ -1,680 +1,759 @@
 {
-    "schemes": [
-        "http",
-        "https"
-    ],
-    "swagger": "2.0",
+    "components": {
+        "schemas": {
+            "model.Backend": {
+                "properties": {
+                    "host": {
+                        "description": "Host is the upstream hostname or IP address.",
+                        "type": "string"
+                    },
+                    "name": {
+                        "description": "Name is a unique identifier for this backend within the route.\nIt maps to an Envoy cluster name.",
+                        "type": "string"
+                    },
+                    "port": {
+                        "description": "Port is the upstream TCP port.",
+                        "type": "integer"
+                    },
+                    "tls": {
+                        "description": "TLS indicates whether the connection to the upstream should use TLS.",
+                        "type": "boolean"
+                    },
+                    "weight": {
+                        "description": "Weight controls what percentage of traffic is sent to this backend\nwhen multiple backends are defined. Values across all backends in a\nroute must sum to 100.",
+                        "type": "integer"
+                    }
+                },
+                "type": "object"
+            },
+            "model.HeaderMatcher": {
+                "properties": {
+                    "name": {
+                        "description": "Name is the header name (case-insensitive).",
+                        "type": "string"
+                    },
+                    "regex": {
+                        "description": "Regex indicates that Value should be treated as a regular expression.",
+                        "type": "boolean"
+                    },
+                    "value": {
+                        "description": "Value is the exact value the header must have.\nIf empty, only the presence of the header is checked.",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "model.MatchRule": {
+                "description": "Match defines the conditions that a request must satisfy.",
+                "properties": {
+                    "headers": {
+                        "description": "Headers are request header matchers that must all match.",
+                        "items": {
+                            "$ref": "#/components/schemas/model.HeaderMatcher"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "hostnames": {
+                        "description": "Hostnames restricts the match to specific virtual host names.\nAn empty slice matches all virtual hosts.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "methods": {
+                        "description": "Methods lists the HTTP methods this rule applies to.\nAn empty slice matches all methods.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "path": {
+                        "description": "Path is the exact path that must match.",
+                        "type": "string"
+                    },
+                    "pathPrefix": {
+                        "description": "PathPrefix is a prefix that the request path must start with.\nMutually exclusive with Path and PathRegex.",
+                        "type": "string"
+                    },
+                    "pathRegex": {
+                        "description": "PathRegex is a regular expression the request path must match.\nMutually exclusive with Path and PathPrefix.",
+                        "type": "string"
+                    },
+                    "ports": {
+                        "description": "Ports restricts the match to specific listener ports.",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "queryParams": {
+                        "description": "QueryParams are query parameter matchers that must all match.",
+                        "items": {
+                            "$ref": "#/components/schemas/model.QueryParamMatcher"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
+            "model.QueryParamMatcher": {
+                "properties": {
+                    "name": {
+                        "description": "Name is the query parameter name.",
+                        "type": "string"
+                    },
+                    "regex": {
+                        "description": "Regex indicates that Value should be treated as a regular expression.",
+                        "type": "boolean"
+                    },
+                    "value": {
+                        "description": "Value is the exact value the parameter must have.",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "model.Route": {
+                "properties": {
+                    "backends": {
+                        "description": "Backends lists the upstream destinations for this route.\nWeights across all backends should sum to 100 when more than one backend\nis defined. If only one backend is provided its weight is ignored.",
+                        "items": {
+                            "$ref": "#/components/schemas/model.Backend"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "id": {
+                        "description": "ID is the unique identifier of the route.",
+                        "type": "string"
+                    },
+                    "match": {
+                        "$ref": "#/components/schemas/model.MatchRule"
+                    },
+                    "name": {
+                        "description": "Name is a human-readable label for the route.",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            },
+            "model.RouteGroup": {
+                "properties": {
+                    "headers": {
+                        "description": "Headers are appended to each referenced route's own header matchers.",
+                        "items": {
+                            "$ref": "#/components/schemas/model.HeaderMatcher"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "hostnames": {
+                        "description": "Hostnames are merged (union) with each referenced route's own hostnames.\nAn empty slice means only the route's own hostnames apply.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "id": {
+                        "description": "ID is the unique identifier of the group.",
+                        "type": "string"
+                    },
+                    "name": {
+                        "description": "Name is a human-readable label for the group.",
+                        "type": "string"
+                    },
+                    "pathPrefix": {
+                        "description": "PathPrefix is prepended to the path/pathPrefix of every referenced route.",
+                        "type": "string"
+                    },
+                    "routeIds": {
+                        "description": "RouteIDs lists the IDs of the routes that belong to this group.\nRoutes are independent entities and may be referenced by multiple groups.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    }
+                },
+                "type": "object"
+            },
+            "respond.ErrorBody": {
+                "properties": {
+                    "error": {
+                        "description": "Error contains a human-readable description of what went wrong.",
+                        "example": "group \"abc\" not found",
+                        "type": "string"
+                    }
+                },
+                "type": "object"
+            }
+        }
+    },
     "info": {
-        "description": "REST API control plane for Envoy proxies. Manage route groups and routes;\nchanges are pushed to all connected Envoy instances via xDS in real time.",
-        "title": "Rutoso API",
         "contact": {
             "name": "Rutoso project",
             "url": "https://github.com/achetronic/rutoso"
         },
+        "description": "REST API control plane for Envoy proxies. Manage route groups and routes;\nchanges are pushed to all connected Envoy instances via xDS in real time.",
         "license": {
             "name": "Apache 2.0",
             "url": "https://www.apache.org/licenses/LICENSE-2.0"
         },
+        "title": "Rutoso API",
         "version": "1.0"
     },
-    "host": "localhost:8080",
-    "basePath": "/",
+    "externalDocs": {
+        "description": "",
+        "url": ""
+    },
     "paths": {
-        "/api/v1/groups": {
+        "/groups": {
             "get": {
-                "description": "Returns the full list of route groups known to this control plane.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "groups"
-                ],
-                "summary": "List all route groups",
+                "description": "Returns the full list of route groups.",
                 "responses": {
                     "200": {
-                        "description": "List of route groups (may be empty)",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/model.RouteGroup"
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/model.RouteGroup"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "List groups",
+                "tags": [
+                    "groups"
+                ]
+            },
+            "post": {
+                "description": "Creates a new group referencing existing routes by ID.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/model.RouteGroup",
+                                        "summary": "group",
+                                        "description": "Group definition"
+                                    }
+                                ]
                             }
                         }
                     },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "Creates a new route group. The name must be unique across all groups.\nThe ID is auto-generated and returned in the response.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "groups"
-                ],
-                "summary": "Create a route group",
-                "parameters": [
-                    {
-                        "description": "Route group to create",
-                        "name": "group",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/model.RouteGroup"
-                        }
-                    }
-                ],
+                    "description": "Group definition",
+                    "required": true
+                },
                 "responses": {
                     "201": {
-                        "description": "Route group created",
-                        "schema": {
-                            "$ref": "#/definitions/model.RouteGroup"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.RouteGroup"
+                                }
+                            }
+                        },
+                        "description": "Created"
                     },
                     "400": {
-                        "description": "Invalid payload or missing required fields",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "409": {
-                        "description": "A group with the same name already exists",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
                     },
                     "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
                     }
-                }
+                },
+                "summary": "Create a group",
+                "tags": [
+                    "groups"
+                ]
             }
         },
-        "/api/v1/groups/{groupId}": {
-            "get": {
-                "description": "Returns a single route group by its ID.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "groups"
-                ],
-                "summary": "Get a route group",
+        "/groups/{groupId}": {
+            "delete": {
+                "description": "Deletes the group with the given ID.",
                 "parameters": [
                     {
-                        "type": "string",
-                        "example": "550e8400-e29b-41d4-a716-446655440000",
-                        "description": "Group UUID",
-                        "name": "groupId",
+                        "description": "Group ID",
                         "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Route group found",
-                        "schema": {
-                            "$ref": "#/definitions/model.RouteGroup"
-                        }
-                    },
-                    "404": {
-                        "description": "Group not found",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "description": "Replaces a route group's metadata (prefix, hostnames, headers, description).\nThe group's routes are not affected by this operation.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "groups"
-                ],
-                "summary": "Update a route group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "example": "550e8400-e29b-41d4-a716-446655440000",
-                        "description": "Group UUID",
                         "name": "groupId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Updated route group",
-                        "name": "group",
-                        "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/model.RouteGroup"
+                            "type": "string"
                         }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Route group updated",
-                        "schema": {
-                            "$ref": "#/definitions/model.RouteGroup"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid payload",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "404": {
-                        "description": "Group not found",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Deletes a route group and all of its routes. This action is irreversible.\nThe xDS snapshot is updated immediately; Envoy will stop routing those rules.",
-                "tags": [
-                    "groups"
-                ],
-                "summary": "Delete a route group",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "example": "550e8400-e29b-41d4-a716-446655440000",
-                        "description": "Group UUID",
-                        "name": "groupId",
-                        "in": "path",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "204": {
-                        "description": "Group deleted"
+                        "description": "No Content"
                     },
                     "404": {
-                        "description": "Group not found",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
                     },
                     "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
                     }
-                }
-            }
-        },
-        "/api/v1/groups/{groupId}/routes": {
-            "get": {
-                "description": "Returns all routes that belong to the specified route group.",
-                "produces": [
-                    "application/json"
-                ],
+                },
+                "summary": "Delete a group",
                 "tags": [
-                    "routes"
-                ],
-                "summary": "List routes in a group",
+                    "groups"
+                ]
+            },
+            "get": {
+                "description": "Returns the group with the given ID.",
                 "parameters": [
                     {
-                        "type": "string",
-                        "example": "550e8400-e29b-41d4-a716-446655440000",
-                        "description": "Group UUID",
-                        "name": "groupId",
+                        "description": "Group ID",
                         "in": "path",
-                        "required": true
+                        "name": "groupId",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "List of routes (may be empty)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.RouteGroup"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Get a group",
+                "tags": [
+                    "groups"
+                ]
+            },
+            "put": {
+                "description": "Replaces the group with the given ID.",
+                "parameters": [
+                    {
+                        "description": "Group ID",
+                        "in": "path",
+                        "name": "groupId",
+                        "required": true,
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/model.Route"
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/model.RouteGroup",
+                                        "summary": "group",
+                                        "description": "Updated group definition"
+                                    }
+                                ]
                             }
                         }
                     },
+                    "description": "Updated group definition",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.RouteGroup"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
                     "404": {
-                        "description": "Group not found",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
                     },
                     "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
                     }
-                }
-            },
-            "post": {
-                "description": "Adds a new route to the specified group.\nAt least one backend is required. If multiple backends are provided,\ntheir weights must sum to exactly 100 (weighted routing / canary).\nTwo routes with the same path rule (path/pathPrefix/pathRegex) in the\nsame group are considered duplicates and will be rejected with 409.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
+                },
+                "summary": "Update a group",
+                "tags": [
+                    "groups"
+                ]
+            }
+        },
+        "/routes": {
+            "get": {
+                "description": "Returns the full list of routes.",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/model.Route"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "List routes",
                 "tags": [
                     "routes"
-                ],
+                ]
+            },
+            "post": {
+                "description": "Creates a new independent route.",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/model.Route",
+                                        "summary": "route",
+                                        "description": "Route definition"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Route definition",
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.Route"
+                                }
+                            }
+                        },
+                        "description": "Created"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
                 "summary": "Create a route",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "example": "550e8400-e29b-41d4-a716-446655440000",
-                        "description": "Group UUID",
-                        "name": "groupId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Route to create",
-                        "name": "route",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/model.Route"
-                        }
-                    }
-                ],
-                "responses": {
-                    "201": {
-                        "description": "Route created",
-                        "schema": {
-                            "$ref": "#/definitions/model.Route"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid payload, missing backend, or invalid weights",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "404": {
-                        "description": "Group not found",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "409": {
-                        "description": "A route with the same match rule already exists",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    }
-                }
+                "tags": [
+                    "routes"
+                ]
             }
         },
-        "/api/v1/groups/{groupId}/routes/{routeId}": {
-            "get": {
-                "description": "Returns a single route by its ID within the specified group.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "routes"
-                ],
-                "summary": "Get a route",
+        "/routes/{routeId}": {
+            "delete": {
+                "description": "Deletes the route with the given ID.",
                 "parameters": [
                     {
-                        "type": "string",
-                        "example": "550e8400-e29b-41d4-a716-446655440000",
-                        "description": "Group UUID",
-                        "name": "groupId",
+                        "description": "Route ID",
                         "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "example": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-                        "description": "Route UUID",
                         "name": "routeId",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Route found",
-                        "schema": {
-                            "$ref": "#/definitions/model.Route"
-                        }
-                    },
-                    "404": {
-                        "description": "Group or route not found",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    }
-                }
-            },
-            "put": {
-                "description": "Replaces an existing route entirely.\nIf multiple backends are provided, their weights must sum to 100.\nChanging the match rule to one already used by another route in the same\ngroup will be rejected with 409.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "routes"
-                ],
-                "summary": "Update a route",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "example": "550e8400-e29b-41d4-a716-446655440000",
-                        "description": "Group UUID",
-                        "name": "groupId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "example": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-                        "description": "Route UUID",
-                        "name": "routeId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Updated route",
-                        "name": "route",
-                        "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/model.Route"
+                            "type": "string"
                         }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Route updated",
-                        "schema": {
-                            "$ref": "#/definitions/model.Route"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid payload or invalid weights",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "404": {
-                        "description": "Group or route not found",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "409": {
-                        "description": "Match rule conflicts with another route",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal error",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "Removes a route from its group. The xDS snapshot is updated immediately.",
-                "tags": [
-                    "routes"
-                ],
-                "summary": "Delete a route",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "example": "550e8400-e29b-41d4-a716-446655440000",
-                        "description": "Group UUID",
-                        "name": "groupId",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "example": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
-                        "description": "Route UUID",
-                        "name": "routeId",
-                        "in": "path",
-                        "required": true
                     }
                 ],
                 "responses": {
                     "204": {
-                        "description": "Route deleted"
+                        "description": "No Content"
                     },
                     "404": {
-                        "description": "Group or route not found",
-                        "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
-                        }
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
                     },
                     "500": {
-                        "description": "Internal error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Delete a route",
+                "tags": [
+                    "routes"
+                ]
+            },
+            "get": {
+                "description": "Returns the route with the given ID.",
+                "parameters": [
+                    {
+                        "description": "Route ID",
+                        "in": "path",
+                        "name": "routeId",
+                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/respond.ErrorBody"
+                            "type": "string"
                         }
                     }
-                }
+                ],
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.Route"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Get a route",
+                "tags": [
+                    "routes"
+                ]
+            },
+            "put": {
+                "description": "Replaces the route with the given ID.",
+                "parameters": [
+                    {
+                        "description": "Route ID",
+                        "in": "path",
+                        "name": "routeId",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "oneOf": [
+                                    {
+                                        "type": "object"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/model.Route",
+                                        "summary": "route",
+                                        "description": "Updated route definition"
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "description": "Updated route definition",
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/model.Route"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "400": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Bad Request"
+                    },
+                    "404": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Not Found"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Update a route",
+                "tags": [
+                    "routes"
+                ]
             }
         }
     },
-    "definitions": {
-        "model.Backend": {
-            "type": "object",
-            "properties": {
-                "host": {
-                    "description": "Host is the upstream hostname or IP address.",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "Name is a unique identifier for this backend within the route.\nIt maps to an Envoy cluster name.",
-                    "type": "string"
-                },
-                "port": {
-                    "description": "Port is the upstream TCP port.",
-                    "type": "integer"
-                },
-                "tls": {
-                    "description": "TLS indicates whether the connection to the upstream should use TLS.",
-                    "type": "boolean"
-                },
-                "weight": {
-                    "description": "Weight controls what percentage of traffic is sent to this backend\nwhen multiple backends are defined. Values across all backends in a\nroute must sum to 100.",
-                    "type": "integer"
-                }
-            }
-        },
-        "model.HeaderMatcher": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "description": "Name is the header name (case-insensitive).",
-                    "type": "string"
-                },
-                "regex": {
-                    "description": "Regex indicates that Value should be treated as a regular expression.",
-                    "type": "boolean"
-                },
-                "value": {
-                    "description": "Value is the exact value the header must have.\nIf empty, only the presence of the header is checked.",
-                    "type": "string"
-                }
-            }
-        },
-        "model.MatchRule": {
-            "type": "object",
-            "properties": {
-                "headers": {
-                    "description": "Headers are additional header matchers specific to this route.\nThese are evaluated in addition to the group-level headers.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.HeaderMatcher"
-                    }
-                },
-                "hostnames": {
-                    "description": "Hostnames overrides the group-level hostname matchers for this specific route.\nAn empty slice inherits the group's hostnames.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "methods": {
-                    "description": "Methods lists the HTTP methods this rule applies to.\nAn empty slice matches all methods.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "path": {
-                    "description": "Path is the exact path that must match.",
-                    "type": "string"
-                },
-                "pathPrefix": {
-                    "description": "PathPrefix is a prefix that the request path must start with.\nMutually exclusive with Path and PathRegex.",
-                    "type": "string"
-                },
-                "pathRegex": {
-                    "description": "PathRegex is a regular expression the request path must match.\nMutually exclusive with Path and PathPrefix.",
-                    "type": "string"
-                }
-            }
-        },
-        "model.Route": {
-            "type": "object",
-            "properties": {
-                "backends": {
-                    "description": "Backends lists the upstream destinations for this route.\nWeights across all backends should sum to 100. If only one backend is\nprovided its weight is ignored and all traffic goes to it.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.Backend"
-                    }
-                },
-                "description": {
-                    "description": "Description is an optional explanation of the route's purpose.",
-                    "type": "string"
-                },
-                "groupId": {
-                    "description": "GroupID is the identifier of the RouteGroup this route belongs to.",
-                    "type": "string"
-                },
-                "id": {
-                    "description": "ID is the unique identifier of the route within its group.",
-                    "type": "string"
-                },
-                "match": {
-                    "description": "Match defines the conditions that a request must satisfy to be handled\nby this route. Path, method, hostname, and header matchers are supported.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.MatchRule"
-                        }
-                    ]
-                },
-                "name": {
-                    "description": "Name is a human-readable label for the route.",
-                    "type": "string"
-                }
-            }
-        },
-        "model.RouteGroup": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "description": "Description is an optional explanation of the group's purpose.",
-                    "type": "string"
-                },
-                "headers": {
-                    "description": "Headers are additional request header matchers applied to all routes in\nthis group. Routes can define their own headers on top of these.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.HeaderMatcher"
-                    }
-                },
-                "hostnames": {
-                    "description": "Hostnames restricts this group to requests targeting specific virtual hosts.\nAn empty slice means the group matches all hostnames.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "id": {
-                    "description": "ID is the unique identifier of the group.",
-                    "type": "string"
-                },
-                "name": {
-                    "description": "Name is a human-readable label for the group.",
-                    "type": "string"
-                },
-                "prefix": {
-                    "description": "Prefix is a path prefix applied to all routes in this group.\nExample: \"/api/v1\" will make a route with path \"/users\" match \"/api/v1/users\".",
-                    "type": "string"
-                },
-                "routes": {
-                    "description": "Routes holds all routes that belong to this group.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.Route"
-                    }
-                }
-            }
-        },
-        "respond.ErrorBody": {
-            "type": "object",
-            "properties": {
-                "error": {
-                    "description": "Error contains a human-readable description of what went wrong.",
-                    "type": "string",
-                    "example": "group \"abc\" not found"
-                }
-            }
+    "openapi": "3.1.0",
+    "servers": [
+        {
+            "url": "localhost:8080/"
         }
-    }
+    ]
 }
