@@ -3,10 +3,30 @@
 package model
 
 // RouteGroup is a logical grouping of routes referenced by their IDs.
-// It can optionally add extra matching constraints on top of all referenced routes:
-//   - PathPrefix is prepended to each route's path/pathPrefix.
-//   - Hostnames are merged (union) with each route's own hostnames.
-//   - Headers are appended to each route's own header matchers.
+//
+// A group acts as a first-level context layer applied on top of every
+// referenced route. Path matching is composed according to these rules:
+//
+//   - PathPrefix (group) + any path specifier (route) → literal concatenation.
+//     The group prefix is prepended to the route's exact path, prefix, or
+//     regex pattern as-is. Use this when the group namespace is a simple
+//     path segment (e.g. "/api/v1").
+//
+//   - PathRegex (group) + PathRegex (route) → pattern composition.
+//     The two patterns are combined as (?:group_regex)(?:route_regex).
+//     Both must be valid RE2 expressions. Use this when the group itself
+//     defines a variable namespace (e.g. "/api/v[0-9]+").
+//
+//   - PathRegex (group) + Path or PathPrefix (route) → safe composition.
+//     The route's literal value is escaped with regexp.QuoteMeta before
+//     being appended to the group regex: (?:group_regex)(?:escaped_literal).
+//     This lets you mix a flexible group namespace with fixed route paths
+//     without accidentally breaking the regex.
+//
+//   - PathRegex (group) + no path specifier (route) → group regex is the
+//     full match. The route contributes only backends and other matchers.
+//
+// In all cases, Hostnames are merged (union) and Headers are appended.
 type RouteGroup struct {
 	// ID is the unique identifier of the group.
 	ID string `json:"id" yaml:"id"`
@@ -18,8 +38,14 @@ type RouteGroup struct {
 	// Routes are independent entities and may be referenced by multiple groups.
 	RouteIDs []string `json:"routeIds" yaml:"routeIds"`
 
-	// PathPrefix is prepended to the path/pathPrefix of every referenced route.
+	// PathPrefix is prepended literally to the path/pathPrefix/pathRegex of
+	// every referenced route. Mutually exclusive with PathRegex.
 	PathPrefix string `json:"pathPrefix,omitempty" yaml:"pathPrefix,omitempty"`
+
+	// PathRegex is a RE2 regular expression that defines the group's path
+	// namespace. It is composed with the route's own path specifier according
+	// to the rules described above. Mutually exclusive with PathPrefix.
+	PathRegex string `json:"pathRegex,omitempty" yaml:"pathRegex,omitempty"`
 
 	// Hostnames are merged (union) with each referenced route's own hostnames.
 	// An empty slice means only the route's own hostnames apply.

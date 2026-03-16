@@ -3,6 +3,7 @@ package xds
 
 import (
 	"fmt"
+	"regexp"
 	"time"
 
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
@@ -129,30 +130,81 @@ func buildRouteAction(g model.RouteGroup, r model.Route) *routev3.Route {
 	}
 }
 
-// buildRouteMatch converts a MatchRule (plus group-level prefix and headers) into
-// an Envoy RouteMatch. The group's PathPrefix is prepended to the route's path spec.
-// Group headers are appended to the route's own headers.
+// buildRouteMatch converts a MatchRule (plus group-level matchers) into an
+// Envoy RouteMatch. Path composition follows these rules:
+//
+// Group has PathPrefix:
+//
+//	+---------------------+-----------------------------------------+
+//	| Route path specifier | Result                                  |
+//	+---------------------+-----------------------------------------+
+//	| Path (exact)        | Prefix + Path  (exact match)            |
+//	| PathPrefix          | Prefix + PathPrefix  (prefix match)     |
+//	| PathRegex           | Prefix + PathRegex  (safe_regex match)  |
+//	| (none)              | Prefix  (prefix match)                  |
+//	+---------------------+-----------------------------------------+
+//
+// Group has PathRegex:
+//
+//	+---------------------+-------------------------------------------------+
+//	| Route path specifier | Result                                          |
+//	+---------------------+-------------------------------------------------+
+//	| PathRegex           | (?:GroupRegex)(?:RouteRegex)  (composed regex)  |
+//	| Path (exact)        | (?:GroupRegex)(?:QuoteMeta(Path))               |
+//	| PathPrefix          | (?:GroupRegex)(?:QuoteMeta(PathPrefix))         |
+//	| (none)              | GroupRegex  (group regex is the full match)     |
+//	+---------------------+-------------------------------------------------+
+//
+// In the regex+literal cases the route's literal is escaped with
+// regexp.QuoteMeta so that special characters in a plain path segment
+// (e.g. dots in "/v1.0/") are never misinterpreted as regex metacharacters.
+//
+// Group headers are appended to the route's own header matchers.
 func buildRouteMatch(g model.RouteGroup, r model.Route) *routev3.RouteMatch {
 	rm := &routev3.RouteMatch{}
 
-	prefix := g.PathPrefix
-
 	switch {
-	case r.Match.Path != "":
-		rm.PathSpecifier = &routev3.RouteMatch_Path{Path: prefix + r.Match.Path}
-	case r.Match.PathPrefix != "":
-		rm.PathSpecifier = &routev3.RouteMatch_Prefix{Prefix: prefix + r.Match.PathPrefix}
-	case r.Match.PathRegex != "":
+	case g.PathRegex != "":
+		// Group defines a regex namespace — compose with the route's path specifier.
+		var finalRegex string
+		switch {
+		case r.Match.PathRegex != "":
+			// Both are regex: compose as (?:group)(?:route).
+			finalRegex = "(?:" + g.PathRegex + ")(?:" + r.Match.PathRegex + ")"
+		case r.Match.Path != "":
+			// Route has a literal exact path: escape it before composing.
+			finalRegex = "(?:" + g.PathRegex + ")(?:" + regexp.QuoteMeta(r.Match.Path) + ")"
+		case r.Match.PathPrefix != "":
+			// Route has a literal prefix: escape it before composing.
+			finalRegex = "(?:" + g.PathRegex + ")(?:" + regexp.QuoteMeta(r.Match.PathPrefix) + ")"
+		default:
+			// No route path specifier: the group regex is the full match.
+			finalRegex = g.PathRegex
+		}
 		rm.PathSpecifier = &routev3.RouteMatch_SafeRegex{
-			SafeRegex: &matcherv3.RegexMatcher{Regex: prefix + r.Match.PathRegex},
+			SafeRegex: &matcherv3.RegexMatcher{Regex: finalRegex},
 		}
+
 	default:
-		// Match everything under the group prefix (or "/" if no prefix).
-		p := prefix
-		if p == "" {
-			p = "/"
+		// Group defines a literal prefix (possibly empty).
+		prefix := g.PathPrefix
+		switch {
+		case r.Match.Path != "":
+			rm.PathSpecifier = &routev3.RouteMatch_Path{Path: prefix + r.Match.Path}
+		case r.Match.PathPrefix != "":
+			rm.PathSpecifier = &routev3.RouteMatch_Prefix{Prefix: prefix + r.Match.PathPrefix}
+		case r.Match.PathRegex != "":
+			rm.PathSpecifier = &routev3.RouteMatch_SafeRegex{
+				SafeRegex: &matcherv3.RegexMatcher{Regex: prefix + r.Match.PathRegex},
+			}
+		default:
+			// Match everything under the group prefix (or "/" if no prefix).
+			p := prefix
+			if p == "" {
+				p = "/"
+			}
+			rm.PathSpecifier = &routev3.RouteMatch_Prefix{Prefix: p}
 		}
-		rm.PathSpecifier = &routev3.RouteMatch_Prefix{Prefix: p}
 	}
 
 	// Route headers first, then group headers on top.
