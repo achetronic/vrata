@@ -8,8 +8,8 @@ _(nothing)_
 
 - [ ] Add authentication to the REST API
 - [ ] Write unit and integration tests
-- [ ] Add `make docs` target to Makefile (runs `swag init`)
 - [ ] HA storage: document shared-volume / Litestream pattern for multi-replica deployments
+- [ ] Update `ARCHITECTURE.md` to reflect `model` package as canonical type home (separate from `gateway`)
 
 ## Done
 
@@ -33,3 +33,14 @@ _(nothing)_
 - [x] Rename API paths: `/api/v1/route-groups` → `/api/v1/groups`, nested routes kept under `/{groupId}/routes`
 - [x] Implement persistent store: bbolt (`store/bolt`), single-file DB, full `Store` interface, `--store-path` flag
 - [x] OpenAPI docs: swag-go v2 annotations on all 10 handlers, `docs/` generated, Swagger UI at `/api/v1/docs/`
+- [x] **Data model redesign**: Routes promoted to independent first-class entities
+  - `model/route.go`: Route no longer has GroupID; added `Ports []uint32` and `QueryParams []QueryParamMatcher` to MatchRule
+  - `model/group.go`: RouteGroup now holds `RouteIDs []string` (references) instead of embedded routes; added group-level matchers (`PathPrefix`, `Hostnames`, `Headers`)
+  - `store/store.go`: Store interface updated — route operations are top-level (no groupID parameter)
+  - `store/bolt/bolt.go`: Migrated to new interface; two flat buckets (`routes`, `groups`), old sub-key pattern removed
+  - `store/memory/memory.go`: Updated to new interface
+  - `gateway/gateway.go`: `Rebuild()` resolves route IDs from store before calling builder
+  - `xds/builder.go`: `BuildSnapshot(version, groups, routes)` — receives pre-resolved routes per group; merges group-level matchers on top of route matchers
+  - `handlers/routes.go`, `handlers/groups.go`, `router.go`: Updated to top-level `/api/v1/routes` paths
+  - Swagger docs regenerated via `make docs`
+  - `go build ./...` and `go vet ./...` pass clean

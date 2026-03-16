@@ -138,3 +138,28 @@ operational complexity.
 **Do not**: Switch to an external database (PostgreSQL, etcd, Redis) without an explicit
 decision. Do not read or write the bbolt file from outside the `store/bolt` package.
 Do not remove the `store.Store` interface — all components must remain storage-agnostic.
+
+---
+
+## Routes as independent first-class entities (not embedded in groups)
+
+**Date**: 2026-03-16
+**Status**: Implemented
+
+A `Route` is a standalone entity stored and managed independently of any `RouteGroup`.
+A `RouteGroup` references routes by their IDs (`RouteIDs []string`) and adds group-level
+matchers (`PathPrefix`, `Hostnames`, `Headers`) that are merged on top of each referenced
+route's own match rules at xDS snapshot build time.
+
+**Reasoning**: Separating routes from groups gives each entity a clear, single responsibility.
+A route defines what traffic looks like (path, methods, headers, ports, query params) and
+where it goes (backends). A group defines how to compose multiple routes into a single Envoy
+virtual host, applying shared matching context on top. This avoids duplication of matcher
+fields and makes it possible to reuse a route across multiple groups without copying it.
+The original embedded design (routes as a nested field inside groups) conflated both concerns
+and forced redundant matcher definitions whenever a route appeared in more than one group.
+
+**Do not**: Embed `Route` objects directly inside `RouteGroup`. Do not add a `GroupID` field
+back to `Route`. Do not return routes nested under group endpoints — routes and groups must
+remain separate resources at both the API level (`/api/v1/routes`, `/api/v1/groups`) and the
+storage level (two flat buckets in bbolt).
