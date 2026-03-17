@@ -6,7 +6,73 @@ _(nothing)_
 
 ## Pending
 
-### TLS
+### HITO MAYOR: Rutoso como proxy nativo Go (eliminar dependencia de Envoy)
+Rutoso deja de ser un control plane para Envoy y pasa a ser el proxy en sí.
+Mismo binario, misma API REST, mismas entidades (Destination, Listener, Route,
+RouteGroup, Middleware). Por debajo, Go nativo haciendo reverse proxy.
+
+Principios:
+- Las 5 entidades se mantienen: Destination, Listener, Route, RouteGroup, Middleware
+- La API REST no cambia. Lo que cambia es que ya no genera protos xDS, sino que
+  reconfigura el proxy interno en caliente
+- Reload sin corte: conexiones activas terminan con config vieja, nuevas usan la nueva
+- Un solo binario. Sin Envoy. Sin protos. Sin traducciones.
+
+Features requeridas (paridad + mejoras):
+- Listener: address:port, TLS downstream con reload de certs, HTTP/2, access log,
+  server name, max request headers
+- Destination: host:port, TLS upstream (tls/mtls con system CA por defecto),
+  HTTP/2, DNS refresh, health checks, circuit breaker, outlier detection,
+  slow start, max requests per connection, Kubernetes EDS
+- Route: path/prefix/regex match, methods, headers, query params, gRPC match,
+  forward (weighted backends, sticky sessions con ring hash/maglev), redirect,
+  direct response, timeouts, retry con backoff, rewrite (path/regex/host),
+  mirror, websocket upgrade, max gRPC timeout, internal redirects
+- RouteGroup: path prefix/regex composition, hostnames, headers, retry default,
+  include attempt count, middleware/override inheritance
+- Middleware (el sistema entero cambia — ya no mapea a protos Envoy):
+  - CORS: implementación directa, no depende de filter_enabled ni per_filter_config
+  - OAuth2/Auth: middleware de alto nivel. El usuario pone destinationId + path +
+    signin path. Rutoso sabe qué headers mandar, recibir, pasar al upstream.
+    Sin allowedHeaders/allowedClientHeaders/headersToAdd manuales.
+  - Headers: add/remove request/response headers
+  - Rate limit: embebido (token bucket por ruta/IP/header) o con servicio externo
+  - ExtProc: compatibilidad con el proto de ext_proc de Envoy para reutilizar
+    procesadores existentes
+  - WASM: ejecutar filtros WASM via wasmtime/wazero embebido
+  - JWT: validación directa en Go (lestrrat-go/jwx), sin servicio externo
+
+Arquitectura:
+- Reemplazar internal/xds/ por internal/proxy/ con el reverse proxy Go
+- El gateway pasa de generar snapshots xDS a reconfigurar el proxy en caliente
+- internal/proxy/router.go: tabla de routing con hot-swap atómico
+- internal/proxy/middleware.go: chain de middlewares como http.Handler wrappers
+- internal/proxy/balancer.go: weighted random, ring hash, maglev, least request
+- internal/proxy/health.go: health checks activos + outlier detection
+- internal/proxy/circuit.go: circuit breaker por destination
+- El 80% del código actual (modelo, store, API, handlers, k8s watcher, bbolt)
+  no cambia. Solo se reemplaza la capa de proxy.
+
+Tasks:
+- [ ] Diseñar el paquete internal/proxy/ con el reverse proxy base
+- [ ] Implementar hot-reload de config (atomic swap de routing table)
+- [ ] Implementar balancer (weighted, ring hash, maglev, least request, random)
+- [ ] Implementar health checks + outlier detection
+- [ ] Implementar circuit breaker
+- [ ] Implementar TLS upstream/downstream con cert reload
+- [ ] Implementar middleware chain con enable/disable por ruta
+- [ ] Implementar middlewares: CORS, OAuth2, Headers, Rate limit, JWT
+- [ ] Implementar WebSocket proxying
+- [ ] Implementar HTTP/2 upstream/downstream
+- [ ] Implementar access log
+- [ ] Implementar retry con backoff
+- [ ] Implementar path rewrite (prefix, regex, host)
+- [ ] Implementar request mirror
+- [ ] Adaptar gateway.go para reconfigurar proxy en vez de generar xDS
+- [ ] Eliminar dependencia de go-control-plane
+- [ ] Tests de paridad con la versión Envoy
+
+### TLS (versión Envoy — pendiente mientras exista)
 - [ ] TLS upstream (Destination): wire `DestinationOptions.TLS` into UpstreamTlsContext / transport_socket in builder. Critical for ExtAuthz and any external service over TLS.
 - [ ] TLS downstream (Listener): wire `Listener.TLS` into DownstreamTlsContext in builder.
 - [ ] Multiple filter chains: support SNI routing (one cert per domain) via multiple FilterChains on a single Listener.
