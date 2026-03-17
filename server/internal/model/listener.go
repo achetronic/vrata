@@ -51,7 +51,7 @@ type Listener struct {
 	ListenerFilters []ListenerFilter `json:"listenerFilters,omitempty" yaml:"listenerFilters,omitempty"`
 
 	// ServerName sets the "server" header Envoy adds to responses.
-	// When empty, Envoy uses its default ("envoy").
+	// When empty, Rutoso does not set this header.
 	// Maps to HttpConnectionManager.server_name.
 	ServerName string `json:"serverName,omitempty" yaml:"serverName,omitempty"`
 

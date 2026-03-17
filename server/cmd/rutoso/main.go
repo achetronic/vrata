@@ -1,6 +1,6 @@
-// Rutoso is a REST API control plane for Envoy proxies.
-// It manages route groups and routes, pushing configuration to Envoy via xDS
-// (go-control-plane) without requiring Envoy restarts.
+// Rutoso is a programmable HTTP reverse proxy with a REST API for configuration.
+// It manages routes, destinations, listeners, and middlewares — all applied in
+// real time without restarts.
 //
 // Usage:
 //
@@ -8,8 +8,8 @@
 //
 //	@title			Rutoso API
 //	@version		1.0
-//	@description	REST API control plane for Envoy proxies. Manage route groups and routes;
-//	@description	changes are pushed to all connected Envoy instances via xDS in real time.
+//	@description	Programmable HTTP reverse proxy. Manage routes, destinations,
+//	@description	listeners, and middlewares via REST API. Changes apply instantly.
 //	@contact.name	Rutoso project
 //	@contact.url	https://github.com/achetronic/rutoso
 //	@license.name	Apache 2.0
@@ -29,16 +29,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-
 	"github.com/achetronic/rutoso/internal/api"
 	"github.com/achetronic/rutoso/internal/config"
 	"github.com/achetronic/rutoso/internal/gateway"
-	k8swatcher "github.com/achetronic/rutoso/internal/k8s"
+	"github.com/achetronic/rutoso/internal/proxy"
 	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
-	"github.com/achetronic/rutoso/internal/xds"
 )
 
 func main() {
@@ -61,7 +56,6 @@ func run() error {
 	logger := buildLogger(cfg)
 	logger.Info("rutoso starting",
 		slog.String("http", cfg.Server.Address),
-		slog.String("xds", cfg.XDS.Address),
 		slog.String("store", *storePath),
 	)
 
@@ -76,48 +70,20 @@ func run() error {
 		}
 	}()
 
-	// xDS control-plane server.
-	xdsSrv := xds.New(logger)
+	// Proxy router and listener manager.
+	proxyRouter := proxy.NewRouter()
+	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
 
-	// Kubernetes client (in-cluster, fallback to ~/.kube/config).
-	k8sClient, err := buildK8sClient()
-	if err != nil {
-		logger.Warn("k8s watcher disabled: could not build k8s client",
-			slog.String("error", err.Error()),
-		)
-	}
-
-	// Build k8s watcher before gateway so we can pass it as EndpointProvider.
-	var k8sWatch *k8swatcher.Watcher
-	if k8sClient != nil {
-		k8sWatch = k8swatcher.New(k8swatcher.Dependencies{
-			Store:  st,
-			Client: k8sClient,
-			Logger: logger,
-			// OnChange is set below after gateway is created.
-		})
-	}
-
-	// Gateway: bridges store events → xDS snapshot updates.
-	var epProvider gateway.EndpointProvider
-	if k8sWatch != nil {
-		epProvider = k8sWatch
-	}
+	// Gateway: bridges store events → proxy config updates.
 	gw := gateway.New(gateway.Dependencies{
-		Store:            st,
-		Cache:            xdsSrv.Cache(),
-		XDSServer:        xdsSrv,
-		Logger:           logger,
-		NextVersion:      xdsSrv.NextVersion,
-		EndpointProvider: epProvider,
+		Store:           st,
+		Router:          proxyRouter,
+		ListenerManager: listenerMgr,
+		Logger:          logger,
 	})
 
-	if k8sWatch != nil {
-		k8sWatch.SetOnChange(gw.Rebuild)
-	}
-
-	// HTTP REST API.
-	router := api.NewRouter(st, xdsSrv, logger)
+	// HTTP REST API (management plane).
+	router := api.NewRouter(st, logger)
 	httpSrv := &http.Server{
 		Addr:    cfg.Server.Address,
 		Handler: router,
@@ -126,26 +92,12 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Run all components concurrently.
-	errCh := make(chan error, 4)
+	// Run components concurrently.
+	errCh := make(chan error, 2)
 
 	go func() {
 		if err := gw.Run(ctx); err != nil {
 			errCh <- fmt.Errorf("gateway: %w", err)
-		}
-	}()
-
-	if k8sWatch != nil {
-		go func() {
-			if err := k8sWatch.Run(ctx); err != nil {
-				errCh <- fmt.Errorf("k8s watcher: %w", err)
-			}
-		}()
-	}
-
-	go func() {
-		if err := xdsSrv.Serve(ctx, cfg.XDS.Address); err != nil {
-			errCh <- fmt.Errorf("xds server: %w", err)
 		}
 	}()
 
@@ -159,31 +111,12 @@ func run() error {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
+		listenerMgr.Shutdown()
 		_ = httpSrv.Shutdown(context.Background())
 		return nil
 	case err := <-errCh:
 		return err
 	}
-}
-
-// buildK8sClient creates a Kubernetes client. It tries in-cluster config first,
-// then falls back to the default kubeconfig (~/.kube/config).
-func buildK8sClient() (kubernetes.Interface, error) {
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-		cfg, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			loadingRules, &clientcmd.ConfigOverrides{},
-		).ClientConfig()
-		if err != nil {
-			return nil, fmt.Errorf("building k8s client config: %w", err)
-		}
-	}
-	client, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("creating k8s client: %w", err)
-	}
-	return client, nil
 }
 
 // buildLogger creates an slog.Logger based on the log configuration.

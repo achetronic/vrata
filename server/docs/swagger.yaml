@@ -842,15 +842,6 @@ components:
             JWTProvider selects a specific JWT provider by name (instead of requiring all).
             Only meaningful when the referenced filter is of type "jwt".
           type: string
-        rateLimitDescriptors:
-          description: |-
-            RateLimitDescriptors defines the rate limit descriptors sent to the
-            rate limit service for this route/group.
-            Only meaningful when the referenced filter is of type "rateLimit".
-          items:
-            $ref: '#/components/schemas/model.RateLimitDescriptor'
-          type: array
-          uniqueItems: false
       type: object
     model.MiddlewareType:
       description: |-
@@ -925,36 +916,16 @@ components:
         RateLimit holds the rate limit filter configuration.
         Set when Type == "rateLimit".
       properties:
-        destinationId:
+        burst:
           description: |-
-            DestinationID references the Destination entity that hosts the gRPC
-            rate limit service.
-          type: string
-        domain:
+            Burst is the maximum number of requests allowed in a burst above the
+            sustained rate. Default: same as RequestsPerSecond.
+          type: integer
+        requestsPerSecond:
           description: |-
-            Domain is the rate limit domain passed to the rate limit service.
-            The service uses this to scope rate limit descriptors.
-          type: string
-        failureModeDeny:
-          description: |-
-            FailureModeDeny controls what happens when the rate limit service is
-            unreachable. If true, requests are denied (fail-closed).
-            Default is false (fail-open).
-          type: boolean
-        timeout:
-          description: Timeout is the rate limit request deadline (e.g. "500ms").
-          type: string
-      type: object
-    model.RateLimitDescriptor:
-      properties:
-        key:
-          description: Key is the descriptor key (e.g. "remote_address", "header_match").
-          type: string
-        value:
-          description: |-
-            Value is the descriptor value. When empty, Envoy uses the request
-            attribute as the value (e.g. the actual header value).
-          type: string
+            RequestsPerSecond is the sustained rate of requests allowed per client IP.
+            Default: 10.
+          type: number
       type: object
     model.RetryBackoff:
       description: Backoff controls the delay between retry attempts.
@@ -1349,8 +1320,8 @@ info:
     name: Rutoso project
     url: https://github.com/achetronic/rutoso
   description: |-
-    REST API control plane for Envoy proxies. Manage route groups and routes;
-    changes are pushed to all connected Envoy instances via xDS in real time.
+    Programmable HTTP reverse proxy. Manage routes, destinations,
+    listeners, and middlewares via REST API. Changes apply instantly.
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -1358,33 +1329,6 @@ info:
   version: "1.0"
 openapi: 3.1.0
 paths:
-  /debug/xds/snapshot:
-    get:
-      description: Returns the last xDS snapshot pushed by Rutoso, serialised with
-        protojson.
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                additionalProperties: {}
-                type: object
-          description: OK
-        "404":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
-          description: Not Found
-        "500":
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/respond.ErrorBody'
-          description: Internal Server Error
-      summary: Get xDS snapshot
-      tags:
-      - debug
   /destinations:
     get:
       description: Returns the full list of destinations.

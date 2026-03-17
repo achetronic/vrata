@@ -1,6 +1,6 @@
-// Package gateway orchestrates the bridge between the Rutoso store and the Envoy
-// xDS control plane. It subscribes to store events, rebuilds xDS snapshots on
-// every change, and pushes them to all connected Envoy nodes via the snapshot cache.
+// Package gateway orchestrates the bridge between the Rutoso store and the
+// native proxy. It subscribes to store events, rebuilds the routing table on
+// every change, and applies it to the proxy atomically.
 package gateway
 
 import (
@@ -8,33 +8,19 @@ import (
 	"fmt"
 	"log/slog"
 
-	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
-	cachev3 "github.com/envoyproxy/go-control-plane/pkg/cache/v3"
-
+	"github.com/achetronic/rutoso/internal/proxy"
 	"github.com/achetronic/rutoso/internal/store"
-	"github.com/achetronic/rutoso/internal/xds"
 )
-
-// EndpointProvider supplies current EDS ClusterLoadAssignments keyed by
-// Destination ID. The gateway queries this on every rebuild.
-type EndpointProvider interface {
-	Endpoints() map[string]*endpointv3.ClusterLoadAssignment
-}
 
 // Dependencies holds the external collaborators required by the Gateway.
 type Dependencies struct {
-	Store             store.Store
-	Cache             cachev3.SnapshotCache
-	XDSServer         *xds.Server
-	Logger            *slog.Logger
-	EndpointProvider  EndpointProvider
-
-	// NextVersion is called to obtain a monotonically increasing version string
-	// for each new snapshot. Typically backed by xds.Server.NextVersion.
-	NextVersion func() string
+	Store           store.Store
+	Router          *proxy.Router
+	ListenerManager *proxy.ListenerManager
+	Logger          *slog.Logger
 }
 
-// Gateway listens for store change events and keeps the xDS snapshot cache up to date.
+// Gateway listens for store change events and keeps the proxy config up to date.
 type Gateway struct {
 	deps Dependencies
 }
@@ -45,13 +31,12 @@ func New(deps Dependencies) *Gateway {
 }
 
 // Rebuild is a public wrapper around rebuild, allowing external components
-// (e.g. the k8s EndpointSlice watcher) to trigger a full xDS snapshot rebuild.
+// to trigger a full proxy config rebuild.
 func (gw *Gateway) Rebuild(ctx context.Context) error {
 	return gw.rebuild(ctx)
 }
 
 // Run starts the event loop. It blocks until ctx is cancelled, then returns nil.
-// Any error encountered while rebuilding a snapshot is logged but does not stop the loop.
 func (gw *Gateway) Run(ctx context.Context) error {
 	events, err := gw.deps.Store.Subscribe(ctx)
 	if err != nil {
@@ -60,10 +45,11 @@ func (gw *Gateway) Run(ctx context.Context) error {
 
 	gw.deps.Logger.Info("gateway started: watching store events")
 
-	// Push an initial snapshot so Envoys that connect before any API call
-	// get an empty but valid configuration.
+	// Push an initial config.
 	if err := gw.rebuild(ctx); err != nil {
-		gw.deps.Logger.Warn("gateway: initial snapshot failed", slog.String("error", err.Error()))
+		gw.deps.Logger.Warn("gateway: initial rebuild failed",
+			slog.String("error", err.Error()),
+		)
 	}
 
 	for {
@@ -81,7 +67,7 @@ func (gw *Gateway) Run(ctx context.Context) error {
 				slog.String("id", ev.ID),
 			)
 			if err := gw.rebuild(ctx); err != nil {
-				gw.deps.Logger.Error("gateway: snapshot rebuild failed",
+				gw.deps.Logger.Error("gateway: rebuild failed",
 					slog.String("error", err.Error()),
 				)
 			}
@@ -89,8 +75,7 @@ func (gw *Gateway) Run(ctx context.Context) error {
 	}
 }
 
-// rebuild fetches all resources from the store, builds a fresh xDS snapshot,
-// and pushes it to every Envoy node ID currently tracked in the cache.
+// rebuild fetches all resources from the store and rebuilds the proxy config.
 func (gw *Gateway) rebuild(ctx context.Context) error {
 	listeners, err := gw.deps.Store.ListListeners(ctx)
 	if err != nil {
@@ -117,40 +102,25 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 		return fmt.Errorf("listing destinations: %w", err)
 	}
 
-	version := gw.deps.NextVersion()
-
-	var edsCLAs map[string]*endpointv3.ClusterLoadAssignment
-	if gw.deps.EndpointProvider != nil {
-		edsCLAs = gw.deps.EndpointProvider.Endpoints()
-	}
-
-	snap, err := xds.BuildSnapshot(version, listeners, middlewares, groups, routes, destinations, edsCLAs)
+	// Build new routing table.
+	table, err := proxy.BuildTable(routes, groups, destinations, middlewares)
 	if err != nil {
-		return fmt.Errorf("building snapshot: %w", err)
+		return fmt.Errorf("building routing table: %w", err)
 	}
 
-	// Store the snapshot for debug retrieval regardless of connected nodes.
-	gw.deps.XDSServer.SetLastSnapshot(snap)
+	// Atomic swap.
+	gw.deps.Router.SwapTable(table)
 
-	// Push to all known node IDs. A node is "known" once it sends its first
-	// discovery request; until then there is nothing to update.
-	for _, nodeID := range gw.deps.Cache.GetStatusKeys() {
-		if err := gw.deps.Cache.SetSnapshot(ctx, nodeID, snap); err != nil {
-			gw.deps.Logger.Error("gateway: set snapshot failed",
-				slog.String("nodeId", nodeID),
-				slog.String("error", err.Error()),
-			)
-		}
-	}
+	// Reconcile listeners.
+	gw.deps.ListenerManager.Reconcile(listeners)
 
-	gw.deps.Logger.Info("gateway: snapshot pushed",
-		slog.String("version", version),
+	gw.deps.Logger.Info("gateway: config applied",
 		slog.Int("listeners", len(listeners)),
-		slog.Int("middlewares", len(middlewares)),
-		slog.Int("groups", len(groups)),
 		slog.Int("routes", len(routes)),
+		slog.Int("groups", len(groups)),
 		slog.Int("destinations", len(destinations)),
-		slog.Int("nodes", len(gw.deps.Cache.GetStatusKeys())),
+		slog.Int("middlewares", len(middlewares)),
 	)
+
 	return nil
 }

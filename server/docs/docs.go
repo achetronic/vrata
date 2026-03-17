@@ -838,14 +838,6 @@ const docTemplate = `{
                     "jwtProvider": {
                         "description": "JWTProvider selects a specific JWT provider by name (instead of requiring all).\nOnly meaningful when the referenced filter is of type \"jwt\".",
                         "type": "string"
-                    },
-                    "rateLimitDescriptors": {
-                        "description": "RateLimitDescriptors defines the rate limit descriptors sent to the\nrate limit service for this route/group.\nOnly meaningful when the referenced filter is of type \"rateLimit\".",
-                        "items": {
-                            "$ref": "#/components/schemas/model.RateLimitDescriptor"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
                     }
                 },
                 "type": "object"
@@ -916,34 +908,13 @@ const docTemplate = `{
             "model.RateLimitConfig": {
                 "description": "RateLimit holds the rate limit filter configuration.\nSet when Type == \"rateLimit\".",
                 "properties": {
-                    "destinationId": {
-                        "description": "DestinationID references the Destination entity that hosts the gRPC\nrate limit service.",
-                        "type": "string"
+                    "burst": {
+                        "description": "Burst is the maximum number of requests allowed in a burst above the\nsustained rate. Default: same as RequestsPerSecond.",
+                        "type": "integer"
                     },
-                    "domain": {
-                        "description": "Domain is the rate limit domain passed to the rate limit service.\nThe service uses this to scope rate limit descriptors.",
-                        "type": "string"
-                    },
-                    "failureModeDeny": {
-                        "description": "FailureModeDeny controls what happens when the rate limit service is\nunreachable. If true, requests are denied (fail-closed).\nDefault is false (fail-open).",
-                        "type": "boolean"
-                    },
-                    "timeout": {
-                        "description": "Timeout is the rate limit request deadline (e.g. \"500ms\").",
-                        "type": "string"
-                    }
-                },
-                "type": "object"
-            },
-            "model.RateLimitDescriptor": {
-                "properties": {
-                    "key": {
-                        "description": "Key is the descriptor key (e.g. \"remote_address\", \"header_match\").",
-                        "type": "string"
-                    },
-                    "value": {
-                        "description": "Value is the descriptor value. When empty, Envoy uses the request\nattribute as the value (e.g. the actual header value).",
-                        "type": "string"
+                    "requestsPerSecond": {
+                        "description": "RequestsPerSecond is the sustained rate of requests allowed per client IP.\nDefault: 10.",
+                        "type": "number"
                     }
                 },
                 "type": "object"
@@ -1338,48 +1309,6 @@ const docTemplate = `{
         "url": ""
     },
     "paths": {
-        "/debug/xds/snapshot": {
-            "get": {
-                "description": "Returns the last xDS snapshot pushed by Rutoso, serialised with protojson.",
-                "responses": {
-                    "200": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "additionalProperties": {},
-                                    "type": "object"
-                                }
-                            }
-                        },
-                        "description": "OK"
-                    },
-                    "404": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Not Found"
-                    },
-                    "500": {
-                        "content": {
-                            "application/json": {
-                                "schema": {
-                                    "$ref": "#/components/schemas/respond.ErrorBody"
-                                }
-                            }
-                        },
-                        "description": "Internal Server Error"
-                    }
-                },
-                "summary": "Get xDS snapshot",
-                "tags": [
-                    "debug"
-                ]
-            }
-        },
         "/destinations": {
             "get": {
                 "description": "Returns the full list of destinations.",
@@ -2733,7 +2662,7 @@ const docTemplate = `{
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
 	Title:            "Rutoso API",
-	Description:      "REST API control plane for Envoy proxies. Manage route groups and routes;\nchanges are pushed to all connected Envoy instances via xDS in real time.",
+	Description:      "Programmable HTTP reverse proxy. Manage routes, destinations,\nlisteners, and middlewares via REST API. Changes apply instantly.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

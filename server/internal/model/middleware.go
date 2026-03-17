@@ -5,26 +5,26 @@ package model
 type MiddlewareType string
 
 const (
-	// MiddlewareTypeCORS configures the Envoy CORS filter (envoy.filters.http.cors).
+	// MiddlewareTypeCORS configures CORS behaviour.
 	MiddlewareTypeCORS MiddlewareType = "cors"
 
-	// MiddlewareTypeJWT configures the Envoy JWT authn filter (envoy.filters.http.jwt_authn).
+	// MiddlewareTypeJWT configures JWT authentication.
 	MiddlewareTypeJWT MiddlewareType = "jwt"
 
 	// MiddlewareTypeExtAuthz configures the Envoy external authorisation filter
-	// (envoy.filters.http.ext_authz).
+	// (external authorization).
 	MiddlewareTypeExtAuthz MiddlewareType = "extAuthz"
 
 	// MiddlewareTypeExtProc configures the Envoy external processing filter
-	// (envoy.filters.http.ext_proc).
+	// (external processing).
 	MiddlewareTypeExtProc MiddlewareType = "extProc"
 
 	// MiddlewareTypeRateLimit configures the Envoy rate limit filter
-	// (envoy.filters.http.ratelimit). Requires an external rate limit service.
+	// provides embedded rate limiting.
 	MiddlewareTypeRateLimit MiddlewareType = "rateLimit"
 
 	// MiddlewareTypeHeaders configures the Envoy header mutation filter
-	// (envoy.filters.http.header_mutation). Adds or removes request/response
+	// Adds or removes request/response
 	// headers as a middleware, consistent with the Filter entity pattern.
 	MiddlewareTypeHeaders MiddlewareType = "headers"
 )
@@ -278,24 +278,15 @@ type ExtProcMode struct {
 // Rate Limit
 // ────────────────────────────────────────────────────────────────────────────
 
-// RateLimitConfig holds the configuration for the Envoy rate limit HTTP filter.
-// Requires an external rate limit service (e.g. Envoy's reference ratelimit).
+// RateLimitConfig holds the configuration for the embedded rate limiter.
 type RateLimitConfig struct {
-	// Domain is the rate limit domain passed to the rate limit service.
-	// The service uses this to scope rate limit descriptors.
-	Domain string `json:"domain" yaml:"domain"`
+	// RequestsPerSecond is the sustained rate of requests allowed per client IP.
+	// Default: 10.
+	RequestsPerSecond float64 `json:"requestsPerSecond,omitempty" yaml:"requestsPerSecond,omitempty"`
 
-	// DestinationID references the Destination entity that hosts the gRPC
-	// rate limit service.
-	DestinationID string `json:"destinationId" yaml:"destinationId"`
-
-	// Timeout is the rate limit request deadline (e.g. "500ms").
-	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-
-	// FailureModeDeny controls what happens when the rate limit service is
-	// unreachable. If true, requests are denied (fail-closed).
-	// Default is false (fail-open).
-	FailureModeDeny bool `json:"failureModeDeny,omitempty" yaml:"failureModeDeny,omitempty"`
+	// Burst is the maximum number of requests allowed in a burst above the
+	// sustained rate. Default: same as RequestsPerSecond.
+	Burst int `json:"burst,omitempty" yaml:"burst,omitempty"`
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -340,20 +331,6 @@ type HeaderValue struct {
 // Rate Limit Descriptors (for MiddlewareOverride)
 // ────────────────────────────────────────────────────────────────────────────
 
-// RateLimitDescriptor defines a rate limit descriptor entry sent to the
-// rate limit service. Used in MiddlewareOverride to set per-route descriptors.
-type RateLimitDescriptor struct {
-	// Key is the descriptor key (e.g. "remote_address", "header_match").
-	Key string `json:"key" yaml:"key"`
-
-	// Value is the descriptor value. When empty, Envoy uses the request
-	// attribute as the value (e.g. the actual header value).
-	Value string `json:"value,omitempty" yaml:"value,omitempty"`
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// MiddlewareOverride — per-route and per-group overrides
-// ────────────────────────────────────────────────────────────────────────────
 
 // MiddlewareOverride carries per-route or per-group overrides for a specific filter.
 // The map key in Route.MiddlewareOverrides / RouteGroup.MiddlewareOverrides is the Filter ID.
@@ -379,10 +356,6 @@ type MiddlewareOverride struct {
 	// Only meaningful when the referenced filter is of type "extProc".
 	ExtProcMode *ExtProcMode `json:"extProcMode,omitempty" yaml:"extProcMode,omitempty"`
 
-	// RateLimitDescriptors defines the rate limit descriptors sent to the
-	// rate limit service for this route/group.
-	// Only meaningful when the referenced filter is of type "rateLimit".
-	RateLimitDescriptors []RateLimitDescriptor `json:"rateLimitDescriptors,omitempty" yaml:"rateLimitDescriptors,omitempty"`
 
 	// Headers overrides header manipulation for this route/group.
 	// Only meaningful when the referenced filter is of type "headers".

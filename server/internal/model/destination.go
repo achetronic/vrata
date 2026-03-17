@@ -65,7 +65,7 @@ type DestinationOptions struct {
 	ConnectTimeout string `json:"connectTimeout,omitempty"`
 
 	// TLS controls upstream TLS / mTLS configuration.
-	// Maps to Cluster.transport_socket (envoy.transport_sockets.tls).
+	// Configures upstream TLS transport.
 	TLS *TLSOptions `json:"tls,omitempty"`
 
 	// Balancing controls the load-balancing algorithm and its parameters.
@@ -93,7 +93,7 @@ type DestinationOptions struct {
 
 	// HTTP2 enables HTTP/2 to the upstream. Required when the backend speaks
 	// gRPC or HTTP/2. Maps to Cluster.typed_extension_protocol_options with
-	// envoy.extensions.upstreams.http.v3.HttpProtocolOptions.
+	// upstream HTTP protocol options.
 	HTTP2 bool `json:"http2,omitempty"`
 
 	// DNSRefreshRate controls how often STRICT_DNS clusters re-resolve the
@@ -118,7 +118,7 @@ type DestinationOptions struct {
 }
 
 // TLSOptions configures the upstream TLS transport socket.
-// Maps to Cluster.transport_socket typed as envoy.transport_sockets.tls.
+// Configures upstream TLS.
 type TLSOptions struct {
 	// Mode selects the connection security model.
 	// Default: none (plaintext).
