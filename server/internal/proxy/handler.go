@@ -161,15 +161,6 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 			return
 		}
 
-		// Health check: skip unhealthy backends.
-		upstream.mu.RLock()
-		healthy := upstream.Healthy
-		upstream.mu.RUnlock()
-		if !healthy {
-			http.Error(w, "upstream unhealthy", http.StatusBadGateway)
-			return
-		}
-
 		if upstream.CircuitBreaker != nil {
 			upstream.CircuitBreaker.OnRequest()
 			defer upstream.CircuitBreaker.OnComplete()
@@ -243,28 +234,50 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 	})
 }
 
-// pickUpstream selects the right upstream based on the destination's balancing config.
+// pickUpstream selects the right upstream based on balancing config and hash policy.
 func pickUpstream(fwd *model.ForwardAction, upstreams map[string]*Upstream, r *http.Request) *Upstream {
 	if len(fwd.Backends) == 0 {
 		return nil
 	}
 	if len(fwd.Backends) == 1 {
-		return upstreams[fwd.Backends[0].DestinationID]
+		u := upstreams[fwd.Backends[0].DestinationID]
+		if u != nil && !isHealthy(u) {
+			return nil
+		}
+		return u
 	}
 
-	// Check if any backend's destination uses consistent hashing.
+	// Filter healthy backends.
+	var healthy []model.BackendRef
 	for _, b := range fwd.Backends {
 		u, ok := upstreams[b.DestinationID]
-		if !ok {
-			continue
+		if ok && isHealthy(u) {
+			healthy = append(healthy, b)
 		}
-		if u.Balancer != nil {
-			return u.Balancer.Pick(r, fwd.Backends, upstreams)
+	}
+	if len(healthy) == 0 {
+		return nil
+	}
+
+	// Use consistent hashing if destination is configured for it.
+	for _, b := range healthy {
+		u := upstreams[b.DestinationID]
+		if u != nil && u.Balancer != nil {
+			if len(fwd.HashPolicy) > 0 {
+				h := hashRequestWithPolicy(r, fwd.HashPolicy)
+				r.Header.Set("X-Rutoso-Hash", fmt.Sprintf("%d", h))
+			}
+			return u.Balancer.Pick(r, healthy, upstreams)
 		}
 	}
 
-	// Default: weighted random.
-	return SelectBackend(fwd.Backends, upstreams)
+	return SelectBackend(healthy, upstreams)
+}
+
+func isHealthy(u *Upstream) bool {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	return u.Healthy
 }
 
 // mirrorRequest sends a copy of the request to the mirror destination.

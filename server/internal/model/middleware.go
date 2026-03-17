@@ -352,9 +352,6 @@ type MiddlewareOverride struct {
 	// Only meaningful when the referenced filter is of type "extAuthz".
 	ExtAuthzContextExtensions map[string]string `json:"extAuthzContextExtensions,omitempty" yaml:"extAuthzContextExtensions,omitempty"`
 
-	// ExtProcMode overrides the processing mode for this route/group.
-	// Only meaningful when the referenced filter is of type "extProc".
-	ExtProcMode *ExtProcMode `json:"extProcMode,omitempty" yaml:"extProcMode,omitempty"`
 
 
 	// Headers overrides header manipulation for this route/group.

@@ -322,8 +322,6 @@ components:
             $ref: '#/components/schemas/model.HashPolicy'
           type: array
           uniqueItems: false
-        internalRedirect:
-          $ref: '#/components/schemas/model.InternalRedirectPolicy'
         maxGrpcTimeout:
           description: |-
             MaxGRPCTimeout caps the timeout that a gRPC client can request via
@@ -449,31 +447,6 @@ components:
           description: 'UnhealthyThreshold is consecutive failures before marking
             unhealthy. Default: 3.'
           type: integer
-      type: object
-    model.InternalRedirectPolicy:
-      description: |-
-        InternalRedirect controls Envoy's behaviour when the upstream returns
-        a redirect (3xx). Instead of forwarding the redirect to the client,
-        Envoy can follow it internally and return the final response.
-      properties:
-        allowCrossScheme:
-          description: |-
-            AllowCrossScheme allows internal redirects that change the scheme
-            (e.g. http to https). Default: false.
-          type: boolean
-        maxRedirects:
-          description: |-
-            MaxRedirects is the maximum number of internal redirects Envoy will
-            follow before returning the redirect to the client. Default: 1.
-          type: integer
-        redirectCodes:
-          description: |-
-            RedirectCodes lists the HTTP status codes treated as redirects.
-            Default: [302]. Other common values: 301, 303, 307, 308.
-          items:
-            type: integer
-          type: array
-          uniqueItems: false
       type: object
     model.JWTClaimHeader:
       properties:
@@ -738,8 +711,6 @@ components:
             ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.
             Only meaningful when the referenced filter is of type "extAuthz".
           type: object
-        extProcMode:
-          $ref: '#/components/schemas/model.ExtProcMode'
         headers:
           $ref: '#/components/schemas/model.HeadersConfig'
         jwtProvider:

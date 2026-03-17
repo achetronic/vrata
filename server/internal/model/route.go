@@ -104,10 +104,6 @@ type ForwardAction struct {
 	// Maps to RouteAction.max_grpc_timeout.
 	MaxGRPCTimeout string `json:"maxGrpcTimeout,omitempty" yaml:"maxGrpcTimeout,omitempty"`
 
-	// InternalRedirect controls Envoy's behaviour when the upstream returns
-	// a redirect (3xx). Instead of forwarding the redirect to the client,
-	// Envoy can follow it internally and return the final response.
-	InternalRedirect *InternalRedirectPolicy `json:"internalRedirect,omitempty" yaml:"internalRedirect,omitempty"`
 }
 
 // RouteTimeouts controls how long a request is allowed to take.
@@ -259,19 +255,3 @@ type RouteMirror struct {
 	Percentage uint32 `json:"percentage,omitempty" yaml:"percentage,omitempty"`
 }
 
-// InternalRedirectPolicy controls how Envoy handles upstream redirects (3xx)
-// internally, following them without returning the redirect to the client.
-// Maps to RouteAction.internal_redirect_policy.
-type InternalRedirectPolicy struct {
-	// MaxRedirects is the maximum number of internal redirects Envoy will
-	// follow before returning the redirect to the client. Default: 1.
-	MaxRedirects uint32 `json:"maxRedirects,omitempty" yaml:"maxRedirects,omitempty"`
-
-	// AllowCrossScheme allows internal redirects that change the scheme
-	// (e.g. http to https). Default: false.
-	AllowCrossScheme bool `json:"allowCrossScheme,omitempty" yaml:"allowCrossScheme,omitempty"`
-
-	// RedirectCodes lists the HTTP status codes treated as redirects.
-	// Default: [302]. Other common values: 301, 303, 307, 308.
-	RedirectCodes []uint32 `json:"redirectCodes,omitempty" yaml:"redirectCodes,omitempty"`
-}

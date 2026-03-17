@@ -352,9 +352,6 @@
                         "type": "array",
                         "uniqueItems": false
                     },
-                    "internalRedirect": {
-                        "$ref": "#/components/schemas/model.InternalRedirectPolicy"
-                    },
                     "maxGrpcTimeout": {
                         "description": "MaxGRPCTimeout caps the timeout that a gRPC client can request via\nthe grpc-timeout header. If the client asks for more, Envoy clamps\nit to this value. Accepts Go duration strings (e.g. \"30s\").\nMaps to RouteAction.max_grpc_timeout.",
                         "type": "string"
@@ -493,28 +490,6 @@
                     "unhealthyThreshold": {
                         "description": "UnhealthyThreshold is consecutive failures before marking unhealthy. Default: 3.",
                         "type": "integer"
-                    }
-                },
-                "type": "object"
-            },
-            "model.InternalRedirectPolicy": {
-                "description": "InternalRedirect controls Envoy's behaviour when the upstream returns\na redirect (3xx). Instead of forwarding the redirect to the client,\nEnvoy can follow it internally and return the final response.",
-                "properties": {
-                    "allowCrossScheme": {
-                        "description": "AllowCrossScheme allows internal redirects that change the scheme\n(e.g. http to https). Default: false.",
-                        "type": "boolean"
-                    },
-                    "maxRedirects": {
-                        "description": "MaxRedirects is the maximum number of internal redirects Envoy will\nfollow before returning the redirect to the client. Default: 1.",
-                        "type": "integer"
-                    },
-                    "redirectCodes": {
-                        "description": "RedirectCodes lists the HTTP status codes treated as redirects.\nDefault: [302]. Other common values: 301, 303, 307, 308.",
-                        "items": {
-                            "type": "integer"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
                     }
                 },
                 "type": "object"
@@ -798,9 +773,6 @@
                         },
                         "description": "ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.\nOnly meaningful when the referenced filter is of type \"extAuthz\".",
                         "type": "object"
-                    },
-                    "extProcMode": {
-                        "$ref": "#/components/schemas/model.ExtProcMode"
                     },
                     "headers": {
                         "$ref": "#/components/schemas/model.HeadersConfig"

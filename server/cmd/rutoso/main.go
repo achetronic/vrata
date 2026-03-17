@@ -79,6 +79,7 @@ func run() error {
 	proxyRouter := proxy.NewRouter()
 	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
 	healthChecker := proxy.NewHealthChecker(logger)
+	outlierDetector := proxy.NewOutlierDetector(logger)
 
 	// Gateway: bridges store events → proxy config updates.
 	gw := gateway.New(gateway.Dependencies{
@@ -86,6 +87,7 @@ func run() error {
 		Router:          proxyRouter,
 		ListenerManager: listenerMgr,
 		HealthChecker:   healthChecker,
+		OutlierDetector: outlierDetector,
 		Logger:          logger,
 	})
 
@@ -103,6 +105,7 @@ func run() error {
 	errCh := make(chan error, 2)
 
 	healthChecker.Start(ctx)
+	outlierDetector.Start(ctx)
 
 	// Kubernetes EndpointSlice watcher (optional — non-fatal if no kubeconfig).
 	k8sClient, err := buildK8sClient()
@@ -146,6 +149,7 @@ func run() error {
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
 		healthChecker.Stop()
+		outlierDetector.Stop()
 		listenerMgr.Shutdown()
 		_ = httpSrv.Shutdown(context.Background())
 		return nil

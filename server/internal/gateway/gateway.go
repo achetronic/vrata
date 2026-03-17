@@ -18,6 +18,7 @@ type Dependencies struct {
 	Router          *proxy.Router
 	ListenerManager *proxy.ListenerManager
 	HealthChecker   *proxy.HealthChecker
+	OutlierDetector *proxy.OutlierDetector
 	Logger          *slog.Logger
 }
 
@@ -115,6 +116,9 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	// Update health checker with new upstreams.
 	if gw.deps.HealthChecker != nil {
 		gw.deps.HealthChecker.Update(table.Upstreams())
+	}
+	if gw.deps.OutlierDetector != nil {
+		gw.deps.OutlierDetector.Update(table.Upstreams())
 	}
 
 	// Reconcile listeners.
