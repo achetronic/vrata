@@ -17,11 +17,13 @@ import (
 // Store is an in-memory, thread-safe implementation of store.Store.
 type Store struct {
 	mu           sync.RWMutex
-	routes       map[string]model.Route       // keyed by route ID
-	groups       map[string]model.RouteGroup  // keyed by group ID
-	filters      map[string]model.Middleware      // keyed by filter ID
-	listeners    map[string]model.Listener    // keyed by listener ID
-	destinations map[string]model.Destination // keyed by destination ID
+	routes       map[string]model.Route
+	groups       map[string]model.RouteGroup
+	filters      map[string]model.Middleware
+	listeners    map[string]model.Listener
+	destinations map[string]model.Destination
+	snapshots    map[string]model.VersionedSnapshot
+	activeSnap   string
 
 	subsMu sync.Mutex
 	subs   []chan store.StoreEvent
@@ -35,6 +37,7 @@ func New() *Store {
 		filters:      make(map[string]model.Middleware),
 		listeners:    make(map[string]model.Listener),
 		destinations: make(map[string]model.Destination),
+		snapshots:    make(map[string]model.VersionedSnapshot),
 	}
 }
 
@@ -291,6 +294,93 @@ func (s *Store) DeleteDestination(_ context.Context, id string) error {
 	delete(s.destinations, id)
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceDestination, ID: id})
 	return nil
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Snapshot operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListSnapshots returns summary metadata for all versioned snapshots.
+func (s *Store) ListSnapshots(_ context.Context) ([]model.SnapshotSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]model.SnapshotSummary, 0, len(s.snapshots))
+	for _, vs := range s.snapshots {
+		out = append(out, model.SnapshotSummary{
+			ID:        vs.ID,
+			Name:      vs.Name,
+			CreatedAt: vs.CreatedAt,
+			Active:    vs.ID == s.activeSnap,
+		})
+	}
+	return out, nil
+}
+
+// GetSnapshot returns the versioned snapshot with the given ID.
+func (s *Store) GetSnapshot(_ context.Context, id string) (model.VersionedSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	vs, ok := s.snapshots[id]
+	if !ok {
+		return model.VersionedSnapshot{}, fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
+	}
+	return vs, nil
+}
+
+// SaveSnapshot creates or replaces a versioned snapshot.
+func (s *Store) SaveSnapshot(_ context.Context, vs model.VersionedSnapshot) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.snapshots[vs.ID] = vs
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceSnapshot, ID: vs.ID})
+	return nil
+}
+
+// DeleteSnapshot removes the versioned snapshot with the given ID.
+func (s *Store) DeleteSnapshot(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.snapshots[id]; !ok {
+		return fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
+	}
+	delete(s.snapshots, id)
+	if s.activeSnap == id {
+		s.activeSnap = ""
+	}
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceSnapshot, ID: id})
+	return nil
+}
+
+// ActivateSnapshot sets the given snapshot ID as the active configuration.
+func (s *Store) ActivateSnapshot(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.snapshots[id]; !ok {
+		return fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
+	}
+	s.activeSnap = id
+	s.publish(store.StoreEvent{Type: store.EventUpdated, Resource: store.ResourceSnapshot, ID: id})
+	return nil
+}
+
+// GetActiveSnapshot returns the currently active versioned snapshot.
+func (s *Store) GetActiveSnapshot(_ context.Context) (model.VersionedSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.activeSnap == "" {
+		return model.VersionedSnapshot{}, model.ErrNoActiveSnapshot
+	}
+	vs, ok := s.snapshots[s.activeSnap]
+	if !ok {
+		return model.VersionedSnapshot{}, model.ErrNoActiveSnapshot
+	}
+	return vs, nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────

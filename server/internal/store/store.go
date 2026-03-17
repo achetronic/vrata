@@ -41,6 +41,9 @@ const (
 
 	// ResourceDestination refers to a Destination resource.
 	ResourceDestination ResourceType = "destination"
+
+	// ResourceSnapshot refers to a VersionedSnapshot resource.
+	ResourceSnapshot ResourceType = "snapshot"
 )
 
 // StoreEvent is emitted by the store whenever the state changes.
@@ -146,4 +149,30 @@ type Store interface {
 	// changes. The channel is closed when ctx is cancelled. Multiple subscribers
 	// are supported. Each subscriber receives all events independently.
 	Subscribe(ctx context.Context) (<-chan StoreEvent, error)
+
+	// --- Snapshots ---
+
+	// ListSnapshots returns summary metadata for all versioned snapshots.
+	// The returned slice is never nil.
+	ListSnapshots(ctx context.Context) ([]model.SnapshotSummary, error)
+
+	// GetSnapshot returns the versioned snapshot with the given ID.
+	// Returns model.ErrNotFound if no such snapshot exists.
+	GetSnapshot(ctx context.Context, id string) (model.VersionedSnapshot, error)
+
+	// SaveSnapshot creates or replaces a versioned snapshot.
+	SaveSnapshot(ctx context.Context, vs model.VersionedSnapshot) error
+
+	// DeleteSnapshot removes the versioned snapshot with the given ID.
+	// Returns model.ErrNotFound if the snapshot does not exist.
+	// If the deleted snapshot was the active one, the active pointer is cleared.
+	DeleteSnapshot(ctx context.Context, id string) error
+
+	// ActivateSnapshot sets the given snapshot ID as the active configuration.
+	// Returns model.ErrNotFound if the snapshot does not exist.
+	ActivateSnapshot(ctx context.Context, id string) error
+
+	// GetActiveSnapshot returns the currently active versioned snapshot.
+	// Returns model.ErrNoActiveSnapshot if no snapshot has been activated.
+	GetActiveSnapshot(ctx context.Context) (model.VersionedSnapshot, error)
 }

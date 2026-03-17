@@ -57,6 +57,13 @@ func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
 	// Sync (SSE stream for proxy-mode instances)
 	mux.HandleFunc("GET /api/v1/sync/stream", deps.SyncStream)
 
+	// Snapshot endpoints
+	mux.HandleFunc("GET /api/v1/snapshots", deps.ListSnapshots)
+	mux.HandleFunc("POST /api/v1/snapshots", deps.CreateSnapshot)
+	mux.HandleFunc("GET /api/v1/snapshots/{snapshotId}", deps.GetSnapshot)
+	mux.HandleFunc("DELETE /api/v1/snapshots/{snapshotId}", deps.DeleteSnapshot)
+	mux.HandleFunc("POST /api/v1/snapshots/{snapshotId}/activate", deps.ActivateSnapshot)
+
 	// Debug
 	mux.HandleFunc("GET /api/v1/debug/config", deps.GetConfigDump)
 	mux.HandleFunc("POST /api/v1/destinations", deps.CreateDestination)

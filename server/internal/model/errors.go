@@ -19,3 +19,7 @@ var ErrInvalidWeight = errors.New("backend weights must sum to 100 when multiple
 // ErrConflictingAction is returned when a route defines more than one action
 // mode (backends, redirect, or directResponse are mutually exclusive).
 var ErrConflictingAction = errors.New("a route must define exactly one of backends, redirect, or directResponse")
+
+// ErrNoActiveSnapshot is returned when the SSE stream is requested but no
+// snapshot has been activated yet.
+var ErrNoActiveSnapshot = errors.New("no active snapshot configured")

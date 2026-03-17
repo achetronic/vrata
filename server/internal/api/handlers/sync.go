@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -10,14 +11,17 @@ import (
 )
 
 // SyncStream streams configuration snapshots to proxy-mode instances via
-// Server-Sent Events (SSE). On connect the client receives an immediate
-// full snapshot. After that, every store change triggers a new snapshot.
+// Server-Sent Events (SSE). The stream serves the active versioned snapshot.
+// If no snapshot is active, it returns 503 until one is activated.
+// On connect the client receives the active snapshot immediately. After that,
+// every snapshot change (activate, delete) triggers a new push.
 //
 // @Summary     SSE sync stream
-// @Description Streams full configuration snapshots in real time. Designed for proxy-mode instances.
+// @Description Streams the active versioned snapshot in real time. Designed for proxy-mode instances.
 // @Tags        sync
 // @Produce     text/event-stream
 // @Success     200 {object} model.Snapshot
+// @Failure     503 {object} respond.ErrorBody
 // @Router      /sync/stream [get]
 func (d *Dependencies) SyncStream(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
@@ -35,11 +39,12 @@ func (d *Dependencies) SyncStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	if err := sendSnapshot(ctx, w, flusher, d); err != nil {
-		d.Logger.Error("sync: initial snapshot failed",
-			slog.String("error", err.Error()),
-		)
-		return
+	if err := sendActiveSnapshot(ctx, w, flusher, d); err != nil {
+		if !errors.Is(err, model.ErrNoActiveSnapshot) {
+			d.Logger.Error("sync: initial snapshot failed",
+				slog.String("error", err.Error()),
+			)
+		}
 	}
 
 	events, err := d.Store.Subscribe(ctx)
@@ -54,11 +59,17 @@ func (d *Dependencies) SyncStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case _, ok := <-events:
+		case ev, ok := <-events:
 			if !ok {
 				return
 			}
-			if err := sendSnapshot(ctx, w, flusher, d); err != nil {
+			if ev.Resource != "snapshot" {
+				continue
+			}
+			if err := sendActiveSnapshot(ctx, w, flusher, d); err != nil {
+				if errors.Is(err, model.ErrNoActiveSnapshot) {
+					continue
+				}
 				d.Logger.Error("sync: sending snapshot",
 					slog.String("error", err.Error()),
 				)
@@ -68,14 +79,14 @@ func (d *Dependencies) SyncStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// sendSnapshot builds a full snapshot from the store and writes it as an SSE event.
-func sendSnapshot(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, d *Dependencies) error {
-	snap, err := buildSnapshot(ctx, d)
+// sendActiveSnapshot reads the active versioned snapshot and writes it as an SSE event.
+func sendActiveSnapshot(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, d *Dependencies) error {
+	vs, err := d.Store.GetActiveSnapshot(ctx)
 	if err != nil {
 		return err
 	}
 
-	data, err := json.Marshal(snap)
+	data, err := json.Marshal(vs.Snapshot)
 	if err != nil {
 		return err
 	}
@@ -94,6 +105,7 @@ func sendSnapshot(ctx context.Context, w http.ResponseWriter, flusher http.Flush
 }
 
 // buildSnapshot reads all entities from the store into a Snapshot.
+// Used by CreateSnapshot to capture the current live state.
 func buildSnapshot(ctx context.Context, d *Dependencies) (*model.Snapshot, error) {
 	listeners, err := d.Store.ListListeners(ctx)
 	if err != nil {

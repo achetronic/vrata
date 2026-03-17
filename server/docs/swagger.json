@@ -1082,9 +1082,200 @@
                 }
             }
         },
+        "/snapshots": {
+            "get": {
+                "description": "Returns summary metadata (id, name, createdAt, active) for all versioned snapshots.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "List snapshots",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.SnapshotSummary"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Captures the current live configuration (listeners, routes, groups, destinations, middlewares) as an immutable versioned snapshot.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Create a snapshot",
+                "parameters": [
+                    {
+                        "description": "Snapshot metadata",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.SnapshotCreateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.VersionedSnapshot"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/snapshots/{snapshotId}": {
+            "get": {
+                "description": "Returns the full versioned snapshot with the given ID, including all configuration entities.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Get a snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Snapshot ID",
+                        "name": "snapshotId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.VersionedSnapshot"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes the versioned snapshot with the given ID. If it was the active snapshot, the active pointer is cleared.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Delete a snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Snapshot ID",
+                        "name": "snapshotId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/snapshots/{snapshotId}/activate": {
+            "post": {
+                "description": "Sets the given snapshot as the active configuration served to proxies via the SSE stream.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "snapshots"
+                ],
+                "summary": "Activate a snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Snapshot ID",
+                        "name": "snapshotId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.SnapshotSummary"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
         "/sync/stream": {
             "get": {
-                "description": "Streams full configuration snapshots in real time. Designed for proxy-mode instances.",
+                "description": "Streams the active versioned snapshot in real time. Designed for proxy-mode instances.",
                 "produces": [
                     "text/event-stream"
                 ],
@@ -1098,12 +1289,28 @@
                         "schema": {
                             "$ref": "#/definitions/model.Snapshot"
                         }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
                     }
                 }
             }
         }
     },
 "definitions": {
+        "handlers.SnapshotCreateRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name is a human-readable label for the snapshot (e.g. \"v1.0\", \"pre-deploy\").",
+                    "type": "string",
+                    "example": "v1.0"
+                }
+            }
+        },
         "model.AccessLogConfig": {
             "type": "object",
             "properties": {
@@ -2418,34 +2625,60 @@
             "type": "object",
             "properties": {
                 "destinations": {
+                    "description": "Destinations holds all upstream destination configurations.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.Destination"
                     }
                 },
                 "groups": {
+                    "description": "Groups holds all route groups.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.RouteGroup"
                     }
                 },
                 "listeners": {
+                    "description": "Listeners holds all proxy listener configurations.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.Listener"
                     }
                 },
                 "middlewares": {
+                    "description": "Middlewares holds all middleware configurations.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.Middleware"
                     }
                 },
                 "routes": {
+                    "description": "Routes holds all routing rules.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.Route"
                     }
+                }
+            }
+        },
+        "model.SnapshotSummary": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "description": "Active indicates whether this snapshot is the one currently being\nserved to proxies via the SSE stream.",
+                    "type": "boolean"
+                },
+                "createdAt": {
+                    "description": "CreatedAt is the UTC timestamp when this snapshot was captured.",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier of this snapshot version.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is a human-readable label.",
+                    "type": "string"
                 }
             }
         },
@@ -2501,6 +2734,31 @@
                 "sni": {
                     "description": "SNI overrides the Server Name Indication sent during TLS handshake.\nWhen empty, the destination host is used.",
                     "type": "string"
+                }
+            }
+        },
+        "model.VersionedSnapshot": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "description": "CreatedAt is the UTC timestamp when this snapshot was captured.",
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is the unique identifier of this snapshot version.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is a human-readable label (e.g. \"v1.2.0\", \"pre-deploy\", \"rollback-safe\").",
+                    "type": "string"
+                },
+                "snapshot": {
+                    "description": "Snapshot holds the full configuration at the time of capture.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.Snapshot"
+                        }
+                    ]
                 }
             }
         },

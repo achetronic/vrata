@@ -1,5 +1,13 @@
 basePath: /
 definitions:
+  handlers.SnapshotCreateRequest:
+    properties:
+      name:
+        description: Name is a human-readable label for the snapshot (e.g. "v1.0",
+          "pre-deploy").
+        example: v1.0
+        type: string
+    type: object
   model.AccessLogConfig:
     properties:
       json:
@@ -1113,25 +1121,47 @@ definitions:
   model.Snapshot:
     properties:
       destinations:
+        description: Destinations holds all upstream destination configurations.
         items:
           $ref: '#/definitions/model.Destination'
         type: array
       groups:
+        description: Groups holds all route groups.
         items:
           $ref: '#/definitions/model.RouteGroup'
         type: array
       listeners:
+        description: Listeners holds all proxy listener configurations.
         items:
           $ref: '#/definitions/model.Listener'
         type: array
       middlewares:
+        description: Middlewares holds all middleware configurations.
         items:
           $ref: '#/definitions/model.Middleware'
         type: array
       routes:
+        description: Routes holds all routing rules.
         items:
           $ref: '#/definitions/model.Route'
         type: array
+    type: object
+  model.SnapshotSummary:
+    properties:
+      active:
+        description: |-
+          Active indicates whether this snapshot is the one currently being
+          served to proxies via the SSE stream.
+        type: boolean
+      createdAt:
+        description: CreatedAt is the UTC timestamp when this snapshot was captured.
+        type: string
+      id:
+        description: ID is the unique identifier of this snapshot version.
+        type: string
+      name:
+        description: Name is a human-readable label.
+        type: string
     type: object
   model.TLSMode:
     enum:
@@ -1181,6 +1211,23 @@ definitions:
           SNI overrides the Server Name Indication sent during TLS handshake.
           When empty, the destination host is used.
         type: string
+    type: object
+  model.VersionedSnapshot:
+    properties:
+      createdAt:
+        description: CreatedAt is the UTC timestamp when this snapshot was captured.
+        type: string
+      id:
+        description: ID is the unique identifier of this snapshot version.
+        type: string
+      name:
+        description: Name is a human-readable label (e.g. "v1.2.0", "pre-deploy",
+          "rollback-safe").
+        type: string
+      snapshot:
+        allOf:
+        - $ref: '#/definitions/model.Snapshot'
+        description: Snapshot holds the full configuration at the time of capture.
     type: object
   respond.ErrorBody:
     properties:
@@ -1906,9 +1953,140 @@ paths:
       summary: Update a route
       tags:
       - routes
+  /snapshots:
+    get:
+      description: Returns summary metadata (id, name, createdAt, active) for all
+        versioned snapshots.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.SnapshotSummary'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: List snapshots
+      tags:
+      - snapshots
+    post:
+      consumes:
+      - application/json
+      description: Captures the current live configuration (listeners, routes, groups,
+        destinations, middlewares) as an immutable versioned snapshot.
+      parameters:
+      - description: Snapshot metadata
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.SnapshotCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.VersionedSnapshot'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Create a snapshot
+      tags:
+      - snapshots
+  /snapshots/{snapshotId}:
+    delete:
+      description: Deletes the versioned snapshot with the given ID. If it was the
+        active snapshot, the active pointer is cleared.
+      parameters:
+      - description: Snapshot ID
+        in: path
+        name: snapshotId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Delete a snapshot
+      tags:
+      - snapshots
+    get:
+      description: Returns the full versioned snapshot with the given ID, including
+        all configuration entities.
+      parameters:
+      - description: Snapshot ID
+        in: path
+        name: snapshotId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.VersionedSnapshot'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Get a snapshot
+      tags:
+      - snapshots
+  /snapshots/{snapshotId}/activate:
+    post:
+      description: Sets the given snapshot as the active configuration served to proxies
+        via the SSE stream.
+      parameters:
+      - description: Snapshot ID
+        in: path
+        name: snapshotId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.SnapshotSummary'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Activate a snapshot
+      tags:
+      - snapshots
   /sync/stream:
     get:
-      description: Streams full configuration snapshots in real time. Designed for
+      description: Streams the active versioned snapshot in real time. Designed for
         proxy-mode instances.
       produces:
       - text/event-stream
@@ -1917,6 +2095,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/model.Snapshot'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
       summary: SSE sync stream
       tags:
       - sync

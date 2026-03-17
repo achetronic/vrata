@@ -16,7 +16,7 @@ import (
 	memstore "github.com/achetronic/rutoso/internal/store/memory"
 )
 
-func TestSyncStreamSendsInitialSnapshot(t *testing.T) {
+func TestSyncStreamSendsActiveSnapshot(t *testing.T) {
 	st := memstore.New()
 	ctx := context.Background()
 
@@ -27,6 +27,24 @@ func TestSyncStreamSendsInitialSnapshot(t *testing.T) {
 		Match: model.MatchRule{PathPrefix: "/api"},
 		DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
 	})
+
+	st.SaveSnapshot(ctx, model.VersionedSnapshot{
+		ID:   "snap-1",
+		Name: "v1",
+		Snapshot: model.Snapshot{
+			Listeners: []model.Listener{{ID: "l1", Name: "listener-1", Port: 8080}},
+			Routes: []model.Route{{
+				ID:   "r1",
+				Name: "route-1",
+				Match: model.MatchRule{PathPrefix: "/api"},
+				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
+			}},
+			Groups:       []model.RouteGroup{},
+			Destinations: []model.Destination{},
+			Middlewares:  []model.Middleware{},
+		},
+	})
+	st.ActivateSnapshot(ctx, "snap-1")
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	deps := &Dependencies{Store: st, Logger: logger}
@@ -76,8 +94,9 @@ func TestSyncStreamSendsInitialSnapshot(t *testing.T) {
 	t.Fatal("no data line found in SSE stream")
 }
 
-func TestSyncStreamSendsOnStoreChange(t *testing.T) {
+func TestSyncStreamSendsOnSnapshotActivate(t *testing.T) {
 	st := memstore.New()
+	ctx := context.Background()
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 	deps := &Dependencies{Store: st, Logger: logger}
 
@@ -91,12 +110,21 @@ func TestSyncStreamSendsOnStoreChange(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 
-	st.SaveDestination(context.Background(), model.Destination{
-		ID:   "d1",
-		Name: "dest-1",
-		Host: "10.0.0.1",
-		Port: 80,
+	st.SaveSnapshot(ctx, model.VersionedSnapshot{
+		ID:   "snap-1",
+		Name: "v1",
+		Snapshot: model.Snapshot{
+			Listeners:    []model.Listener{},
+			Routes:       []model.Route{},
+			Groups:       []model.RouteGroup{},
+			Destinations: []model.Destination{{ID: "d1", Name: "dest-1", Host: "10.0.0.1", Port: 80}},
+			Middlewares:  []model.Middleware{},
+		},
 	})
+
+	time.Sleep(100 * time.Millisecond)
+
+	st.ActivateSnapshot(ctx, "snap-1")
 
 	time.Sleep(200 * time.Millisecond)
 	reqCancel()
@@ -104,8 +132,33 @@ func TestSyncStreamSendsOnStoreChange(t *testing.T) {
 
 	body := w.Body.String()
 	count := strings.Count(body, "event: snapshot")
-	if count < 2 {
-		t.Errorf("expected at least 2 snapshot events, got %d. Body:\n%s", count, body)
+	if count < 1 {
+		t.Errorf("expected at least 1 snapshot event after activate, got %d. Body:\n%s", count, body)
+	}
+}
+
+func TestSyncStreamNoSnapshotNoEvent(t *testing.T) {
+	st := memstore.New()
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	deps := &Dependencies{Store: st, Logger: logger}
+
+	reqCtx, reqCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer reqCancel()
+
+	req := httptest.NewRequest("GET", "/api/v1/sync/stream", nil).WithContext(reqCtx)
+	w := newFlushRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		deps.SyncStream(w, req)
+		close(done)
+	}()
+
+	<-done
+
+	body := w.Body.String()
+	if strings.Contains(body, "event: snapshot") {
+		t.Fatalf("expected no snapshot event without active snapshot, got:\n%s", body)
 	}
 }
 

@@ -17,9 +17,13 @@ import (
 const (
 	bucketRoutes       = "routes"
 	bucketGroups       = "groups"
-	bucketMiddlewares      = "middlewares"
+	bucketMiddlewares  = "middlewares"
 	bucketListeners    = "listeners"
 	bucketDestinations = "destinations"
+	bucketSnapshots    = "snapshots"
+	bucketMeta         = "meta"
+
+	metaActiveSnapshot = "active_snapshot_id"
 )
 
 // Store wraps a bbolt database and exposes CRUD operations for routes and groups.
@@ -40,7 +44,7 @@ func New(path string) (*Store, error) {
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, name := range []string{bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners, bucketDestinations} {
+		for _, name := range []string{bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners, bucketDestinations, bucketSnapshots, bucketMeta} {
 			if _, err := tx.CreateBucketIfNotExists([]byte(name)); err != nil {
 				return fmt.Errorf("creating bucket %q: %w", name, err)
 			}
@@ -493,6 +497,151 @@ func (s *Store) DeleteDestination(_ context.Context, id string) error {
 	}
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceDestination, ID: id})
 	return nil
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Snapshot operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListSnapshots returns summary metadata for all versioned snapshots.
+func (s *Store) ListSnapshots(_ context.Context) ([]model.SnapshotSummary, error) {
+	var activeID string
+	var summaries []model.SnapshotSummary
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		meta := tx.Bucket([]byte(bucketMeta))
+		if v := meta.Get([]byte(metaActiveSnapshot)); v != nil {
+			activeID = string(v)
+		}
+
+		b := tx.Bucket([]byte(bucketSnapshots))
+		return b.ForEach(func(_, v []byte) error {
+			var vs model.VersionedSnapshot
+			if err := json.Unmarshal(v, &vs); err != nil {
+				return fmt.Errorf("unmarshalling snapshot: %w", err)
+			}
+			summaries = append(summaries, model.SnapshotSummary{
+				ID:        vs.ID,
+				Name:      vs.Name,
+				CreatedAt: vs.CreatedAt,
+				Active:    vs.ID == activeID,
+			})
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing snapshots: %w", err)
+	}
+
+	if summaries == nil {
+		summaries = []model.SnapshotSummary{}
+	}
+	return summaries, nil
+}
+
+// GetSnapshot returns the versioned snapshot with the given ID.
+func (s *Store) GetSnapshot(_ context.Context, id string) (model.VersionedSnapshot, error) {
+	var vs model.VersionedSnapshot
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketSnapshots))
+		v := b.Get([]byte(id))
+		if v == nil {
+			return fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
+		}
+		return json.Unmarshal(v, &vs)
+	})
+	if err != nil {
+		return model.VersionedSnapshot{}, err
+	}
+	return vs, nil
+}
+
+// SaveSnapshot creates or replaces a versioned snapshot.
+func (s *Store) SaveSnapshot(_ context.Context, vs model.VersionedSnapshot) error {
+	data, err := json.Marshal(vs)
+	if err != nil {
+		return fmt.Errorf("marshalling snapshot: %w", err)
+	}
+
+	err = s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketSnapshots))
+		if err := b.Put([]byte(vs.ID), data); err != nil {
+			return fmt.Errorf("saving snapshot %q: %w", vs.ID, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceSnapshot, ID: vs.ID})
+	return nil
+}
+
+// DeleteSnapshot removes the versioned snapshot with the given ID.
+// If the deleted snapshot was the active one, the active pointer is cleared.
+func (s *Store) DeleteSnapshot(_ context.Context, id string) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketSnapshots))
+		if b.Get([]byte(id)) == nil {
+			return fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
+		}
+		if err := b.Delete([]byte(id)); err != nil {
+			return fmt.Errorf("deleting snapshot %q: %w", id, err)
+		}
+		meta := tx.Bucket([]byte(bucketMeta))
+		if v := meta.Get([]byte(metaActiveSnapshot)); v != nil && string(v) == id {
+			if err := meta.Delete([]byte(metaActiveSnapshot)); err != nil {
+				return fmt.Errorf("clearing active snapshot: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceSnapshot, ID: id})
+	return nil
+}
+
+// ActivateSnapshot sets the given snapshot ID as the active configuration.
+func (s *Store) ActivateSnapshot(_ context.Context, id string) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketSnapshots))
+		if b.Get([]byte(id)) == nil {
+			return fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
+		}
+		meta := tx.Bucket([]byte(bucketMeta))
+		return meta.Put([]byte(metaActiveSnapshot), []byte(id))
+	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventUpdated, Resource: store.ResourceSnapshot, ID: id})
+	return nil
+}
+
+// GetActiveSnapshot returns the currently active versioned snapshot.
+func (s *Store) GetActiveSnapshot(_ context.Context) (model.VersionedSnapshot, error) {
+	var vs model.VersionedSnapshot
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		meta := tx.Bucket([]byte(bucketMeta))
+		activeID := meta.Get([]byte(metaActiveSnapshot))
+		if activeID == nil {
+			return model.ErrNoActiveSnapshot
+		}
+		b := tx.Bucket([]byte(bucketSnapshots))
+		v := b.Get(activeID)
+		if v == nil {
+			return model.ErrNoActiveSnapshot
+		}
+		return json.Unmarshal(v, &vs)
+	})
+	if err != nil {
+		return model.VersionedSnapshot{}, err
+	}
+	return vs, nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
