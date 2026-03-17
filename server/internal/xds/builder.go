@@ -81,8 +81,6 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelMiddlew
 			if cla, ok := edsCLAs[d.ID]; ok {
 				endpoints = append(endpoints, cla)
 			}
-		} else {
-			endpoints = append(endpoints, buildEndpointFromDestination(d))
 		}
 	}
 
@@ -808,6 +806,9 @@ func buildClusterFromDestination(d model.Destination) *clusterv3.Cluster {
 			},
 			ServiceName: d.ID,
 		}
+	} else {
+		// STATIC and STRICT_DNS: load_assignment must be inline in the cluster.
+		c.LoadAssignment = buildEndpointFromDestination(d)
 	}
 
 	if d.Options == nil {
