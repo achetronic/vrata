@@ -5,20 +5,30 @@ components:
         AccessLog configures access logging for this listener.
         When nil, no access logs are emitted.
       properties:
-        format:
-          description: |-
-            Format is the log line format template. Available placeholders depend
-            on the output mode (see JSON field). When empty, Rutoso uses a
-            sensible default: "METHOD PATH CLIENT_IP STATUS DURATION_MS BYTES".
-          type: string
         json:
-          description: JSON switches the log output to JSON format.
+          description: |-
+            JSON outputs each log entry as a JSON object. When false, outputs
+            as key=value pairs on a single line.
           type: boolean
+        onRequest:
+          $ref: '#/components/schemas/model.AccessLogEntry'
+        onResponse:
+          $ref: '#/components/schemas/model.AccessLogEntry'
         path:
           description: |-
             Path is the file path where access logs are written.
             Use "/dev/stdout" or "stdout" for container-friendly stdout logging.
           type: string
+      type: object
+    model.AccessLogEntry:
+      description: |-
+        OnResponse defines the fields logged when the response is sent.
+        If nil, no response log is emitted.
+      properties:
+        fields:
+          additionalProperties:
+            type: string
+          type: object
       type: object
     model.BackendRef:
       properties:

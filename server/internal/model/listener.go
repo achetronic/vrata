@@ -61,18 +61,3 @@ type ListenerTLS struct {
 	// Accepted values: same as MinVersion. If empty, no upper bound is set.
 	MaxVersion string `json:"maxVersion,omitempty" yaml:"maxVersion,omitempty"`
 }
-
-// AccessLogConfig configures access logging for a Listener.
-type AccessLogConfig struct {
-	// Path is the file path where access logs are written.
-	// Use "/dev/stdout" or "stdout" for container-friendly stdout logging.
-	Path string `json:"path" yaml:"path"`
-
-	// Format is the log line format template. Available placeholders depend
-	// on the output mode (see JSON field). When empty, Rutoso uses a
-	// sensible default: "METHOD PATH CLIENT_IP STATUS DURATION_MS BYTES".
-	Format string `json:"format,omitempty" yaml:"format,omitempty"`
-
-	// JSON switches the log output to JSON format.
-	JSON bool `json:"json,omitempty" yaml:"json,omitempty"`
-}
