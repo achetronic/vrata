@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/rutoso/internal/proxy/middlewares"
 )
 
 // buildRouteHandler creates the http.Handler for a route, including middleware
@@ -35,7 +36,7 @@ func buildRouteHandler(
 	mwIDs := collectMiddlewareIDs(route, group)
 
 	// Build middleware chain.
-	var mws []Middleware
+	var mws []middlewares.Middleware
 	for _, mwID := range mwIDs {
 		mw, ok := allMiddlewares[mwID]
 		if !ok {
@@ -60,7 +61,7 @@ func buildRouteHandler(
 	}
 
 	if len(mws) > 0 {
-		handler = Chain(handler, mws...)
+		handler = middlewares.Chain(handler, mws...)
 	}
 
 	return handler
@@ -88,22 +89,41 @@ func collectMiddlewareIDs(route model.Route, group *model.RouteGroup) []string {
 	return ids
 }
 
-// buildMiddleware creates a Middleware function from a model.Middleware.
-func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) Middleware {
+// buildMiddleware creates a middleware function from a model.Middleware.
+func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) middlewares.Middleware {
+	services := upstreamsToServices(upstreams)
 	switch mw.Type {
 	case model.MiddlewareTypeCORS:
-		return CORSMiddleware(mw.CORS)
+		return middlewares.CORSMiddleware(mw.CORS)
 	case model.MiddlewareTypeHeaders:
-		return HeadersMiddleware(mw.Headers)
+		return middlewares.HeadersMiddleware(mw.Headers)
 	case model.MiddlewareTypeExtAuthz:
-		return ExtAuthzMiddleware(mw.ExtAuthz, upstreams)
+		return middlewares.ExtAuthzMiddleware(mw.ExtAuthz, services)
 	case model.MiddlewareTypeRateLimit:
-		return RateLimitMiddleware(mw.RateLimit)
+		return middlewares.RateLimitMiddleware(mw.RateLimit)
 	case model.MiddlewareTypeJWT:
-		return JWTMiddleware(mw.JWT, upstreams)
+		return middlewares.JWTMiddleware(mw.JWT, services)
 	default:
 		return nil
 	}
+}
+
+// upstreamsToServices converts the Upstream map to a Service map for middlewares.
+func upstreamsToServices(upstreams map[string]*Upstream) map[string]middlewares.Service {
+	services := make(map[string]middlewares.Service, len(upstreams))
+	for id, u := range upstreams {
+		d := u.Destination
+		scheme := "http"
+		if d.Options != nil && d.Options.TLS != nil &&
+			d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
+			scheme = "https"
+		}
+		services[id] = middlewares.Service{
+			BaseURL:   fmt.Sprintf("%s://%s:%d", scheme, d.Host, d.Port),
+			Transport: u.Transport,
+		}
+	}
+	return services
 }
 
 // directResponseHandler returns a fixed response.

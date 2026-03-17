@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/rutoso/internal/proxy/middlewares"
 )
 
 // ListenerManager manages HTTP listeners that serve proxied traffic.
@@ -148,7 +149,7 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 
 	// Access log middleware wraps the handler.
 	if l.AccessLog != nil {
-		srv.Handler = AccessLogMiddleware(l.AccessLog)(srv.Handler)
+		srv.Handler = middlewares.AccessLogMiddleware(l.AccessLog)(srv.Handler)
 	}
 
 	lm.servers[l.ID] = &managedServer{

@@ -1,7 +1,6 @@
-package proxy
+package middlewares
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -12,12 +11,12 @@ import (
 
 // ExtAuthzMiddleware creates a middleware that sends a check request to an
 // external authorization service before forwarding to the upstream.
-func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, upstreams map[string]*Upstream) Middleware {
+func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, services map[string]Service) Middleware {
 	if cfg == nil || cfg.DestinationID == "" {
 		return func(next http.Handler) http.Handler { return next }
 	}
 
-	upstream, ok := upstreams[cfg.DestinationID]
+	svc, ok := services[cfg.DestinationID]
 	if !ok {
 		return func(next http.Handler) http.Handler { return next }
 	}
@@ -29,13 +28,7 @@ func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, upstreams map[string]*Upstrea
 		}
 	}
 
-	d := upstream.Destination
-	scheme := "http"
-	if d.Options != nil && d.Options.TLS != nil &&
-		d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
-		scheme = "https"
-	}
-	baseURL := fmt.Sprintf("%s://%s:%d", scheme, d.Host, d.Port)
+	baseURL := svc.BaseURL
 	if cfg.Path != "" {
 		baseURL += cfg.Path
 	}
@@ -65,7 +58,7 @@ func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, upstreams map[string]*Upstrea
 	}
 
 	client := &http.Client{
-		Transport: upstream.Transport,
+		Transport: svc.Transport,
 		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse

@@ -1,4 +1,4 @@
-package proxy
+package middlewares
 
 import (
 	"encoding/json"

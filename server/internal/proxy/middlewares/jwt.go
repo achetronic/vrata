@@ -1,4 +1,4 @@
-package proxy
+package middlewares
 
 import (
 	"crypto/rsa"
@@ -19,7 +19,7 @@ import (
 
 // JWTMiddleware creates a middleware that validates JWT tokens.
 // Supports remote JWKS (fetched from a Destination) and inline JWKS.
-func JWTMiddleware(cfg *model.JWTConfig, upstreams map[string]*Upstream) Middleware {
+func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware {
 	if cfg == nil || len(cfg.Providers) == 0 {
 		return func(next http.Handler) http.Handler { return next }
 	}
@@ -37,9 +37,9 @@ func JWTMiddleware(cfg *model.JWTConfig, upstreams map[string]*Upstream) Middlew
 			keys, _ := parseJWKS([]byte(p.JWKsInline))
 			v.keys = keys
 		} else if p.JWKsURI != "" && p.JWKsDestinationID != "" {
-			if u, ok := upstreams[p.JWKsDestinationID]; ok {
-				v.jwksURL = buildJWKSURL(u.Destination, p.JWKsURI)
-				v.transport = u.Transport
+			if svc, ok := services[p.JWKsDestinationID]; ok {
+				v.jwksURL = svc.BaseURL + p.JWKsURI
+				v.transport = svc.Transport
 				// Fetch keys on startup.
 				v.refreshKeys()
 				// Refresh periodically.
@@ -188,17 +188,8 @@ func extractBearerToken(r *http.Request) string {
 	}
 	return ""
 }
-
-func buildJWKSURL(d model.Destination, path string) string {
-	scheme := "http"
-	if d.Options != nil && d.Options.TLS != nil &&
-		d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
-		scheme = "https"
-	}
-	return fmt.Sprintf("%s://%s:%d%s", scheme, d.Host, d.Port, path)
-}
-
 func (v *jwtValidator) refreshLoop() {
+
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
