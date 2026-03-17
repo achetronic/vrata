@@ -1,0 +1,725 @@
+// Package middlewares implements HTTP middleware functions for the Rutoso proxy.
+// This file implements the external processor middleware, which sends HTTP
+// request and response phases to an external gRPC or HTTP service for
+// inspection, mutation, or rejection.
+package middlewares
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/achetronic/rutoso/internal/model"
+	extprocv1 "github.com/achetronic/rutoso/proto/extproc/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+)
+
+// ExtProcMiddleware creates a middleware that sends HTTP transaction phases
+// to an external processor service for inspection, mutation, or rejection.
+func ExtProcMiddleware(cfg *model.ExtProcConfig, services map[string]Service) Middleware {
+	if cfg == nil || cfg.DestinationID == "" {
+		return passthrough
+	}
+
+	svc, ok := services[cfg.DestinationID]
+	if !ok {
+		slog.Error("extproc: destination not found", slog.String("destinationId", cfg.DestinationID))
+		return passthrough
+	}
+
+	timeout := 200 * time.Millisecond
+	if cfg.Timeout != "" {
+		if d, err := time.ParseDuration(cfg.Timeout); err == nil {
+			timeout = d
+		}
+	}
+
+	statusOnError := 500
+	if cfg.StatusOnError > 0 {
+		statusOnError = int(cfg.StatusOnError)
+	}
+
+	phases := resolvePhases(cfg.Phases)
+
+	ep := &extProc{
+		cfg:           cfg,
+		svc:           svc,
+		timeout:       timeout,
+		statusOnError: statusOnError,
+		phases:        phases,
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ep.handle(next, w, r)
+		})
+	}
+}
+
+func passthrough(next http.Handler) http.Handler { return next }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core
+// ─────────────────────────────────────────────────────────────────────────────
+
+// extProc holds the resolved configuration for one external processor instance.
+type extProc struct {
+	cfg           *model.ExtProcConfig
+	svc           Service
+	timeout       time.Duration
+	statusOnError int
+	phases        resolvedPhases
+}
+
+// resolvedPhases holds the resolved phase configuration with defaults applied.
+type resolvedPhases struct {
+	requestHeaders  bool
+	responseHeaders bool
+	requestBody     model.BodyMode
+	responseBody    model.BodyMode
+}
+
+// handle runs the external processor pipeline for a single HTTP transaction.
+func (ep *extProc) handle(next http.Handler, w http.ResponseWriter, r *http.Request) {
+	// Phase 1: Request headers.
+	if ep.phases.requestHeaders {
+		resp, err := ep.processRequestHeaders(r)
+		if err != nil {
+			if ep.onError(w) {
+				next.ServeHTTP(w, r)
+			}
+			return
+		}
+		if resp != nil {
+			if reject := resp.GetReject(); reject != nil {
+				if !ep.cfg.DisableReject {
+					writeReject(w, reject)
+					return
+				}
+			}
+			if ha := resp.GetRequestHeaders(); ha != nil {
+				applyHeadersAction(r.Header, ha, ep.cfg.AllowedMutations)
+				if ha.Status == extprocv1.ActionStatus_CONTINUE_AND_REPLACE && ha.ReplaceBody != nil {
+					r.Body = io.NopCloser(bytes.NewReader(ha.ReplaceBody))
+					r.ContentLength = int64(len(ha.ReplaceBody))
+				}
+			}
+		}
+	}
+
+	// Phase 2: Request body.
+	if ep.phases.requestBody != model.BodyModeNone && ep.phases.requestBody != "" {
+		resp, err := ep.processRequestBody(r)
+		if err != nil {
+			if ep.onError(w) {
+				next.ServeHTTP(w, r)
+			}
+			return
+		}
+		if resp != nil {
+			if reject := resp.GetReject(); reject != nil && !ep.cfg.DisableReject {
+				writeReject(w, reject)
+				return
+			}
+			if ba := resp.GetRequestBody(); ba != nil {
+				applyBodyAction(r, ba, ep.cfg.AllowedMutations)
+			}
+		}
+	}
+
+	// Call upstream, intercepting the response for post-processing.
+	irw := &interceptResponseWriter{
+		ResponseWriter:  w,
+		statusCode:      http.StatusOK,
+		captureHeaders:  ep.phases.responseHeaders,
+		captureBody:     ep.phases.responseBody != model.BodyModeNone && ep.phases.responseBody != "",
+		headersSent:     false,
+	}
+
+	next.ServeHTTP(irw, r)
+
+	// Phase 3: Response headers.
+	if ep.phases.responseHeaders {
+		resp, err := ep.processResponseHeaders(irw)
+		if err != nil {
+			if !ep.cfg.AllowOnError {
+				slog.Error("extproc: response headers processing failed",
+					slog.String("error", err.Error()),
+				)
+			}
+		} else if resp != nil {
+			if ha := resp.GetResponseHeaders(); ha != nil {
+				applyHeadersAction(irw.Header(), ha, ep.cfg.AllowedMutations)
+			}
+		}
+	}
+
+	// Phase 4: Response body.
+	if irw.captureBody && len(irw.body) > 0 {
+		resp, err := ep.processResponseBody(irw.body)
+		if err != nil {
+			if !ep.cfg.AllowOnError {
+				slog.Error("extproc: response body processing failed",
+					slog.String("error", err.Error()),
+				)
+			}
+		} else if resp != nil {
+			if ba := resp.GetResponseBody(); ba != nil {
+				irw.body = applyResponseBodyAction(irw.body, ba)
+			}
+		}
+	}
+
+	// Flush the (possibly mutated) response to the client.
+	irw.flush()
+}
+
+// onError handles processor failures. Returns true if the request should
+// continue (allow-on-error), false if the error response was written.
+func (ep *extProc) onError(w http.ResponseWriter) bool {
+	if ep.cfg.AllowOnError {
+		return true
+	}
+	http.Error(w, http.StatusText(ep.statusOnError), ep.statusOnError)
+	return false
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase processors
+// ─────────────────────────────────────────────────────────────────────────────
+
+// processRequestHeaders sends request headers to the processor.
+func (ep *extProc) processRequestHeaders(r *http.Request) (*extprocv1.ProcessingResponse, error) {
+	pairs := headersToProto(r.Header, ep.cfg.ForwardRules)
+	pairs = append(pairs,
+		&extprocv1.HeaderPair{Key: ":method", Value: r.Method},
+		&extprocv1.HeaderPair{Key: ":path", Value: r.URL.RequestURI()},
+		&extprocv1.HeaderPair{Key: ":authority", Value: r.Host},
+	)
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	pairs = append(pairs, &extprocv1.HeaderPair{Key: ":scheme", Value: scheme})
+
+	req := &extprocv1.ProcessingRequest{
+		Phase: &extprocv1.ProcessingRequest_RequestHeaders{
+			RequestHeaders: &extprocv1.HttpHeaders{
+				Headers:     pairs,
+				EndOfStream: r.ContentLength == 0,
+			},
+		},
+		ObserveOnly: ep.cfg.ObserveOnly,
+	}
+
+	return ep.send(req)
+}
+
+// processRequestBody reads and sends the request body to the processor.
+func (ep *extProc) processRequestBody(r *http.Request) (*extprocv1.ProcessingResponse, error) {
+	if r.Body == nil {
+		return nil, nil
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading request body: %w", err)
+	}
+	r.Body = io.NopCloser(bytes.NewReader(body))
+
+	req := &extprocv1.ProcessingRequest{
+		Phase: &extprocv1.ProcessingRequest_RequestBody{
+			RequestBody: &extprocv1.HttpBody{
+				Body:        body,
+				EndOfStream: true,
+			},
+		},
+		ObserveOnly: ep.cfg.ObserveOnly,
+	}
+
+	return ep.send(req)
+}
+
+// processResponseHeaders sends response headers to the processor.
+func (ep *extProc) processResponseHeaders(irw *interceptResponseWriter) (*extprocv1.ProcessingResponse, error) {
+	pairs := headersToProto(irw.Header(), ep.cfg.ForwardRules)
+	pairs = append(pairs, &extprocv1.HeaderPair{
+		Key:   ":status",
+		Value: fmt.Sprintf("%d", irw.statusCode),
+	})
+
+	req := &extprocv1.ProcessingRequest{
+		Phase: &extprocv1.ProcessingRequest_ResponseHeaders{
+			ResponseHeaders: &extprocv1.HttpHeaders{
+				Headers:     pairs,
+				EndOfStream: len(irw.body) == 0,
+			},
+		},
+		ObserveOnly: ep.cfg.ObserveOnly,
+	}
+
+	return ep.send(req)
+}
+
+// processResponseBody sends the response body to the processor.
+func (ep *extProc) processResponseBody(body []byte) (*extprocv1.ProcessingResponse, error) {
+	req := &extprocv1.ProcessingRequest{
+		Phase: &extprocv1.ProcessingRequest_ResponseBody{
+			ResponseBody: &extprocv1.HttpBody{
+				Body:        body,
+				EndOfStream: true,
+			},
+		},
+		ObserveOnly: ep.cfg.ObserveOnly,
+	}
+
+	return ep.send(req)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transport (gRPC / HTTP)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// send dispatches a ProcessingRequest to the processor via gRPC or HTTP.
+func (ep *extProc) send(req *extprocv1.ProcessingRequest) (*extprocv1.ProcessingResponse, error) {
+	if ep.cfg.ObserveOnly {
+		go ep.sendAsync(req)
+		return nil, nil
+	}
+
+	if ep.cfg.Mode == "http" {
+		return ep.sendHTTP(req)
+	}
+	return ep.sendGRPC(req)
+}
+
+// sendAsync sends a request without waiting for a response (observe-only).
+func (ep *extProc) sendAsync(req *extprocv1.ProcessingRequest) {
+	ctx, cancel := context.WithTimeout(context.Background(), ep.timeout)
+	defer cancel()
+
+	if ep.cfg.Mode == "http" {
+		ep.doHTTP(ctx, req)
+	} else {
+		ep.doGRPC(ctx, req)
+	}
+}
+
+// sendGRPC sends a single request/response exchange over gRPC.
+func (ep *extProc) sendGRPC(req *extprocv1.ProcessingRequest) (*extprocv1.ProcessingResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), ep.timeout)
+	defer cancel()
+
+	return ep.doGRPC(ctx, req)
+}
+
+// doGRPC performs the gRPC call.
+func (ep *extProc) doGRPC(ctx context.Context, req *extprocv1.ProcessingRequest) (*extprocv1.ProcessingResponse, error) {
+	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	conn, err := grpc.NewClient(ep.svc.BaseURL, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("connecting to processor: %w", err)
+	}
+	defer conn.Close()
+
+	client := extprocv1.NewProcessorClient(conn)
+	stream, err := client.Process(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("opening processor stream: %w", err)
+	}
+
+	if err := stream.Send(req); err != nil {
+		return nil, fmt.Errorf("sending to processor: %w", err)
+	}
+
+	resp, err := stream.Recv()
+	if err != nil {
+		return nil, fmt.Errorf("receiving from processor: %w", err)
+	}
+
+	return resp, nil
+}
+
+// sendHTTP sends a single request/response exchange over HTTP POST.
+func (ep *extProc) sendHTTP(req *extprocv1.ProcessingRequest) (*extprocv1.ProcessingResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), ep.timeout)
+	defer cancel()
+
+	return ep.doHTTP(ctx, req)
+}
+
+// doHTTP performs the HTTP POST call with a JSON-encoded ProcessingRequest.
+func (ep *extProc) doHTTP(ctx context.Context, req *extprocv1.ProcessingRequest) (*extprocv1.ProcessingResponse, error) {
+	jsonReq := protoRequestToJSON(req)
+	body, err := json.Marshal(jsonReq)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling request: %w", err)
+	}
+
+	url := strings.TrimRight(ep.svc.BaseURL, "/")
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("creating HTTP request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Transport: ep.svc.Transport}
+	httpResp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("calling processor: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading processor response: %w", err)
+	}
+
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("processor returned %d: %s", httpResp.StatusCode, string(respBody))
+	}
+
+	return jsonToProtoResponse(respBody)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTTP JSON encoding (for HTTP mode parity)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// httpRequest is the JSON representation of a ProcessingRequest for HTTP mode.
+type httpRequest struct {
+	Phase       string       `json:"phase"`
+	Headers     []headerPair `json:"headers,omitempty"`
+	Body        []byte       `json:"body,omitempty"`
+	EndOfStream bool         `json:"endOfStream"`
+	ObserveOnly bool         `json:"observeOnly,omitempty"`
+}
+
+// httpResponse is the JSON representation of a ProcessingResponse for HTTP mode.
+type httpResponse struct {
+	Action        string       `json:"action"`
+	Status        string       `json:"status,omitempty"`
+	SetHeaders    []headerPair `json:"setHeaders,omitempty"`
+	RemoveHeaders []string     `json:"removeHeaders,omitempty"`
+	ReplaceBody   []byte       `json:"replaceBody,omitempty"`
+	ClearBody     bool         `json:"clearBody,omitempty"`
+	RejectStatus  uint32       `json:"rejectStatus,omitempty"`
+	RejectHeaders []headerPair `json:"rejectHeaders,omitempty"`
+	RejectBody    []byte       `json:"rejectBody,omitempty"`
+}
+
+type headerPair struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// protoRequestToJSON converts a ProcessingRequest to its JSON representation.
+func protoRequestToJSON(req *extprocv1.ProcessingRequest) httpRequest {
+	jr := httpRequest{ObserveOnly: req.ObserveOnly}
+
+	switch p := req.Phase.(type) {
+	case *extprocv1.ProcessingRequest_RequestHeaders:
+		jr.Phase = "requestHeaders"
+		jr.Headers = protoPairsToJSON(p.RequestHeaders.Headers)
+		jr.EndOfStream = p.RequestHeaders.EndOfStream
+	case *extprocv1.ProcessingRequest_ResponseHeaders:
+		jr.Phase = "responseHeaders"
+		jr.Headers = protoPairsToJSON(p.ResponseHeaders.Headers)
+		jr.EndOfStream = p.ResponseHeaders.EndOfStream
+	case *extprocv1.ProcessingRequest_RequestBody:
+		jr.Phase = "requestBody"
+		jr.Body = p.RequestBody.Body
+		jr.EndOfStream = p.RequestBody.EndOfStream
+	case *extprocv1.ProcessingRequest_ResponseBody:
+		jr.Phase = "responseBody"
+		jr.Body = p.ResponseBody.Body
+		jr.EndOfStream = p.ResponseBody.EndOfStream
+	}
+
+	return jr
+}
+
+// jsonToProtoResponse converts a JSON response body to a ProcessingResponse.
+func jsonToProtoResponse(data []byte) (*extprocv1.ProcessingResponse, error) {
+	var jr httpResponse
+	if err := json.Unmarshal(data, &jr); err != nil {
+		return nil, fmt.Errorf("decoding processor response: %w", err)
+	}
+
+	resp := &extprocv1.ProcessingResponse{}
+	status := extprocv1.ActionStatus_CONTINUE
+	if jr.Status == "continueAndReplace" {
+		status = extprocv1.ActionStatus_CONTINUE_AND_REPLACE
+	}
+
+	switch jr.Action {
+	case "requestHeaders", "responseHeaders":
+		ha := &extprocv1.HeadersAction{
+			Status:        status,
+			SetHeaders:    jsonPairsToProto(jr.SetHeaders),
+			RemoveHeaders: jr.RemoveHeaders,
+			ReplaceBody:   jr.ReplaceBody,
+		}
+		if jr.Action == "requestHeaders" {
+			resp.Action = &extprocv1.ProcessingResponse_RequestHeaders{RequestHeaders: ha}
+		} else {
+			resp.Action = &extprocv1.ProcessingResponse_ResponseHeaders{ResponseHeaders: ha}
+		}
+	case "requestBody", "responseBody":
+		ba := &extprocv1.BodyAction{
+			Status:        status,
+			SetHeaders:    jsonPairsToProto(jr.SetHeaders),
+			RemoveHeaders: jr.RemoveHeaders,
+		}
+		if jr.ClearBody {
+			ba.BodyMutation = &extprocv1.BodyAction_ClearBody{ClearBody: true}
+		} else if jr.ReplaceBody != nil {
+			ba.BodyMutation = &extprocv1.BodyAction_ReplaceBody{ReplaceBody: jr.ReplaceBody}
+		}
+		if jr.Action == "requestBody" {
+			resp.Action = &extprocv1.ProcessingResponse_RequestBody{RequestBody: ba}
+		} else {
+			resp.Action = &extprocv1.ProcessingResponse_ResponseBody{ResponseBody: ba}
+		}
+	case "reject":
+		resp.Action = &extprocv1.ProcessingResponse_Reject{
+			Reject: &extprocv1.RejectRequest{
+				Status:  jr.RejectStatus,
+				Headers: jsonPairsToProto(jr.RejectHeaders),
+				Body:    jr.RejectBody,
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unknown action: %q", jr.Action)
+	}
+
+	return resp, nil
+}
+
+func protoPairsToJSON(pairs []*extprocv1.HeaderPair) []headerPair {
+	out := make([]headerPair, len(pairs))
+	for i, p := range pairs {
+		out[i] = headerPair{Key: p.Key, Value: p.Value}
+	}
+	return out
+}
+
+func jsonPairsToProto(pairs []headerPair) []*extprocv1.HeaderPair {
+	out := make([]*extprocv1.HeaderPair, len(pairs))
+	for i, p := range pairs {
+		out[i] = &extprocv1.HeaderPair{Key: p.Key, Value: p.Value}
+	}
+	return out
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header/body mutation helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// headersToProto converts http.Header to proto HeaderPair, applying forward rules.
+func headersToProto(h http.Header, rules *model.ForwardRules) []*extprocv1.HeaderPair {
+	var pairs []*extprocv1.HeaderPair
+	for key, values := range h {
+		lower := strings.ToLower(key)
+		if !shouldForward(lower, rules) {
+			continue
+		}
+		for _, v := range values {
+			pairs = append(pairs, &extprocv1.HeaderPair{Key: lower, Value: v})
+		}
+	}
+	return pairs
+}
+
+// shouldForward checks whether a header should be sent to the processor.
+func shouldForward(name string, rules *model.ForwardRules) bool {
+	if rules == nil {
+		return true
+	}
+	for _, deny := range rules.DenyHeaders {
+		if strings.EqualFold(deny, name) {
+			return false
+		}
+	}
+	if len(rules.AllowHeaders) == 0 {
+		return true
+	}
+	for _, allow := range rules.AllowHeaders {
+		if strings.EqualFold(allow, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// canMutate checks whether a header mutation is allowed by the rules.
+func canMutate(name string, rules *model.MutationRules) bool {
+	if rules == nil {
+		return true
+	}
+	lower := strings.ToLower(name)
+	for _, deny := range rules.DenyHeaders {
+		if strings.EqualFold(deny, lower) {
+			return false
+		}
+	}
+	if len(rules.AllowHeaders) == 0 {
+		return true
+	}
+	for _, allow := range rules.AllowHeaders {
+		if strings.EqualFold(allow, lower) {
+			return true
+		}
+	}
+	return false
+}
+
+// applyHeadersAction applies header mutations from a HeadersAction to an http.Header.
+func applyHeadersAction(h http.Header, ha *extprocv1.HeadersAction, rules *model.MutationRules) {
+	for _, rm := range ha.RemoveHeaders {
+		if canMutate(rm, rules) {
+			h.Del(rm)
+		}
+	}
+	for _, pair := range ha.SetHeaders {
+		if canMutate(pair.Key, rules) {
+			h.Set(pair.Key, pair.Value)
+		}
+	}
+}
+
+// applyBodyAction applies body mutations from a BodyAction to the request.
+func applyBodyAction(r *http.Request, ba *extprocv1.BodyAction, rules *model.MutationRules) {
+	for _, rm := range ba.RemoveHeaders {
+		if canMutate(rm, rules) {
+			r.Header.Del(rm)
+		}
+	}
+	for _, pair := range ba.SetHeaders {
+		if canMutate(pair.Key, rules) {
+			r.Header.Set(pair.Key, pair.Value)
+		}
+	}
+	switch m := ba.BodyMutation.(type) {
+	case *extprocv1.BodyAction_ReplaceBody:
+		r.Body = io.NopCloser(bytes.NewReader(m.ReplaceBody))
+		r.ContentLength = int64(len(m.ReplaceBody))
+	case *extprocv1.BodyAction_ClearBody:
+		if m.ClearBody {
+			r.Body = io.NopCloser(bytes.NewReader(nil))
+			r.ContentLength = 0
+		}
+	}
+}
+
+// applyResponseBodyAction applies body mutations from a BodyAction to the response body.
+func applyResponseBodyAction(original []byte, ba *extprocv1.BodyAction) []byte {
+	switch m := ba.BodyMutation.(type) {
+	case *extprocv1.BodyAction_ReplaceBody:
+		return m.ReplaceBody
+	case *extprocv1.BodyAction_ClearBody:
+		if m.ClearBody {
+			return nil
+		}
+	}
+	return original
+}
+
+// writeReject writes a RejectRequest to the client.
+func writeReject(w http.ResponseWriter, reject *extprocv1.RejectRequest) {
+	for _, pair := range reject.Headers {
+		w.Header().Set(pair.Key, pair.Value)
+	}
+	status := int(reject.Status)
+	if status == 0 {
+		status = http.StatusForbidden
+	}
+	w.WriteHeader(status)
+	if reject.Body != nil {
+		w.Write(reject.Body)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Response interceptor
+// ─────────────────────────────────────────────────────────────────────────────
+
+// interceptResponseWriter captures the upstream response so response phases
+// can inspect and mutate headers and body before sending to the client.
+type interceptResponseWriter struct {
+	http.ResponseWriter
+	statusCode     int
+	body           []byte
+	captureHeaders bool
+	captureBody    bool
+	headersSent    bool
+}
+
+// WriteHeader captures the status code without writing it to the client.
+func (irw *interceptResponseWriter) WriteHeader(code int) {
+	irw.statusCode = code
+	if !irw.captureHeaders && !irw.captureBody {
+		irw.ResponseWriter.WriteHeader(code)
+		irw.headersSent = true
+	}
+}
+
+// Write captures the body for later processing.
+func (irw *interceptResponseWriter) Write(b []byte) (int, error) {
+	if irw.captureBody {
+		irw.body = append(irw.body, b...)
+		return len(b), nil
+	}
+	if !irw.headersSent {
+		irw.ResponseWriter.WriteHeader(irw.statusCode)
+		irw.headersSent = true
+	}
+	return irw.ResponseWriter.Write(b)
+}
+
+// flush sends the (possibly mutated) response to the client.
+func (irw *interceptResponseWriter) flush() {
+	if irw.headersSent {
+		return
+	}
+	irw.ResponseWriter.WriteHeader(irw.statusCode)
+	if len(irw.body) > 0 {
+		irw.ResponseWriter.Write(irw.body)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Config helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// resolvePhases applies defaults to the phase configuration.
+func resolvePhases(p *model.ExtProcPhases) resolvedPhases {
+	rp := resolvedPhases{
+		requestHeaders:  true,
+		responseHeaders: true,
+		requestBody:     model.BodyModeNone,
+		responseBody:    model.BodyModeNone,
+	}
+	if p == nil {
+		return rp
+	}
+	if p.RequestHeaders == model.PhaseModeSkip {
+		rp.requestHeaders = false
+	}
+	if p.ResponseHeaders == model.PhaseModeSkip {
+		rp.responseHeaders = false
+	}
+	if p.RequestBody != "" {
+		rp.requestBody = p.RequestBody
+	}
+	if p.ResponseBody != "" {
+		rp.responseBody = p.ResponseBody
+	}
+	return rp
+}

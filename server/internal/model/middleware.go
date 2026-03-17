@@ -249,47 +249,145 @@ type ExtAuthzOnDeny struct {
 // ExtProc
 // ────────────────────────────────────────────────────────────────────────────
 
-// ExtProcConfig holds the configuration for external processing.
+// ExtProcConfig holds the configuration for the external processor middleware.
+// An external processor is a standalone service (gRPC or HTTP) that receives
+// HTTP request/response phases and can inspect, mutate, or reject them.
 type ExtProcConfig struct {
 	// DestinationID references the Destination entity that hosts the
-	// external processing service. Must be a gRPC service.
+	// external processor service.
 	DestinationID string `json:"destinationId" yaml:"destinationId"`
 
-	// Timeout is the processing request deadline (e.g. "2s").
+	// Mode selects the transport protocol: "grpc" (bidirectional stream)
+	// or "http" (one POST per phase). Default: "grpc".
+	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
+
+	// Timeout is the per-message deadline (e.g. "200ms", "2s").
+	// If the processor does not respond within this duration, the phase
+	// is treated as a failure (subject to AllowOnError). Default: "200ms".
 	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 
-	// ProcessingMode controls which parts of the HTTP transaction are sent to
-	// the external processor.
-	ProcessingMode *ExtProcMode `json:"processingMode,omitempty" yaml:"processingMode,omitempty"`
+	// Phases controls which parts of the HTTP transaction are sent to the
+	// processor. If nil, only request and response headers are sent.
+	Phases *ExtProcPhases `json:"phases,omitempty" yaml:"phases,omitempty"`
+
+	// AllowOnError lets requests pass through when the processor is
+	// unreachable or returns an error. When false (default), requests
+	// are rejected with StatusOnError.
+	AllowOnError bool `json:"allowOnError,omitempty" yaml:"allowOnError,omitempty"`
+
+	// StatusOnError is the HTTP status code returned to the client when
+	// the processor fails and AllowOnError is false. Default: 500.
+	StatusOnError uint32 `json:"statusOnError,omitempty" yaml:"statusOnError,omitempty"`
+
+	// AllowedMutations restricts which headers the processor is allowed
+	// to set or remove. If nil, all headers can be mutated.
+	AllowedMutations *MutationRules `json:"allowedMutations,omitempty" yaml:"allowedMutations,omitempty"`
+
+	// ForwardRules restricts which request headers are sent to the
+	// processor. Use this to prevent forwarding sensitive headers
+	// like Authorization or Cookie. If nil, all headers are forwarded.
+	ForwardRules *ForwardRules `json:"forwardRules,omitempty" yaml:"forwardRules,omitempty"`
+
+	// DisableReject prevents the processor from rejecting requests.
+	// When true, RejectRequest responses from the processor are ignored
+	// and the request continues normally.
+	DisableReject bool `json:"disableReject,omitempty" yaml:"disableReject,omitempty"`
+
+	// ObserveOnly enables fire-and-forget mode. Rutoso sends phases to
+	// the processor but does not wait for responses. Useful for logging,
+	// auditing, or analytics processors.
+	ObserveOnly bool `json:"observeOnly,omitempty" yaml:"observeOnly,omitempty"`
+
+	// MetricsPrefix is an optional prefix for metrics emitted by this
+	// middleware instance. Allows distinguishing between multiple
+	// external processors in the same proxy.
+	MetricsPrefix string `json:"metricsPrefix,omitempty" yaml:"metricsPrefix,omitempty"`
 }
 
-// ExtProcPhase describes how ext_proc handles a specific message phase.
-type ExtProcPhase string
+// ExtProcPhases controls which phases of an HTTP transaction are sent
+// to the external processor.
+type ExtProcPhases struct {
+	// RequestHeaders controls whether request headers are sent.
+	// "send" (default) or "skip".
+	RequestHeaders PhaseMode `json:"requestHeaders,omitempty" yaml:"requestHeaders,omitempty"`
+
+	// ResponseHeaders controls whether response headers are sent.
+	// "send" (default) or "skip".
+	ResponseHeaders PhaseMode `json:"responseHeaders,omitempty" yaml:"responseHeaders,omitempty"`
+
+	// RequestBody controls how the request body is sent.
+	// "none" (default), "buffered", "bufferedPartial", or "streamed".
+	RequestBody BodyMode `json:"requestBody,omitempty" yaml:"requestBody,omitempty"`
+
+	// ResponseBody controls how the response body is sent.
+	// "none" (default), "buffered", "bufferedPartial", or "streamed".
+	ResponseBody BodyMode `json:"responseBody,omitempty" yaml:"responseBody,omitempty"`
+}
+
+// PhaseMode controls whether a headers phase is sent to the processor.
+type PhaseMode string
 
 const (
-	// ExtProcPhaseSkip instructs ext_proc to skip this message phase entirely.
-	ExtProcPhaseSkip ExtProcPhase = "SKIP"
+	// PhaseModeSend sends the phase to the processor (default).
+	PhaseModeSend PhaseMode = "send"
 
-	// ExtProcPhaseSend instructs ext_proc to send this message to the processor.
-	ExtProcPhaseSend ExtProcPhase = "SEND"
-
-	// ExtProcPhaseBuffered instructs ext_proc to buffer and send the full body.
-	ExtProcPhaseBuffered ExtProcPhase = "BUFFERED"
+	// PhaseModeSkip skips the phase entirely.
+	PhaseModeSkip PhaseMode = "skip"
 )
 
-// ExtProcMode describes which parts of the HTTP transaction ext_proc processes.
-type ExtProcMode struct {
-	// RequestHeaderMode controls processing of request headers.
-	RequestHeaderMode ExtProcPhase `json:"requestHeaderMode,omitempty" yaml:"requestHeaderMode,omitempty"`
+// BodyMode controls how a body phase is sent to the processor.
+type BodyMode string
 
-	// ResponseHeaderMode controls processing of response headers.
-	ResponseHeaderMode ExtProcPhase `json:"responseHeaderMode,omitempty" yaml:"responseHeaderMode,omitempty"`
+const (
+	// BodyModeNone does not send the body (default).
+	BodyModeNone BodyMode = "none"
 
-	// RequestBodyMode controls processing of the request body.
-	RequestBodyMode ExtProcPhase `json:"requestBodyMode,omitempty" yaml:"requestBodyMode,omitempty"`
+	// BodyModeBuffered buffers the entire body in memory and sends it
+	// as a single message.
+	BodyModeBuffered BodyMode = "buffered"
 
-	// ResponseBodyMode controls processing of the response body.
-	ResponseBodyMode ExtProcPhase `json:"responseBodyMode,omitempty" yaml:"responseBodyMode,omitempty"`
+	// BodyModeBufferedPartial buffers the body up to a size limit and
+	// sends whatever was buffered. If the body exceeds the limit, only
+	// the buffered portion is sent.
+	BodyModeBufferedPartial BodyMode = "bufferedPartial"
+
+	// BodyModeStreamed streams body chunks to the processor as they
+	// arrive. The processor responds to each chunk individually.
+	BodyModeStreamed BodyMode = "streamed"
+)
+
+// MutationRules restricts which headers an external processor is allowed
+// to set or remove. Both lists use exact header name matching (case-insensitive).
+type MutationRules struct {
+	// AllowHeaders lists header names the processor is allowed to mutate.
+	// If empty, all headers are allowed (subject to DenyHeaders).
+	AllowHeaders []string `json:"allowHeaders,omitempty" yaml:"allowHeaders,omitempty"`
+
+	// DenyHeaders lists header names the processor is NOT allowed to mutate.
+	// Overrides AllowHeaders if a header appears in both.
+	DenyHeaders []string `json:"denyHeaders,omitempty" yaml:"denyHeaders,omitempty"`
+}
+
+// ForwardRules restricts which request headers Rutoso sends to the
+// external processor. Both lists use exact header name matching (case-insensitive).
+type ForwardRules struct {
+	// AllowHeaders lists header names that are forwarded to the processor.
+	// If empty, all headers are forwarded (subject to DenyHeaders).
+	AllowHeaders []string `json:"allowHeaders,omitempty" yaml:"allowHeaders,omitempty"`
+
+	// DenyHeaders lists header names that are never forwarded to the
+	// processor. Overrides AllowHeaders if a header appears in both.
+	DenyHeaders []string `json:"denyHeaders,omitempty" yaml:"denyHeaders,omitempty"`
+}
+
+// ExtProcOverride carries per-route overrides for the external processor
+// middleware. Used inside MiddlewareOverride.
+type ExtProcOverride struct {
+	// Phases overrides the processing phases for this route.
+	Phases *ExtProcPhases `json:"phases,omitempty" yaml:"phases,omitempty"`
+
+	// AllowOnError overrides the fail-open behavior for this route.
+	AllowOnError *bool `json:"allowOnError,omitempty" yaml:"allowOnError,omitempty"`
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -366,10 +464,11 @@ type MiddlewareOverride struct {
 	// Only meaningful when the referenced filter is of type "jwt".
 	JWTProvider string `json:"jwtProvider,omitempty" yaml:"jwtProvider,omitempty"`
 
-
-
-
 	// Headers overrides header manipulation for this route/group.
 	// Only meaningful when the referenced filter is of type "headers".
 	Headers *HeadersConfig `json:"headers,omitempty" yaml:"headers,omitempty"`
+
+	// ExtProc overrides external processor settings for this route/group.
+	// Only meaningful when the referenced middleware is of type "extProc".
+	ExtProc *ExtProcOverride `json:"extProc,omitempty" yaml:"extProc,omitempty"`
 }

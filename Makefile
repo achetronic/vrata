@@ -16,7 +16,7 @@ SWAG_FLAGS  := --generalInfo main.go \
 	--output $(SERVER_DIR)/docs \
 	--outputTypes go,json,yaml
 
-.PHONY: build docs docker-build docker-push run clean test
+.PHONY: build docs docker-build docker-push run clean test proto
 
 # ─── Standard targets ─────────────────────────────────────────────────────────
 
@@ -66,3 +66,16 @@ test:
 ## clean: remove build artifacts
 clean:
 	rm -rf $(BUILD_DIR)
+
+## proto: regenerate Go code from .proto files
+##
+##   Requires: protoc, protoc-gen-go, protoc-gen-go-grpc
+##   Install:
+##     go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+##     go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+proto:
+	protoc \
+		--proto_path=$(SERVER_DIR)/proto \
+		--go_out=$(SERVER_DIR)/proto --go_opt=paths=source_relative \
+		--go-grpc_out=$(SERVER_DIR)/proto --go-grpc_opt=paths=source_relative \
+		$(SERVER_DIR)/proto/extproc/v1/extproc.proto

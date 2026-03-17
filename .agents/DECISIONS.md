@@ -502,3 +502,78 @@ config to those fields internally.
 through the Filter entity.
 
 ---
+
+## Versioned snapshots as the source of truth for proxies
+
+**Date**: 2026-03-17
+**Status**: Implemented
+
+The SSE sync stream serves a **versioned snapshot**, not the live store state.
+Operators capture the current config with `POST /api/v1/snapshots`, then
+activate a specific version with `POST /api/v1/snapshots/{id}/activate`.
+Proxies only receive config when an active snapshot exists. Without one, the
+SSE stream stays open but sends no events.
+
+**Reasoning**: Live-streaming every store mutation meant a typo in one route
+was instantly pushed to all proxies. Versioned snapshots give the operator an
+explicit "publish" step — config is staged, reviewed, and promoted. Rollback
+is instant: activate a previous snapshot.
+
+**Do not**: Revert the SSE stream to serve live store state. Do not bypass
+the snapshot system by pushing config directly to proxies. The snapshot is
+the only path from control plane to proxy.
+
+---
+
+## CEL expressions as complementary route matcher
+
+**Date**: 2026-03-17
+**Status**: Implemented
+
+`MatchRule` carries an optional `CEL` field (string). When set, the CEL
+expression is compiled once at routing table build time and evaluated per-request
+as an AND condition with all static matchers. Static matchers run first (fast path);
+CEL is only evaluated if they all pass. The expression receives a `request` map
+with `method`, `path`, `host`, `scheme`, `headers`, `queryParams`, `clientIp`.
+
+**Reasoning**: Static matchers (path, headers, methods) cover 90% of cases
+but cannot express cross-field logic like "path starts with /api AND has
+header x-role=admin AND method is not DELETE". CEL is sandboxed, typed,
+and fast once compiled (~1μs/eval).
+
+**Do not**: Make CEL replace static matchers. CEL is always complementary (AND).
+Do not evaluate CEL before static matchers — statics are cheaper and should
+short-circuit first. Do not make a CEL compile error fatal to other routes.
+
+---
+
+## External processor: Rutoso-native proto, not Envoy-compatible
+
+**Date**: 2026-03-17
+**Status**: Decided
+
+The external processor middleware uses a Rutoso-native gRPC service definition
+(`rutoso.extproc.v1.Processor`) and Rutoso-native config model. It is NOT
+compatible with Envoy's `ext_proc` proto. The wire protocol, message names,
+and config fields are designed for Rutoso users with semantic naming.
+
+**Reasoning**: Partial Envoy compatibility would mislead users into thinking
+existing Envoy ext_proc servers work out of the box. Since Rutoso simplifies
+the model (no trailers, no dynamic metadata, no route cache clearing), the
+proto would be a leaky subset that frustrates more than it helps. A clean
+Rutoso-native proto sets honest expectations and allows better naming.
+
+Key design points:
+- Headers are `repeated HeaderPair` (key+value pairs), not maps, to preserve
+  duplicate headers (Set-Cookie, etc.)
+- HTTP and gRPC modes with full feature parity
+- Phases: requestHeaders, responseHeaders, requestBody, responseBody
+- Body modes: none, buffered, bufferedPartial, streamed
+- Config uses semantic names: `allowOnError`, `disableReject`, `observeOnly`,
+  `phases`, `allowedMutations`, `forwardRules`, `metricsPrefix`
+
+**Do not**: Reference Envoy in the proto, code, or documentation. Do not
+attempt wire-level compatibility with `envoy.service.ext_proc.v3`. Do not
+use Envoy field names (`failure_mode_allow`, `processing_mode`, etc.).
+
+---

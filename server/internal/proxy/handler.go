@@ -105,6 +105,8 @@ func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) middle
 		return middlewares.JWTMiddleware(mw.JWT, services)
 	case model.MiddlewareTypeAccessLog:
 		return middlewares.AccessLogMiddleware(mw.AccessLog)
+	case model.MiddlewareTypeExtProc:
+		return middlewares.ExtProcMiddleware(mw.ExtProc, services)
 	default:
 		return nil
 	}

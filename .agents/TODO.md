@@ -167,7 +167,53 @@ Tasks:
 - [ ] Write unit and integration tests
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
 
+### External processor middleware (full implementation)
+Rutoso-native external processor with its own gRPC/HTTP proto
+(`rutoso.extproc.v1`). See DECISIONS.md for full design rationale.
+
+Proto design:
+- `repeated HeaderPair` (not maps) to preserve duplicate headers
+- Phases: requestHeaders, responseHeaders, requestBody, responseBody
+- Body modes: none, buffered, bufferedPartial, streamed
+- gRPC and HTTP modes with full feature parity
+- Semantic config names: allowOnError, disableReject, observeOnly, etc.
+
+Tasks:
+- [ ] Define `rutoso/extproc/v1/extproc.proto` and generate Go code
+- [ ] Update `model/middleware.go`: new `ExtProcConfig` with all fields
+- [ ] Implement gRPC client for external processor stream
+- [ ] Implement HTTP client for external processor (POST per phase)
+- [ ] Implement response interceptor (wrap ResponseWriter for response phases)
+- [ ] Implement `allowOnError` / `statusOnError` (fail-open / fail-closed)
+- [ ] Implement `allowedMutations` (restrict which headers processor can set)
+- [ ] Implement `forwardRules` (restrict which headers are sent to processor)
+- [ ] Implement `disableReject` (ignore RejectRequest from processor)
+- [ ] Implement `observeOnly` (fire-and-forget, no response expected)
+- [ ] Implement body buffering (BUFFERED and BUFFERED_PARTIAL modes)
+- [ ] Implement body streaming (STREAMED mode)
+- [ ] Implement per-route override (phases, allowOnError)
+- [ ] Implement `metricsPrefix` (when metrics system exists)
+- [ ] Unit tests for each feature
+- [ ] Integration test: full request/response processing round-trip
+
 ## Done
+
+- [x] **Versioned snapshots** — full snapshot versioning system with rollback
+  - `model/snapshot.go`: `VersionedSnapshot`, `SnapshotSummary`
+  - `store.Store` interface: 6 new methods (List/Get/Save/Delete/Activate snapshot, GetActive)
+  - `store/bolt`: `snapshots` + `meta` buckets, active snapshot pointer
+  - `store/memory`: full implementation for tests
+  - `handlers/snapshots.go`: CRUD + activate (5 endpoints, swagger annotated)
+  - `handlers/sync.go`: SSE stream serves active snapshot only
+  - 15 tests covering all handlers + SSE behavior
+  - Fix: `s.publish()` moved outside bolt transaction in all Save/Delete methods
+
+- [x] **CEL expressions as route matcher** — `cel` field on MatchRule
+  - `model/group.go`: `CEL string` field on `MatchRule`
+  - `proxy/celeval/`: compile-once, eval-per-request CEL engine via `cel-go`
+  - `proxy/table.go`: compiles CEL in `compileRoute`, skips broken routes with slog.Error
+  - `proxy/router.go`: evaluates CEL as last AND condition in `match()`
+  - 14 tests: unit (celeval) + integration (router), ~940ns/eval benchmark
 
 - [x] **Wire methods, queryParams, hashPolicy in xDS builder** (cd083bb)
   - `buildRouteMatch`: maps `MatchRule.Methods` to `:method` header matcher (exact for 1, regex OR for multiple)
