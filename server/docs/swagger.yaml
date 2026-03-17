@@ -374,6 +374,12 @@ definitions:
     type: object
   model.ExtProcPhases:
     properties:
+      maxBodyBytes:
+        description: |-
+          MaxBodyBytes is the maximum number of bytes to buffer when using
+          "bufferedPartial" mode. Excess bytes are not sent to the processor.
+          Default: 1048576 (1MB).
+        type: integer
       requestBody:
         allOf:
         - $ref: '#/definitions/model.BodyMode'

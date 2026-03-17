@@ -1772,6 +1772,10 @@
         "model.ExtProcPhases": {
             "type": "object",
             "properties": {
+                "maxBodyBytes": {
+                    "description": "MaxBodyBytes is the maximum number of bytes to buffer when using\n\"bufferedPartial\" mode. Excess bytes are not sent to the processor.\nDefault: 1048576 (1MB).",
+                    "type": "integer"
+                },
                 "requestBody": {
                     "description": "RequestBody controls how the request body is sent.\n\"none\" (default), \"buffered\", \"bufferedPartial\", or \"streamed\".",
                     "allOf": [
