@@ -230,9 +230,9 @@ func marshalExtAuthz(c *model.ExtAuthzConfig) (*anypb.Any, error) {
 				},
 			}
 		} else {
-			uri := c.DestinationID
-			if c.PathPrefix != "" {
-				uri = c.PathPrefix
+			uri := c.URI
+			if uri == "" {
+				uri = c.DestinationID
 			}
 			ea.Services = &extauthzv3.ExtAuthz_HttpService{
 				HttpService: &extauthzv3.HttpService{

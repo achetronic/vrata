@@ -252,12 +252,12 @@
                         "description": "Mode selects the transport protocol to the authz service.\n\"grpc\" or \"http\". Default: \"http\".",
                         "type": "string"
                     },
-                    "pathPrefix": {
-                        "description": "PathPrefix is the URL path prefix for HTTP mode authz requests.\nIgnored in gRPC mode. Example: \"/v1/authz\".",
-                        "type": "string"
-                    },
                     "timeout": {
                         "description": "Timeout is the authorisation request deadline (e.g. \"5s\", \"500ms\").",
+                        "type": "string"
+                    },
+                    "uri": {
+                        "description": "URI is the full URL of the HTTP authorization endpoint that Envoy\nsends check requests to (e.g. \"https://oauth2-proxy.example.com/oauth2/auth\").\nThe host portion is used for the Host header; the cluster from\nDestinationID handles the actual TCP connection (with TLS, etc.).\nOnly used in HTTP mode. Ignored in gRPC mode.",
                         "type": "string"
                     }
                 },
