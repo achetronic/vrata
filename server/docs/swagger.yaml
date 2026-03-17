@@ -179,71 +179,80 @@ components:
         ExtAuthz holds the external authorisation filter configuration.
         Set when Type == "extAuthz".
       properties:
-        allowedClientHeaders:
-          description: |-
-            AllowedClientHeaders lists header patterns from the authz response
-            that are returned to the client when the authz service denies.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        allowedHeaders:
-          description: |-
-            AllowedHeaders lists header patterns from the client request that are
-            forwarded to the authz service. Host, Method, Path, Content-Length,
-            and Authorization are always included automatically.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
-        allowedUpstreamHeaders:
-          description: |-
-            AllowedUpstreamHeaders lists header patterns from the authz response
-            that are added to the original client request (forwarded to upstream)
-            when the authz service returns 200 OK.
-          items:
-            type: string
-          type: array
-          uniqueItems: false
         destinationId:
-          description: |-
-            DestinationID references the Destination entity that hosts the
-            authorisation service. Rutoso builds the full server_uri from the
-            Destination's host, port, and TLS config automatically.
+          description: DestinationID references the Destination that hosts the authz
+            service.
           type: string
         failureModeAllow:
-          description: |-
-            FailureModeAllow controls what happens when the authz service is
-            unreachable. If true, requests are allowed through (fail-open).
-            Default is false (fail-closed).
+          description: FailureModeAllow lets requests through when the authz service
+            is unreachable.
           type: boolean
-        headersToAdd:
+        includeBody:
+          description: IncludeBody forwards the request body to the authz service.
+          type: boolean
+        mode:
+          description: 'Mode selects the transport protocol: "http" or "grpc". Default:
+            "http".'
+          type: string
+        onAllow:
+          $ref: '#/components/schemas/model.ExtAuthzOnAllow'
+        onCheck:
+          $ref: '#/components/schemas/model.ExtAuthzOnCheck'
+        onDeny:
+          $ref: '#/components/schemas/model.ExtAuthzOnDeny'
+        path:
+          description: Path is the authorization endpoint path (e.g. "/oauth2/auth").
+          type: string
+        timeout:
+          description: Timeout is the check request deadline (e.g. "5s").
+          type: string
+      type: object
+    model.ExtAuthzOnAllow:
+      description: OnAllow controls what happens when the authz allows the request.
+      properties:
+        copyToUpstream:
           description: |-
-            HeadersToAdd are extra headers injected into the check request sent
-            to the authz service.
+            CopyToUpstream lists header name patterns from the authz response
+            that are added to the request forwarded to the upstream.
+            Supports wildcard suffix: "x-auth-request-*" matches any header
+            starting with "x-auth-request-".
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+      type: object
+    model.ExtAuthzOnCheck:
+      description: OnCheck controls what is sent to the authz service.
+      properties:
+        forwardHeaders:
+          description: |-
+            ForwardHeaders lists client request header names to forward to the authz.
+            Host, Method, Path, and Content-Length are always sent automatically.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
+        injectHeaders:
+          description: |-
+            InjectHeaders are additional headers added to the check request.
+            Values support interpolation: ${request.host}, ${request.path},
+            ${request.method}, ${request.scheme}, ${request.header.X-Custom}.
           items:
             $ref: '#/components/schemas/model.HeaderValue'
           type: array
           uniqueItems: false
-        includeRequestBodyInCheck:
-          description: IncludeRequestBodyInCheck forwards the request body to the
-            authz service.
-          type: boolean
-        mode:
+      type: object
+    model.ExtAuthzOnDeny:
+      description: OnDeny controls what is returned to the client when the authz denies.
+      properties:
+        copyToClient:
           description: |-
-            Mode selects the transport protocol to the authz service.
-            "grpc" or "http". Default: "http".
-          type: string
-        path:
-          description: |-
-            Path is the path of the authorization endpoint on the service.
-            Example: "/oauth2/auth". Rutoso appends it to the Destination's
-            host:port to build the full server_uri automatically.
-            Ignored in gRPC mode.
-          type: string
-        timeout:
-          description: Timeout is the authorisation request deadline (e.g. "5s", "500ms").
-          type: string
+            CopyToClient lists header name patterns from the authz response
+            that are returned to the client. Supports wildcard suffix.
+          items:
+            type: string
+          type: array
+          uniqueItems: false
       type: object
     model.ExtProcConfig:
       description: |-
@@ -697,13 +706,6 @@ components:
             Disabled completely disables the filter for this route/group.
             When true, no other field is evaluated.
           type: boolean
-        extAuthzContextExtensions:
-          additionalProperties:
-            type: string
-          description: |-
-            ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.
-            Only meaningful when the referenced filter is of type "extAuthz".
-          type: object
         headers:
           $ref: '#/components/schemas/model.HeadersConfig'
         jwtProvider:

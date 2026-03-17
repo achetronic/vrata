@@ -180,51 +180,62 @@ type JWTRule struct {
 // ExtAuthz
 // ────────────────────────────────────────────────────────────────────────────
 
-// ExtAuthzConfig holds the configuration for the Envoy ext_authz HTTP filter.
+// ExtAuthzConfig holds the configuration for the external authorization middleware.
 type ExtAuthzConfig struct {
-	// DestinationID references the Destination entity that hosts the
-	// authorisation service. Rutoso builds the full server_uri from the
-	// Destination's host, port, and TLS config automatically.
+	// DestinationID references the Destination that hosts the authz service.
 	DestinationID string `json:"destinationId" yaml:"destinationId"`
 
-	// Mode selects the transport protocol to the authz service.
-	// "grpc" or "http". Default: "http".
+	// Mode selects the transport protocol: "http" or "grpc". Default: "http".
 	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
 
-	// Path is the path of the authorization endpoint on the service.
-	// Example: "/oauth2/auth". Rutoso appends it to the Destination's
-	// host:port to build the full server_uri automatically.
-	// Ignored in gRPC mode.
+	// Path is the authorization endpoint path (e.g. "/oauth2/auth").
 	Path string `json:"path,omitempty" yaml:"path,omitempty"`
 
-	// Timeout is the authorisation request deadline (e.g. "5s", "500ms").
+	// Timeout is the check request deadline (e.g. "5s").
 	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 
-	// FailureModeAllow controls what happens when the authz service is
-	// unreachable. If true, requests are allowed through (fail-open).
-	// Default is false (fail-closed).
+	// FailureModeAllow lets requests through when the authz service is unreachable.
 	FailureModeAllow bool `json:"failureModeAllow,omitempty" yaml:"failureModeAllow,omitempty"`
 
-	// IncludeRequestBodyInCheck forwards the request body to the authz service.
-	IncludeRequestBodyInCheck bool `json:"includeRequestBodyInCheck,omitempty" yaml:"includeRequestBodyInCheck,omitempty"`
+	// IncludeBody forwards the request body to the authz service.
+	IncludeBody bool `json:"includeBody,omitempty" yaml:"includeBody,omitempty"`
 
-	// AllowedHeaders lists header patterns from the client request that are
-	// forwarded to the authz service. Host, Method, Path, Content-Length,
-	// and Authorization are always included automatically.
-	AllowedHeaders []string `json:"allowedHeaders,omitempty" yaml:"allowedHeaders,omitempty"`
+	// OnCheck controls what is sent to the authz service.
+	OnCheck *ExtAuthzOnCheck `json:"onCheck,omitempty" yaml:"onCheck,omitempty"`
 
-	// HeadersToAdd are extra headers injected into the check request sent
-	// to the authz service.
-	HeadersToAdd []HeaderValue `json:"headersToAdd,omitempty" yaml:"headersToAdd,omitempty"`
+	// OnAllow controls what happens when the authz allows the request.
+	OnAllow *ExtAuthzOnAllow `json:"onAllow,omitempty" yaml:"onAllow,omitempty"`
 
-	// AllowedUpstreamHeaders lists header patterns from the authz response
-	// that are added to the original client request (forwarded to upstream)
-	// when the authz service returns 200 OK.
-	AllowedUpstreamHeaders []string `json:"allowedUpstreamHeaders,omitempty" yaml:"allowedUpstreamHeaders,omitempty"`
+	// OnDeny controls what is returned to the client when the authz denies.
+	OnDeny *ExtAuthzOnDeny `json:"onDeny,omitempty" yaml:"onDeny,omitempty"`
+}
 
-	// AllowedClientHeaders lists header patterns from the authz response
-	// that are returned to the client when the authz service denies.
-	AllowedClientHeaders []string `json:"allowedClientHeaders,omitempty" yaml:"allowedClientHeaders,omitempty"`
+// ExtAuthzOnCheck controls what is sent in the check request.
+type ExtAuthzOnCheck struct {
+	// ForwardHeaders lists client request header names to forward to the authz.
+	// Host, Method, Path, and Content-Length are always sent automatically.
+	ForwardHeaders []string `json:"forwardHeaders,omitempty" yaml:"forwardHeaders,omitempty"`
+
+	// InjectHeaders are additional headers added to the check request.
+	// Values support interpolation: ${request.host}, ${request.path},
+	// ${request.method}, ${request.scheme}, ${request.header.X-Custom}.
+	InjectHeaders []HeaderValue `json:"injectHeaders,omitempty" yaml:"injectHeaders,omitempty"`
+}
+
+// ExtAuthzOnAllow controls what happens when the authz returns 2xx.
+type ExtAuthzOnAllow struct {
+	// CopyToUpstream lists header name patterns from the authz response
+	// that are added to the request forwarded to the upstream.
+	// Supports wildcard suffix: "x-auth-request-*" matches any header
+	// starting with "x-auth-request-".
+	CopyToUpstream []string `json:"copyToUpstream,omitempty" yaml:"copyToUpstream,omitempty"`
+}
+
+// ExtAuthzOnDeny controls what is returned to the client when the authz denies.
+type ExtAuthzOnDeny struct {
+	// CopyToClient lists header name patterns from the authz response
+	// that are returned to the client. Supports wildcard suffix.
+	CopyToClient []string `json:"copyToClient,omitempty" yaml:"copyToClient,omitempty"`
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -348,9 +359,6 @@ type MiddlewareOverride struct {
 	// Only meaningful when the referenced filter is of type "jwt".
 	JWTProvider string `json:"jwtProvider,omitempty" yaml:"jwtProvider,omitempty"`
 
-	// ExtAuthzContextExtensions adds key/value pairs to the ext_authz check request.
-	// Only meaningful when the referenced filter is of type "extAuthz".
-	ExtAuthzContextExtensions map[string]string `json:"extAuthzContextExtensions,omitempty" yaml:"extAuthzContextExtensions,omitempty"`
 
 
 

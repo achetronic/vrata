@@ -12,13 +12,6 @@ import (
 
 // ExtAuthzMiddleware creates a middleware that sends a check request to an
 // external authorization service before forwarding to the upstream.
-//
-// The middleware is designed to work with any HTTP authz service (oauth2-proxy,
-// OPA, custom). It gives the user full control over:
-//   - Which client headers are sent to the authz service
-//   - Which extra headers are injected into the check request
-//   - Which authz response headers are passed to the upstream on allow
-//   - Which authz response headers are returned to the client on deny
 func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, upstreams map[string]*Upstream) Middleware {
 	if cfg == nil || cfg.DestinationID == "" {
 		return func(next http.Handler) http.Handler { return next }
@@ -47,104 +40,93 @@ func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, upstreams map[string]*Upstrea
 		baseURL += cfg.Path
 	}
 
-	// Build the set of allowed headers to forward (lowercase for comparison).
-	allowedHeaders := make(map[string]bool)
+	// Headers to forward from client to authz (always include these).
+	forwardHeaders := map[string]bool{
+		"host":           true,
+		"content-length": true,
+	}
+	if cfg.OnCheck != nil {
+		for _, h := range cfg.OnCheck.ForwardHeaders {
+			forwardHeaders[strings.ToLower(h)] = true
+		}
+	}
+
+	// Patterns for onAllow (authz response -> upstream).
+	var allowPatterns []string
+	if cfg.OnAllow != nil {
+		allowPatterns = cfg.OnAllow.CopyToUpstream
+	}
+
+	// Patterns for onDeny (authz response -> client).
 	// Always include these.
-	for _, h := range []string{"host", "method", "authorization", "cookie", "content-length"} {
-		allowedHeaders[h] = true
-	}
-	for _, h := range cfg.AllowedHeaders {
-		allowedHeaders[strings.ToLower(h)] = true
-	}
-
-	// Allowed upstream headers (from authz response -> upstream request).
-	allowedUpstream := make(map[string]bool)
-	for _, h := range cfg.AllowedUpstreamHeaders {
-		allowedUpstream[strings.ToLower(h)] = true
-	}
-
-	// Allowed client headers (from authz response -> client on deny).
-	allowedClient := make(map[string]bool)
-	// Always include these on deny.
-	for _, h := range []string{"location", "set-cookie", "www-authenticate", "content-type"} {
-		allowedClient[h] = true
-	}
-	for _, h := range cfg.AllowedClientHeaders {
-		allowedClient[strings.ToLower(h)] = true
+	denyPatterns := []string{"location", "set-cookie", "www-authenticate", "content-type"}
+	if cfg.OnDeny != nil {
+		denyPatterns = append(denyPatterns, cfg.OnDeny.CopyToClient...)
 	}
 
 	client := &http.Client{
 		Transport: upstream.Transport,
 		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Don't follow redirects — return them to the caller.
 			return http.ErrUseLastResponse
 		},
 	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Build the check request.
+			// Build check request.
 			checkReq, err := http.NewRequestWithContext(r.Context(), r.Method, baseURL, nil)
 			if err != nil {
-				if cfg.FailureModeAllow {
-					next.ServeHTTP(w, r)
-					return
-				}
-				http.Error(w, "ext_authz: failed to create check request", http.StatusForbidden)
+				handleAuthzError(w, r, next, cfg.FailureModeAllow, "failed to create check request")
 				return
 			}
 
-			// Copy allowed headers from client request.
+			// Forward matching headers from client.
 			for key, values := range r.Header {
-				if allowedHeaders[strings.ToLower(key)] {
+				if forwardHeaders[strings.ToLower(key)] {
 					for _, v := range values {
 						checkReq.Header.Add(key, v)
 					}
 				}
 			}
 
-			// Inject extra headers.
-			for _, h := range cfg.HeadersToAdd {
-				checkReq.Header.Set(h.Key, h.Value)
+			// Inject extra headers with interpolation.
+			if cfg.OnCheck != nil {
+				for _, h := range cfg.OnCheck.InjectHeaders {
+					value := Interpolate(h.Value, r)
+					checkReq.Header.Set(h.Key, value)
+				}
 			}
 
 			// Send check request.
 			resp, err := client.Do(checkReq)
 			if err != nil {
-				if cfg.FailureModeAllow {
-					next.ServeHTTP(w, r)
-					return
-				}
-				http.Error(w, "ext_authz: authz service unreachable", http.StatusForbidden)
+				handleAuthzError(w, r, next, cfg.FailureModeAllow, "authz service unreachable")
 				return
 			}
 			defer resp.Body.Close()
 
-			// Auth allowed (2xx).
+			// 2xx = allowed.
 			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				// Copy allowed headers from authz response to upstream request.
-				for key, values := range resp.Header {
-					if allowedUpstream[strings.ToLower(key)] {
-						for _, v := range values {
-							r.Header.Set(key, v)
-						}
-					}
+				if len(allowPatterns) > 0 {
+					copyMatchingHeaders(r.Header, resp.Header, allowPatterns)
 				}
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// Auth denied — return authz response to client.
-			for key, values := range resp.Header {
-				if allowedClient[strings.ToLower(key)] {
-					for _, v := range values {
-						w.Header().Add(key, v)
-					}
-				}
-			}
+			// Non-2xx = denied. Copy matching headers to client.
+			copyMatchingHeaders(w.Header(), resp.Header, denyPatterns)
 			w.WriteHeader(resp.StatusCode)
 			io.Copy(w, resp.Body)
 		})
 	}
+}
+
+func handleAuthzError(w http.ResponseWriter, r *http.Request, next http.Handler, allow bool, msg string) {
+	if allow {
+		next.ServeHTTP(w, r)
+		return
+	}
+	http.Error(w, "ext_authz: "+msg, http.StatusForbidden)
 }
