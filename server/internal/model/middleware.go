@@ -322,6 +322,11 @@ type ExtProcPhases struct {
 	// ResponseBody controls how the response body is sent.
 	// "none" (default), "buffered", "bufferedPartial", or "streamed".
 	ResponseBody BodyMode `json:"responseBody,omitempty" yaml:"responseBody,omitempty"`
+
+	// MaxBodyBytes is the maximum number of bytes to buffer when using
+	// "bufferedPartial" mode. Excess bytes are not sent to the processor.
+	// Default: 1048576 (1MB).
+	MaxBodyBytes int64 `json:"maxBodyBytes,omitempty" yaml:"maxBodyBytes,omitempty"`
 }
 
 // PhaseMode controls whether a headers phase is sent to the processor.

@@ -2,13 +2,18 @@ package middlewares
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"hash"
 	"io"
 	"log/slog"
 	"math/big"
@@ -21,8 +26,8 @@ import (
 )
 
 // JWTMiddleware creates a middleware that validates JWT tokens by verifying
-// the RSA signature against keys from JWKS (remote or inline) and checking
-// standard claims (issuer, audience, expiry).
+// the signature (RSA, EC, Ed25519) against keys from JWKS (remote or inline)
+// and checking standard claims (issuer, audience, expiry).
 func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware {
 	if cfg == nil || len(cfg.Providers) == 0 {
 		return passthrough
@@ -135,7 +140,6 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 	}
 }
 
-// jwtHeader is the decoded JWT header.
 type jwtHeader struct {
 	Alg string `json:"alg"`
 	Kid string `json:"kid"`
@@ -146,19 +150,48 @@ type jwtValidator struct {
 	audiences      []string
 	forward        bool
 	claimToHeaders []model.JWTClaimHeader
-	keys           []rsaKey
+	keys           []verifierKey
 	jwksURL        string
 	transport      http.RoundTripper
 	mu             sync.RWMutex
 	stop           chan struct{}
 }
 
-type rsaKey struct {
+// verifierKey is a parsed public key that can verify JWT signatures.
+type verifierKey struct {
 	kid string
-	key *rsa.PublicKey
+	alg string
+	key crypto.PublicKey
 }
 
-// validateSignatureAndClaims verifies the RSA signature and checks claims.
+// verify checks the signature over signedContent using this key.
+func (vk verifierKey) verify(signedContent, signature []byte) bool {
+	switch k := vk.key.(type) {
+	case *rsa.PublicKey:
+		h := sha256.Sum256(signedContent)
+		return rsa.VerifyPKCS1v15(k, crypto.SHA256, h[:], signature) == nil
+
+	case *ecdsa.PublicKey:
+		var h []byte
+		switch k.Curve {
+		case elliptic.P384():
+			s := sha512.Sum384(signedContent)
+			h = s[:]
+		case elliptic.P521():
+			s := sha512.Sum512(signedContent)
+			h = s[:]
+		default:
+			s := sha256.Sum256(signedContent)
+			h = s[:]
+		}
+		return ecdsa.VerifyASN1(k, h, signature)
+
+	case ed25519.PublicKey:
+		return ed25519.Verify(k, signedContent, signature)
+	}
+	return false
+}
+
 func (v *jwtValidator) validateSignatureAndClaims(
 	header jwtHeader,
 	claims map[string]interface{},
@@ -171,7 +204,6 @@ func (v *jwtValidator) validateSignatureAndClaims(
 	return v.validateClaims(claims)
 }
 
-// verifySignature checks the RSA signature of the JWT.
 func (v *jwtValidator) verifySignature(header jwtHeader, signedContent string, signature []byte) bool {
 	v.mu.RLock()
 	keys := v.keys
@@ -181,20 +213,18 @@ func (v *jwtValidator) verifySignature(header jwtHeader, signedContent string, s
 		return false
 	}
 
-	hash := sha256Hash([]byte(signedContent))
-
+	content := []byte(signedContent)
 	for _, k := range keys {
 		if header.Kid != "" && k.kid != "" && header.Kid != k.kid {
 			continue
 		}
-		if err := rsa.VerifyPKCS1v15(k.key, crypto.SHA256, hash, signature); err == nil {
+		if k.verify(content, signature) {
 			return true
 		}
 	}
 	return false
 }
 
-// validateClaims checks issuer, audience, and expiry.
 func (v *jwtValidator) validateClaims(claims map[string]interface{}) bool {
 	if v.issuer != "" {
 		iss, ok := claims["iss"].(string)
@@ -226,11 +256,6 @@ func (v *jwtValidator) validateClaims(claims map[string]interface{}) bool {
 	}
 
 	return true
-}
-
-func sha256Hash(data []byte) []byte {
-	h := sha256.Sum256(data)
-	return h[:]
 }
 
 func extractAudience(claims map[string]interface{}) []string {
@@ -299,54 +324,149 @@ func (v *jwtValidator) refreshKeys() {
 	v.mu.Unlock()
 }
 
-// parseJWKS parses a JSON Web Key Set document and extracts RSA public keys.
+// parseJWKS parses a JSON Web Key Set and extracts public keys.
+// Supports RSA, EC (P-256, P-384, P-521), and OKP (Ed25519) key types.
 // Also supports raw PEM-encoded public keys as fallback.
-func parseJWKS(data []byte) ([]rsaKey, error) {
+func parseJWKS(data []byte) ([]verifierKey, error) {
 	var jwks struct {
-		Keys []struct {
-			Kty string `json:"kty"`
-			Kid string `json:"kid"`
-			N   string `json:"n"`
-			E   string `json:"e"`
-		} `json:"keys"`
+		Keys []jwkEntry `json:"keys"`
 	}
 
 	if err := json.Unmarshal(data, &jwks); err != nil {
-		block, _ := pem.Decode(data)
-		if block != nil {
-			pub, err := x509.ParsePKIXPublicKey(block.Bytes)
-			if err == nil {
-				if rsaPub, ok := pub.(*rsa.PublicKey); ok {
-					return []rsaKey{{key: rsaPub}}, nil
-				}
-			}
-		}
-		return nil, err
+		return parsePEM(data)
 	}
 
-	var keys []rsaKey
+	var keys []verifierKey
 	for _, k := range jwks.Keys {
-		if k.Kty != "RSA" {
-			continue
-		}
-
-		nBytes, err := base64.RawURLEncoding.DecodeString(k.N)
+		vk, err := parseJWK(k)
 		if err != nil {
 			continue
 		}
-		eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
-		if err != nil {
-			continue
-		}
-
-		n := new(big.Int).SetBytes(nBytes)
-		e := int(new(big.Int).SetBytes(eBytes).Int64())
-
-		keys = append(keys, rsaKey{
-			kid: k.Kid,
-			key: &rsa.PublicKey{N: n, E: e},
-		})
+		keys = append(keys, vk)
 	}
 
 	return keys, nil
 }
+
+type jwkEntry struct {
+	Kty string `json:"kty"`
+	Kid string `json:"kid"`
+	Alg string `json:"alg"`
+	// RSA
+	N string `json:"n"`
+	E string `json:"e"`
+	// EC
+	Crv string `json:"crv"`
+	X   string `json:"x"`
+	Y   string `json:"y"`
+	// OKP (Ed25519)
+	// X is reused for the public key bytes
+}
+
+func parseJWK(k jwkEntry) (verifierKey, error) {
+	switch k.Kty {
+	case "RSA":
+		return parseRSAJWK(k)
+	case "EC":
+		return parseECJWK(k)
+	case "OKP":
+		return parseOKPJWK(k)
+	}
+	return verifierKey{}, fmt.Errorf("unsupported key type: %s", k.Kty)
+}
+
+func parseRSAJWK(k jwkEntry) (verifierKey, error) {
+	nBytes, err := base64.RawURLEncoding.DecodeString(k.N)
+	if err != nil {
+		return verifierKey{}, err
+	}
+	eBytes, err := base64.RawURLEncoding.DecodeString(k.E)
+	if err != nil {
+		return verifierKey{}, err
+	}
+
+	return verifierKey{
+		kid: k.Kid,
+		alg: k.Alg,
+		key: &rsa.PublicKey{
+			N: new(big.Int).SetBytes(nBytes),
+			E: int(new(big.Int).SetBytes(eBytes).Int64()),
+		},
+	}, nil
+}
+
+func parseECJWK(k jwkEntry) (verifierKey, error) {
+	xBytes, err := base64.RawURLEncoding.DecodeString(k.X)
+	if err != nil {
+		return verifierKey{}, err
+	}
+	yBytes, err := base64.RawURLEncoding.DecodeString(k.Y)
+	if err != nil {
+		return verifierKey{}, err
+	}
+
+	var curve elliptic.Curve
+	switch k.Crv {
+	case "P-256":
+		curve = elliptic.P256()
+	case "P-384":
+		curve = elliptic.P384()
+	case "P-521":
+		curve = elliptic.P521()
+	default:
+		return verifierKey{}, fmt.Errorf("unsupported EC curve: %s", k.Crv)
+	}
+
+	return verifierKey{
+		kid: k.Kid,
+		alg: k.Alg,
+		key: &ecdsa.PublicKey{
+			Curve: curve,
+			X:     new(big.Int).SetBytes(xBytes),
+			Y:     new(big.Int).SetBytes(yBytes),
+		},
+	}, nil
+}
+
+func parseOKPJWK(k jwkEntry) (verifierKey, error) {
+	if k.Crv != "Ed25519" {
+		return verifierKey{}, fmt.Errorf("unsupported OKP curve: %s", k.Crv)
+	}
+	xBytes, err := base64.RawURLEncoding.DecodeString(k.X)
+	if err != nil {
+		return verifierKey{}, err
+	}
+	if len(xBytes) != ed25519.PublicKeySize {
+		return verifierKey{}, fmt.Errorf("invalid Ed25519 key size: %d", len(xBytes))
+	}
+
+	return verifierKey{
+		kid: k.Kid,
+		alg: k.Alg,
+		key: ed25519.PublicKey(xBytes),
+	}, nil
+}
+
+func parsePEM(data []byte) ([]verifierKey, error) {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM block found")
+	}
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	switch k := pub.(type) {
+	case *rsa.PublicKey:
+		return []verifierKey{{key: k}}, nil
+	case *ecdsa.PublicKey:
+		return []verifierKey{{key: k}}, nil
+	case ed25519.PublicKey:
+		return []verifierKey{{key: k}}, nil
+	}
+	return nil, fmt.Errorf("unsupported PEM key type")
+}
+
+// suppress unused import warning for hash
+var _ hash.Hash

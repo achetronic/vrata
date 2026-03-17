@@ -562,3 +562,106 @@ func TestExtProcContinueAndReplace(t *testing.T) {
 		t.Errorf("expected 'injected-body', got %q", capturedBody)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUFFERED_PARTIAL body mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestExtProcBufferedPartialRequestBody(t *testing.T) {
+	var receivedBodyLen int
+	proc := httptest.NewServer(&fakeProcessor{t: t, handler: func(req httpRequest) httpResponse {
+		if req.Phase == "requestBody" {
+			receivedBodyLen = len(req.Body)
+		}
+		return httpResponse{Action: req.Phase, Status: "continue"}
+	}})
+	defer proc.Close()
+
+	cfg := newExtProcCfg(proc.URL)
+	cfg.Phases = &model.ExtProcPhases{
+		RequestBody:  model.BodyModeBufferedPartial,
+		MaxBodyBytes: 10,
+	}
+	mw := ExtProcMiddleware(cfg, newServices(proc.URL))
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	largeBody := bytes.Repeat([]byte("x"), 100)
+	req := httptest.NewRequest("POST", "/test", bytes.NewReader(largeBody))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if receivedBodyLen != 10 {
+		t.Errorf("expected processor to receive 10 bytes (partial), got %d", receivedBodyLen)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STREAMED body mode
+// ─────────────────────────────────────────────────────────────────────────────
+
+func TestExtProcStreamedRequestBody(t *testing.T) {
+	var chunkCount int
+	var totalBytes int
+	proc := httptest.NewServer(&fakeProcessor{t: t, handler: func(req httpRequest) httpResponse {
+		if req.Phase == "requestBody" {
+			chunkCount++
+			totalBytes += len(req.Body)
+		}
+		return httpResponse{Action: req.Phase, Status: "continue"}
+	}})
+	defer proc.Close()
+
+	cfg := newExtProcCfg(proc.URL)
+	cfg.Phases = &model.ExtProcPhases{
+		RequestBody: model.BodyModeStreamed,
+	}
+	mw := ExtProcMiddleware(cfg, newServices(proc.URL))
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	largeBody := bytes.Repeat([]byte("a"), 100000)
+	req := httptest.NewRequest("POST", "/test", bytes.NewReader(largeBody))
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if chunkCount < 2 {
+		t.Errorf("expected multiple chunks for streamed mode, got %d", chunkCount)
+	}
+	if totalBytes != 100000 {
+		t.Errorf("expected total 100000 bytes, got %d", totalBytes)
+	}
+}
+
+func TestExtProcStreamedResponseBody(t *testing.T) {
+	var chunkCount int
+	proc := httptest.NewServer(&fakeProcessor{t: t, handler: func(req httpRequest) httpResponse {
+		if req.Phase == "responseBody" {
+			chunkCount++
+		}
+		return httpResponse{Action: req.Phase, Status: "continue"}
+	}})
+	defer proc.Close()
+
+	cfg := newExtProcCfg(proc.URL)
+	cfg.Phases = &model.ExtProcPhases{
+		ResponseBody: model.BodyModeStreamed,
+	}
+	mw := ExtProcMiddleware(cfg, newServices(proc.URL))
+
+	largeBody := bytes.Repeat([]byte("b"), 100000)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write(largeBody)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if chunkCount < 2 {
+		t.Errorf("expected multiple response body chunks, got %d", chunkCount)
+	}
+}

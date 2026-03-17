@@ -1,12 +1,17 @@
 package middlewares
 
 import (
+	"context"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/achetronic/rutoso/internal/model"
+	extauthzv1 "github.com/achetronic/rutoso/proto/extauthz/v1"
+	"google.golang.org/grpc"
 )
 
 func TestExtAuthzAllow(t *testing.T) {
@@ -210,4 +215,117 @@ type ioStringReader string
 func (s ioStringReader) Read(p []byte) (int, error) {
 	n := copy(p, s)
 	return n, io.EOF
+}
+
+// ─── gRPC mode ──────────────────────────────────────────────────────────────
+
+type fakeAuthzServer struct {
+	extauthzv1.UnimplementedAuthorizerServer
+	handler func(req *extauthzv1.CheckRequest) *extauthzv1.CheckResponse
+}
+
+func (f *fakeAuthzServer) Check(_ context.Context, req *extauthzv1.CheckRequest) (*extauthzv1.CheckResponse, error) {
+	return f.handler(req), nil
+}
+
+func startFakeAuthzGRPC(t *testing.T, handler func(*extauthzv1.CheckRequest) *extauthzv1.CheckResponse) string {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := grpc.NewServer()
+	extauthzv1.RegisterAuthorizerServer(srv, &fakeAuthzServer{handler: handler})
+	go srv.Serve(lis)
+	t.Cleanup(srv.GracefulStop)
+	return lis.Addr().String()
+}
+
+func TestExtAuthzGRPCAllow(t *testing.T) {
+	addr := startFakeAuthzGRPC(t, func(req *extauthzv1.CheckRequest) *extauthzv1.CheckResponse {
+		return &extauthzv1.CheckResponse{
+			Allowed: true,
+			Headers: []*extauthzv1.HeaderPair{{Key: "x-grpc-user", Value: "user-1"}},
+		}
+	})
+
+	cfg := &model.ExtAuthzConfig{
+		DestinationID: "authz-1",
+		Mode:          "grpc",
+	}
+	services := map[string]Service{"authz-1": {BaseURL: fmt.Sprintf("http://%s", addr)}}
+	mw := ExtAuthzMiddleware(cfg, services)
+
+	var capturedUser string
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedUser = r.Header.Get("X-Grpc-User")
+		w.WriteHeader(200)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if capturedUser != "user-1" {
+		t.Errorf("expected x-grpc-user=user-1, got %q", capturedUser)
+	}
+}
+
+func TestExtAuthzGRPCDeny(t *testing.T) {
+	addr := startFakeAuthzGRPC(t, func(req *extauthzv1.CheckRequest) *extauthzv1.CheckResponse {
+		return &extauthzv1.CheckResponse{
+			Allowed:      false,
+			DeniedStatus: 403,
+			DeniedBody:   []byte("grpc-denied"),
+		}
+	})
+
+	cfg := &model.ExtAuthzConfig{
+		DestinationID: "authz-1",
+		Mode:          "grpc",
+	}
+	services := map[string]Service{"authz-1": {BaseURL: fmt.Sprintf("http://%s", addr)}}
+	mw := ExtAuthzMiddleware(cfg, services)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("upstream should not be called")
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 403 {
+		t.Errorf("expected 403, got %d", w.Code)
+	}
+	if w.Body.String() != "grpc-denied" {
+		t.Errorf("expected body 'grpc-denied', got %q", w.Body.String())
+	}
+}
+
+func TestExtAuthzGRPCFailureModeAllow(t *testing.T) {
+	cfg := &model.ExtAuthzConfig{
+		DestinationID:    "authz-1",
+		Mode:             "grpc",
+		Timeout:          "50ms",
+		FailureModeAllow: true,
+	}
+	services := map[string]Service{"authz-1": {BaseURL: "http://127.0.0.1:1"}}
+	mw := ExtAuthzMiddleware(cfg, services)
+
+	var reached bool
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(200)
+	}))
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if !reached {
+		t.Error("expected passthrough on gRPC failure with allow mode")
+	}
 }

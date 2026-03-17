@@ -78,4 +78,5 @@ proto:
 		--proto_path=$(SERVER_DIR)/proto \
 		--go_out=$(SERVER_DIR)/proto --go_opt=paths=source_relative \
 		--go-grpc_out=$(SERVER_DIR)/proto --go-grpc_opt=paths=source_relative \
-		$(SERVER_DIR)/proto/extproc/v1/extproc.proto
+		$(SERVER_DIR)/proto/extproc/v1/extproc.proto \
+		$(SERVER_DIR)/proto/extauthz/v1/extauthz.proto

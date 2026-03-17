@@ -2,6 +2,9 @@ package middlewares
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -319,5 +322,172 @@ func TestJWTRemoteJWKS(t *testing.T) {
 
 	if !reached {
 		t.Errorf("expected handler reached with remote JWKS, got %d", w.Code)
+	}
+}
+
+// ─── EC (P-256) ─────────────────────────────────────────────────────────────
+
+func makeECJWKS(t *testing.T, pub *ecdsa.PublicKey, kid, crv string) string {
+	t.Helper()
+	x := base64.RawURLEncoding.EncodeToString(pub.X.Bytes())
+	y := base64.RawURLEncoding.EncodeToString(pub.Y.Bytes())
+	return fmt.Sprintf(`{"keys":[{"kty":"EC","kid":"%s","crv":"%s","x":"%s","y":"%s"}]}`, kid, crv, x, y)
+}
+
+func signECJWT(t *testing.T, key *ecdsa.PrivateKey, header, claims map[string]interface{}) string {
+	t.Helper()
+	hJSON, _ := json.Marshal(header)
+	cJSON, _ := json.Marshal(claims)
+	hEnc := base64.RawURLEncoding.EncodeToString(hJSON)
+	cEnc := base64.RawURLEncoding.EncodeToString(cJSON)
+	signed := hEnc + "." + cEnc
+	hash := sha256.Sum256([]byte(signed))
+	sig, err := ecdsa.SignASN1(rand.Reader, key, hash[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signed + "." + base64.RawURLEncoding.EncodeToString(sig)
+}
+
+func TestJWTECSignature(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jwks := makeECJWKS(t, &key.PublicKey, "ec-kid", "P-256")
+
+	cfg := &model.JWTConfig{
+		Providers: map[string]model.JWTProvider{
+			"default": {Issuer: "iss", JWKsInline: jwks},
+		},
+	}
+
+	mw := JWTMiddleware(cfg, nil)
+	var reached bool
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(200)
+	}))
+
+	token := signECJWT(t, key, map[string]interface{}{"alg": "ES256", "kid": "ec-kid"},
+		map[string]interface{}{"iss": "iss", "exp": float64(time.Now().Add(time.Hour).Unix())})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if !reached {
+		t.Errorf("expected handler reached with EC key, got %d", w.Code)
+	}
+}
+
+func TestJWTECInvalidSignature(t *testing.T) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	wrongKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	jwks := makeECJWKS(t, &key.PublicKey, "ec-kid", "P-256")
+
+	cfg := &model.JWTConfig{
+		Providers: map[string]model.JWTProvider{
+			"default": {Issuer: "iss", JWKsInline: jwks},
+		},
+	}
+
+	mw := JWTMiddleware(cfg, nil)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+
+	token := signECJWT(t, wrongKey, map[string]interface{}{"alg": "ES256", "kid": "ec-kid"},
+		map[string]interface{}{"iss": "iss", "exp": float64(time.Now().Add(time.Hour).Unix())})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 401 {
+		t.Errorf("expected 401 for wrong EC key, got %d", w.Code)
+	}
+}
+
+// ─── Ed25519 ────────────────────────────────────────────────────────────────
+
+func makeEd25519JWKS(t *testing.T, pub ed25519.PublicKey, kid string) string {
+	t.Helper()
+	x := base64.RawURLEncoding.EncodeToString(pub)
+	return fmt.Sprintf(`{"keys":[{"kty":"OKP","kid":"%s","crv":"Ed25519","x":"%s"}]}`, kid, x)
+}
+
+func signEd25519JWT(t *testing.T, key ed25519.PrivateKey, header, claims map[string]interface{}) string {
+	t.Helper()
+	hJSON, _ := json.Marshal(header)
+	cJSON, _ := json.Marshal(claims)
+	hEnc := base64.RawURLEncoding.EncodeToString(hJSON)
+	cEnc := base64.RawURLEncoding.EncodeToString(cJSON)
+	signed := hEnc + "." + cEnc
+	sig := ed25519.Sign(key, []byte(signed))
+	return signed + "." + base64.RawURLEncoding.EncodeToString(sig)
+}
+
+func TestJWTEd25519Signature(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jwks := makeEd25519JWKS(t, pub, "ed-kid")
+
+	cfg := &model.JWTConfig{
+		Providers: map[string]model.JWTProvider{
+			"default": {Issuer: "iss", JWKsInline: jwks},
+		},
+	}
+
+	mw := JWTMiddleware(cfg, nil)
+	var reached bool
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		w.WriteHeader(200)
+	}))
+
+	token := signEd25519JWT(t, priv, map[string]interface{}{"alg": "EdDSA", "kid": "ed-kid"},
+		map[string]interface{}{"iss": "iss", "exp": float64(time.Now().Add(time.Hour).Unix())})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if !reached {
+		t.Errorf("expected handler reached with Ed25519 key, got %d", w.Code)
+	}
+}
+
+func TestJWTEd25519InvalidSignature(t *testing.T) {
+	pub, _, _ := ed25519.GenerateKey(rand.Reader)
+	_, wrongPriv, _ := ed25519.GenerateKey(rand.Reader)
+	jwks := makeEd25519JWKS(t, pub, "ed-kid")
+
+	cfg := &model.JWTConfig{
+		Providers: map[string]model.JWTProvider{
+			"default": {Issuer: "iss", JWKsInline: jwks},
+		},
+	}
+
+	mw := JWTMiddleware(cfg, nil)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+
+	token := signEd25519JWT(t, wrongPriv, map[string]interface{}{"alg": "EdDSA", "kid": "ed-kid"},
+		map[string]interface{}{"iss": "iss", "exp": float64(time.Now().Add(time.Hour).Unix())})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 401 {
+		t.Errorf("expected 401 for wrong Ed25519 key, got %d", w.Code)
 	}
 }

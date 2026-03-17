@@ -227,22 +227,30 @@ func (ep *extProc) processRequestBody(r *http.Request) (*extprocv1.ProcessingRes
 	if r.Body == nil {
 		return nil, nil
 	}
-	body, err := io.ReadAll(r.Body)
+
+	body, err := ep.readBody(r.Body, ep.phases.requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("reading request body: %w", err)
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
 
+	if ep.phases.requestBody == model.BodyModeStreamed {
+		return ep.sendBodyChunks(body, func(chunk []byte, eos bool) *extprocv1.ProcessingRequest {
+			return &extprocv1.ProcessingRequest{
+				Phase: &extprocv1.ProcessingRequest_RequestBody{
+					RequestBody: &extprocv1.HttpBody{Body: chunk, EndOfStream: eos},
+				},
+				ObserveOnly: ep.cfg.ObserveOnly,
+			}
+		})
+	}
+
 	req := &extprocv1.ProcessingRequest{
 		Phase: &extprocv1.ProcessingRequest_RequestBody{
-			RequestBody: &extprocv1.HttpBody{
-				Body:        body,
-				EndOfStream: true,
-			},
+			RequestBody: &extprocv1.HttpBody{Body: body, EndOfStream: true},
 		},
 		ObserveOnly: ep.cfg.ObserveOnly,
 	}
-
 	return ep.send(req)
 }
 
@@ -269,16 +277,30 @@ func (ep *extProc) processResponseHeaders(irw *interceptResponseWriter) (*extpro
 
 // processResponseBody sends the response body to the processor.
 func (ep *extProc) processResponseBody(body []byte) (*extprocv1.ProcessingResponse, error) {
+	if ep.phases.responseBody == model.BodyModeBufferedPartial {
+		limit := ep.maxBodyBytes()
+		if int64(len(body)) > limit {
+			body = body[:limit]
+		}
+	}
+
+	if ep.phases.responseBody == model.BodyModeStreamed {
+		return ep.sendBodyChunks(body, func(chunk []byte, eos bool) *extprocv1.ProcessingRequest {
+			return &extprocv1.ProcessingRequest{
+				Phase: &extprocv1.ProcessingRequest_ResponseBody{
+					ResponseBody: &extprocv1.HttpBody{Body: chunk, EndOfStream: eos},
+				},
+				ObserveOnly: ep.cfg.ObserveOnly,
+			}
+		})
+	}
+
 	req := &extprocv1.ProcessingRequest{
 		Phase: &extprocv1.ProcessingRequest_ResponseBody{
-			ResponseBody: &extprocv1.HttpBody{
-				Body:        body,
-				EndOfStream: true,
-			},
+			ResponseBody: &extprocv1.HttpBody{Body: body, EndOfStream: true},
 		},
 		ObserveOnly: ep.cfg.ObserveOnly,
 	}
-
 	return ep.send(req)
 }
 
@@ -703,6 +725,50 @@ func (irw *interceptResponseWriter) Flush() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Config helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+// readBody reads the body respecting the body mode limit.
+func (ep *extProc) readBody(body io.Reader, mode model.BodyMode) ([]byte, error) {
+	if mode == model.BodyModeBufferedPartial {
+		limit := ep.maxBodyBytes()
+		return io.ReadAll(io.LimitReader(body, limit))
+	}
+	return io.ReadAll(body)
+}
+
+// maxBodyBytes returns the configured max body size for bufferedPartial.
+func (ep *extProc) maxBodyBytes() int64 {
+	if ep.cfg.Phases != nil && ep.cfg.Phases.MaxBodyBytes > 0 {
+		return ep.cfg.Phases.MaxBodyBytes
+	}
+	return 1048576
+}
+
+const streamChunkSize = 32 * 1024
+
+// sendBodyChunks sends body in chunks for streamed mode. Returns the last response.
+func (ep *extProc) sendBodyChunks(body []byte, buildReq func(chunk []byte, eos bool) *extprocv1.ProcessingRequest) (*extprocv1.ProcessingResponse, error) {
+	var lastResp *extprocv1.ProcessingResponse
+
+	for len(body) > 0 {
+		chunk := body
+		if len(chunk) > streamChunkSize {
+			chunk = body[:streamChunkSize]
+		}
+		body = body[len(chunk):]
+		eos := len(body) == 0
+
+		resp, err := ep.send(buildReq(chunk, eos))
+		if err != nil {
+			return nil, err
+		}
+		lastResp = resp
+	}
+
+	if lastResp == nil {
+		return ep.send(buildReq(nil, true))
+	}
+	return lastResp, nil
+}
 
 // resolvePhases applies defaults to the phase configuration.
 func resolvePhases(p *model.ExtProcPhases) resolvedPhases {
