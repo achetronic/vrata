@@ -360,10 +360,6 @@ const docTemplate = `{
                     },
                     "timeouts": {
                         "$ref": "#/components/schemas/model.RouteTimeouts"
-                    },
-                    "websocket": {
-                        "description": "Websocket enables HTTP/1.1 WebSocket upgrade for this route.\nWhen true, Envoy allows clients to upgrade the connection to a\nWebSocket and proxies frames bidirectionally to the upstream.\nMaps to RouteAction.upgrade_configs with type \"websocket\".",
-                        "type": "boolean"
                     }
                 },
                 "type": "object"

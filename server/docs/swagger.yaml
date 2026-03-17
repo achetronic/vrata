@@ -337,13 +337,6 @@ components:
           $ref: '#/components/schemas/model.RouteRewrite'
         timeouts:
           $ref: '#/components/schemas/model.RouteTimeouts'
-        websocket:
-          description: |-
-            Websocket enables HTTP/1.1 WebSocket upgrade for this route.
-            When true, Envoy allows clients to upgrade the connection to a
-            WebSocket and proxies frames bidirectionally to the upstream.
-            Maps to RouteAction.upgrade_configs with type "websocket".
-          type: boolean
       type: object
     model.HashPolicy:
       properties:

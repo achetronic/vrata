@@ -92,11 +92,6 @@ type ForwardAction struct {
 	// Maps to RouteAction.hash_policy in Envoy.
 	HashPolicy []HashPolicy `json:"hashPolicy,omitempty" yaml:"hashPolicy,omitempty"`
 
-	// Websocket enables HTTP/1.1 WebSocket upgrade for this route.
-	// When true, Envoy allows clients to upgrade the connection to a
-	// WebSocket and proxies frames bidirectionally to the upstream.
-	// Maps to RouteAction.upgrade_configs with type "websocket".
-	Websocket bool `json:"websocket,omitempty" yaml:"websocket,omitempty"`
 
 	// MaxGRPCTimeout caps the timeout that a gRPC client can request via
 	// the grpc-timeout header. If the client asks for more, Envoy clamps
