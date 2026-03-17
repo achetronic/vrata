@@ -32,7 +32,7 @@ func (d *Dependencies) ListListeners(w http.ResponseWriter, r *http.Request) {
 // CreateListener creates a new listener and persists it in the database.
 //
 // @Summary     Create a listener
-// @Description Creates a new Envoy listener entity.
+// @Description Creates a new listener.
 // @Tags        listeners
 // @Accept      json
 // @Produce     json

@@ -70,7 +70,7 @@ const docTemplate = `{
                 "type": "object"
             },
             "model.CORSConfig": {
-                "description": "CORS holds the CORS filter configuration. Set when Type == \"cors\".",
+                "description": "CORS holds the CORS configuration. Set when Type == \"cors\".",
                 "properties": {
                     "allowCredentials": {
                         "description": "AllowCredentials indicates whether the request can include user credentials.",
@@ -230,7 +230,7 @@ const docTemplate = `{
                 ]
             },
             "model.ExtAuthzConfig": {
-                "description": "ExtAuthz holds the external authorisation filter configuration.\nSet when Type == \"extAuthz\".",
+                "description": "ExtAuthz holds the external authorisation configuration.\nSet when Type == \"extAuthz\".",
                 "properties": {
                     "destinationId": {
                         "description": "DestinationID references the Destination that hosts the authz service.",
@@ -319,7 +319,7 @@ const docTemplate = `{
                 "type": "object"
             },
             "model.ExtProcConfig": {
-                "description": "ExtProc holds the external processing filter configuration.\nSet when Type == \"extProc\".",
+                "description": "ExtProc holds the external processing configuration.\nSet when Type == \"extProc\".",
                 "properties": {
                     "destinationId": {
                         "description": "DestinationID references the Destination entity that hosts the\nexternal processing service. Must be a gRPC service.",
@@ -368,7 +368,7 @@ const docTemplate = `{
                 ]
             },
             "model.ForwardAction": {
-                "description": "Forward instructs Envoy to proxy the request to one or more upstream\nDestinations. Contains all forwarding behaviour: backends, timeouts,\nretries, URL rewriting, and traffic mirroring.\nMutually exclusive with Redirect and DirectResponse.",
+                "description": "Forward proxies the request to one or more upstream\nDestinations. Contains all forwarding behaviour: backends, timeouts,\nretries, URL rewriting, and traffic mirroring.\nMutually exclusive with Redirect and DirectResponse.",
                 "properties": {
                     "backends": {
                         "description": "Backends lists the upstream Destinations for this route.\nEach entry references a Destination by ID and carries a traffic weight.\nWeights across all backends must sum to 100 when more than one backend\nis defined. If only one backend is provided its weight is ignored.",
@@ -379,7 +379,7 @@ const docTemplate = `{
                         "uniqueItems": false
                     },
                     "hashPolicy": {
-                        "description": "HashPolicy controls how Envoy computes the consistent-hash key for\nsticky sessions. Only relevant when the Destination uses RING_HASH or\nMAGLEV balancing (configured in Destination.Options.Balancing).\n\nThis field lives on the route — not on the Destination — because Envoy\nevaluates hash_policy at routing time using request attributes (headers,\ncookies, client IP) that are only available in the RouteAction context.\nThe Destination defines *which algorithm* and ring parameters to use;\nthe route defines *what request data* feeds the hash function.\nBoth sides must be configured for sticky sessions to work.\n\nEntries are evaluated in order; the first one that produces a value wins.\nMaps to RouteAction.hash_policy in Envoy.",
+                        "description": "HashPolicy controls how Rutoso computes the consistent-hash key for\nsticky sessions. Only relevant when the Destination uses RING_HASH or\nMAGLEV balancing (configured in Destination.Options.Balancing).\n\nThis field lives on the route — not on the Destination — because Rutoso\nevaluates hash_policy at routing time using request attributes (headers,\ncookies, client IP) that are only available in the RouteAction context.\nThe Destination defines *which algorithm* and ring parameters to use;\nthe route defines *what request data* feeds the hash function.\nBoth sides must be configured for sticky sessions to work.\n\nEntries are evaluated in order; the first one that produces a value wins.\nEvaluated at routing time before selecting an endpoint.",
                         "items": {
                             "$ref": "#/components/schemas/model.HashPolicy"
                         },
@@ -387,7 +387,7 @@ const docTemplate = `{
                         "uniqueItems": false
                     },
                     "maxGrpcTimeout": {
-                        "description": "MaxGRPCTimeout caps the timeout that a gRPC client can request via\nthe grpc-timeout header. If the client asks for more, Envoy clamps\nit to this value. Accepts Go duration strings (e.g. \"30s\").\nMaps to RouteAction.max_grpc_timeout.",
+                        "description": "MaxGRPCTimeout caps the timeout that a gRPC client can request via\nthe grpc-timeout header. If the client asks for more, Rutoso clamps\nit to this value. Accepts Go duration strings (e.g. \"30s\").\nMaps to RouteAction.max_grpc_timeout.",
                         "type": "string"
                     },
                     "mirror": {
@@ -538,7 +538,7 @@ const docTemplate = `{
                 "type": "object"
             },
             "model.JWTConfig": {
-                "description": "JWT holds the JWT authn filter configuration. Set when Type == \"jwt\".",
+                "description": "JWT holds the JWT authentication configuration. Set when Type == \"jwt\".",
                 "properties": {
                     "providers": {
                         "additionalProperties": {
@@ -667,10 +667,6 @@ const docTemplate = `{
                         "description": "Port is the TCP port the listener binds to.",
                         "type": "integer"
                     },
-                    "proxyProtocol": {
-                        "description": "ProxyProtocol enables PROXY protocol v1/v2 parsing. Required when\nthe listener is behind a load balancer that sends PROXY protocol\nto communicate the real client IP.",
-                        "type": "boolean"
-                    },
                     "serverName": {
                         "description": "ServerName sets the \"Server\" response header.\nWhen empty, no Server header is added.",
                         "type": "string"
@@ -772,14 +768,14 @@ const docTemplate = `{
                         "$ref": "#/components/schemas/model.HeadersConfig"
                     },
                     "id": {
-                        "description": "ID is the unique identifier of the filter.",
+                        "description": "ID is the unique identifier of the middleware.",
                         "type": "string"
                     },
                     "jwt": {
                         "$ref": "#/components/schemas/model.JWTConfig"
                     },
                     "name": {
-                        "description": "Name is a human-readable label for the filter.",
+                        "description": "Name is a human-readable label for the middleware.",
                         "type": "string"
                     },
                     "rateLimit": {
@@ -808,7 +804,7 @@ const docTemplate = `{
                 "type": "object"
             },
             "model.MiddlewareType": {
-                "description": "Type identifies which Envoy HTTP filter this entity configures.\nExactly one of the Config* fields below must match this type.",
+                "description": "Type identifies which middleware type this entity provides.\nExactly one of the Config* fields below must match this type.",
                 "enum": [
                     "cors",
                     "jwt",
@@ -871,7 +867,7 @@ const docTemplate = `{
                 "type": "object"
             },
             "model.RateLimitConfig": {
-                "description": "RateLimit holds the rate limit filter configuration.\nSet when Type == \"rateLimit\".",
+                "description": "RateLimit holds the rate limit configuration.\nSet when Type == \"rateLimit\".",
                 "properties": {
                     "burst": {
                         "description": "Burst is the maximum number of requests allowed in a burst above the\nsustained rate. Default: same as RequestsPerSecond.",
@@ -957,7 +953,7 @@ const docTemplate = `{
                         "$ref": "#/components/schemas/model.MatchRule"
                     },
                     "middlewareIds": {
-                        "description": "MiddlewareIDs lists the IDs of Middleware entities active on this route.\nThe builder registers these in the Envoy HCM pipeline and enables them\nonly for this route (other routes where the middleware is not listed\nget it disabled via per_filter_config).",
+                        "description": "MiddlewareIDs lists the IDs of Middleware entities active on this route.\nThe builder activates them\nonly for this route (other routes where the middleware is not listed\nare not active)..",
                         "items": {
                             "type": "string"
                         },
@@ -982,7 +978,7 @@ const docTemplate = `{
                 "type": "object"
             },
             "model.RouteDirectResponse": {
-                "description": "DirectResponse instructs Envoy to return a fixed HTTP response without\ncontacting any upstream. Useful for health-check endpoints, maintenance\npages, or returning a static 404.\nMutually exclusive with Forward and Redirect.",
+                "description": "DirectResponse returns a fixed HTTP response without\ncontacting any upstream. Useful for health-check endpoints, maintenance\npages, or returning a static 404.\nMutually exclusive with Forward and Redirect.",
                 "properties": {
                     "body": {
                         "description": "Body is the response body returned to the client. Optional.",
@@ -1018,11 +1014,11 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "includeAttemptCount": {
-                        "description": "IncludeAttemptCount makes Envoy add the x-envoy-attempt-count header\nto upstream requests, indicating how many times the request has been\nattempted (including the original). Maps to\nVirtualHost.include_request_attempt_count.",
+                        "description": "IncludeAttemptCount makes Rutoso add the X-Request-Attempt-Count header\nto upstream requests, indicating how many times the request has been\nattempted (including the original). Maps to\nVirtualHost.include_request_attempt_count.",
                         "type": "boolean"
                     },
                     "middlewareIds": {
-                        "description": "MiddlewareIDs lists the IDs of Middleware entities active on all routes\nin this group. The builder registers these in the Envoy HCM pipeline\nand enables them for every route in the group.",
+                        "description": "MiddlewareIDs lists the IDs of Middleware entities active on all routes\nin this group. The builder activates them\nand enables them for every route in the group.",
                         "items": {
                             "type": "string"
                         },
@@ -1077,7 +1073,7 @@ const docTemplate = `{
                 "type": "object"
             },
             "model.RouteRedirect": {
-                "description": "Redirect instructs Envoy to return an HTTP redirect to the client\ninstead of forwarding to an upstream.\nMutually exclusive with Forward and DirectResponse.",
+                "description": "Redirect returns an HTTP redirect to the client\ninstead of forwarding to an upstream.\nMutually exclusive with Forward and DirectResponse.",
                 "properties": {
                     "code": {
                         "description": "Code is the HTTP status code returned to the client.\nAccepted values: 301, 302, 303, 307, 308. Default: 301.",
@@ -1172,7 +1168,7 @@ const docTemplate = `{
                         "type": "string"
                     },
                     "request": {
-                        "description": "Request is the total time the entire request may take from the moment\nEnvoy receives the first byte from the client until the response is\nfully sent. Accepts Go duration strings (e.g. \"30s\", \"1m\").",
+                        "description": "Request is the total time the entire request may take from the moment\nRutoso receives the first byte from the client until the response is\nfully sent. Accepts Go duration strings (e.g. \"30s\", \"1m\").",
                         "type": "string"
                     }
                 },
@@ -1862,7 +1858,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a new Envoy listener entity.",
+                "description": "Creates a new listener.",
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -2141,14 +2137,14 @@ const docTemplate = `{
                                     },
                                     {
                                         "$ref": "#/components/schemas/model.Middleware",
-                                        "summary": "mw",
-                                        "description": "Filter definition"
+                                        "summary": "middleware",
+                                        "description": "Middleware definition"
                                     }
                                 ]
                             }
                         }
                     },
-                    "description": "Filter definition",
+                    "description": "Middleware definition",
                     "required": true
                 },
                 "responses": {
@@ -2306,14 +2302,14 @@ const docTemplate = `{
                                     },
                                     {
                                         "$ref": "#/components/schemas/model.Middleware",
-                                        "summary": "mw",
-                                        "description": "Updated mw definition"
+                                        "summary": "middleware",
+                                        "description": "Updated middleware definition"
                                     }
                                 ]
                             }
                         }
                     },
-                    "description": "Updated mw definition",
+                    "description": "Updated middleware definition",
                     "required": true
                 },
                 "responses": {

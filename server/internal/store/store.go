@@ -44,7 +44,7 @@ const (
 )
 
 // StoreEvent is emitted by the store whenever the state changes.
-// The gateway layer subscribes to these events to trigger xDS snapshot rebuilds.
+// The gateway layer subscribes to these events to trigger proxy config rebuilds.
 type StoreEvent struct {
 	// Type indicates whether the resource was created, updated, or deleted.
 	Type EventType

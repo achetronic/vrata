@@ -54,7 +54,7 @@ components:
           $ref: '#/components/schemas/model.RingSizeOptions'
       type: object
     model.CORSConfig:
-      description: CORS holds the CORS filter configuration. Set when Type == "cors".
+      description: CORS holds the CORS configuration. Set when Type == "cors".
       properties:
         allowCredentials:
           description: AllowCredentials indicates whether the request can include
@@ -186,7 +186,7 @@ components:
       - DiscoveryTypeKubernetes
     model.ExtAuthzConfig:
       description: |-
-        ExtAuthz holds the external authorisation filter configuration.
+        ExtAuthz holds the external authorisation configuration.
         Set when Type == "extAuthz".
       properties:
         destinationId:
@@ -266,7 +266,7 @@ components:
       type: object
     model.ExtProcConfig:
       description: |-
-        ExtProc holds the external processing filter configuration.
+        ExtProc holds the external processing configuration.
         Set when Type == "extProc".
       properties:
         destinationId:
@@ -307,7 +307,7 @@ components:
       - ExtProcPhaseBuffered
     model.ForwardAction:
       description: |-
-        Forward instructs Envoy to proxy the request to one or more upstream
+        Forward proxies the request to one or more upstream
         Destinations. Contains all forwarding behaviour: backends, timeouts,
         retries, URL rewriting, and traffic mirroring.
         Mutually exclusive with Redirect and DirectResponse.
@@ -324,11 +324,11 @@ components:
           uniqueItems: false
         hashPolicy:
           description: |-
-            HashPolicy controls how Envoy computes the consistent-hash key for
+            HashPolicy controls how Rutoso computes the consistent-hash key for
             sticky sessions. Only relevant when the Destination uses RING_HASH or
             MAGLEV balancing (configured in Destination.Options.Balancing).
 
-            This field lives on the route — not on the Destination — because Envoy
+            This field lives on the route — not on the Destination — because Rutoso
             evaluates hash_policy at routing time using request attributes (headers,
             cookies, client IP) that are only available in the RouteAction context.
             The Destination defines *which algorithm* and ring parameters to use;
@@ -336,7 +336,7 @@ components:
             Both sides must be configured for sticky sessions to work.
 
             Entries are evaluated in order; the first one that produces a value wins.
-            Maps to RouteAction.hash_policy in Envoy.
+            Evaluated at routing time before selecting an endpoint.
           items:
             $ref: '#/components/schemas/model.HashPolicy'
           type: array
@@ -344,7 +344,7 @@ components:
         maxGrpcTimeout:
           description: |-
             MaxGRPCTimeout caps the timeout that a gRPC client can request via
-            the grpc-timeout header. If the client asks for more, Envoy clamps
+            the grpc-timeout header. If the client asks for more, Rutoso clamps
             it to this value. Accepts Go duration strings (e.g. "30s").
             Maps to RouteAction.max_grpc_timeout.
           type: string
@@ -470,7 +470,7 @@ components:
           type: string
       type: object
     model.JWTConfig:
-      description: JWT holds the JWT authn filter configuration. Set when Type ==
+      description: JWT holds the JWT authentication configuration. Set when Type ==
         "jwt".
       properties:
         providers:
@@ -599,12 +599,6 @@ components:
         port:
           description: Port is the TCP port the listener binds to.
           type: integer
-        proxyProtocol:
-          description: |-
-            ProxyProtocol enables PROXY protocol v1/v2 parsing. Required when
-            the listener is behind a load balancer that sends PROXY protocol
-            to communicate the real client IP.
-          type: boolean
         serverName:
           description: |-
             ServerName sets the "Server" response header.
@@ -697,12 +691,12 @@ components:
         headers:
           $ref: '#/components/schemas/model.HeadersConfig'
         id:
-          description: ID is the unique identifier of the filter.
+          description: ID is the unique identifier of the middleware.
           type: string
         jwt:
           $ref: '#/components/schemas/model.JWTConfig'
         name:
-          description: Name is a human-readable label for the filter.
+          description: Name is a human-readable label for the middleware.
           type: string
         rateLimit:
           $ref: '#/components/schemas/model.RateLimitConfig'
@@ -726,7 +720,7 @@ components:
       type: object
     model.MiddlewareType:
       description: |-
-        Type identifies which Envoy HTTP filter this entity configures.
+        Type identifies which middleware type this entity provides.
         Exactly one of the Config* fields below must match this type.
       enum:
       - cors
@@ -783,7 +777,7 @@ components:
       type: object
     model.RateLimitConfig:
       description: |-
-        RateLimit holds the rate limit filter configuration.
+        RateLimit holds the rate limit configuration.
         Set when Type == "rateLimit".
       properties:
         burst:
@@ -860,9 +854,9 @@ components:
         middlewareIds:
           description: |-
             MiddlewareIDs lists the IDs of Middleware entities active on this route.
-            The builder registers these in the Envoy HCM pipeline and enables them
+            The builder activates them
             only for this route (other routes where the middleware is not listed
-            get it disabled via per_filter_config).
+            are not active)..
           items:
             type: string
           type: array
@@ -884,7 +878,7 @@ components:
       type: object
     model.RouteDirectResponse:
       description: |-
-        DirectResponse instructs Envoy to return a fixed HTTP response without
+        DirectResponse returns a fixed HTTP response without
         contacting any upstream. Useful for health-check endpoints, maintenance
         pages, or returning a static 404.
         Mutually exclusive with Forward and Redirect.
@@ -918,7 +912,7 @@ components:
           type: string
         includeAttemptCount:
           description: |-
-            IncludeAttemptCount makes Envoy add the x-envoy-attempt-count header
+            IncludeAttemptCount makes Rutoso add the X-Request-Attempt-Count header
             to upstream requests, indicating how many times the request has been
             attempted (including the original). Maps to
             VirtualHost.include_request_attempt_count.
@@ -926,7 +920,7 @@ components:
         middlewareIds:
           description: |-
             MiddlewareIDs lists the IDs of Middleware entities active on all routes
-            in this group. The builder registers these in the Envoy HCM pipeline
+            in this group. The builder activates them
             and enables them for every route in the group.
           items:
             type: string
@@ -985,7 +979,7 @@ components:
       type: object
     model.RouteRedirect:
       description: |-
-        Redirect instructs Envoy to return an HTTP redirect to the client
+        Redirect returns an HTTP redirect to the client
         instead of forwarding to an upstream.
         Mutually exclusive with Forward and DirectResponse.
       properties:
@@ -1084,7 +1078,7 @@ components:
         request:
           description: |-
             Request is the total time the entire request may take from the moment
-            Envoy receives the first byte from the client until the response is
+            Rutoso receives the first byte from the client until the response is
             fully sent. Accepts Go duration strings (e.g. "30s", "1m").
           type: string
       type: object
@@ -1529,7 +1523,7 @@ paths:
       tags:
       - listeners
     post:
-      description: Creates a new Envoy listener entity.
+      description: Creates a new listener.
       requestBody:
         content:
           application/json:
@@ -1700,9 +1694,9 @@ paths:
               oneOf:
               - type: object
               - $ref: '#/components/schemas/model.Middleware'
-                description: Filter definition
-                summary: mw
-        description: Filter definition
+                description: Middleware definition
+                summary: middleware
+        description: Middleware definition
         required: true
       responses:
         "201":
@@ -1801,9 +1795,9 @@ paths:
               oneOf:
               - type: object
               - $ref: '#/components/schemas/model.Middleware'
-                description: Updated mw definition
-                summary: mw
-        description: Updated mw definition
+                description: Updated middleware definition
+                summary: middleware
+        description: Updated middleware definition
         required: true
       responses:
         "200":

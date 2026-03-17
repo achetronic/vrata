@@ -55,7 +55,7 @@ type RouteGroup struct {
 	Headers []HeaderMatcher `json:"headers,omitempty" yaml:"headers,omitempty"`
 
 	// MiddlewareIDs lists the IDs of Middleware entities active on all routes
-	// in this group. The builder registers these in the Envoy HCM pipeline
+	// in this group. The builder activates them
 	// and enables them for every route in the group.
 	MiddlewareIDs []string `json:"middlewareIds,omitempty" yaml:"middlewareIds,omitempty"`
 
@@ -70,7 +70,7 @@ type RouteGroup struct {
 	// ForwardAction.Retry. Maps to VirtualHost.retry_policy.
 	RetryDefault *RouteRetry `json:"retryDefault,omitempty" yaml:"retryDefault,omitempty"`
 
-	// IncludeAttemptCount makes Envoy add the x-envoy-attempt-count header
+	// IncludeAttemptCount makes Rutoso add the X-Request-Attempt-Count header
 	// to upstream requests, indicating how many times the request has been
 	// attempted (including the original). Maps to
 	// VirtualHost.include_request_attempt_count.

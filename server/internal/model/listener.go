@@ -38,10 +38,6 @@ type Listener struct {
 	// Default: 0 (no limit).
 	MaxRequestHeadersKB uint32 `json:"maxRequestHeadersKB,omitempty" yaml:"maxRequestHeadersKB,omitempty"`
 
-	// ProxyProtocol enables PROXY protocol v1/v2 parsing. Required when
-	// the listener is behind a load balancer that sends PROXY protocol
-	// to communicate the real client IP.
-	ProxyProtocol bool `json:"proxyProtocol,omitempty" yaml:"proxyProtocol,omitempty"`
 }
 
 // ListenerTLS holds TLS termination parameters for a Listener.

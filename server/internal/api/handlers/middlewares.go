@@ -29,14 +29,14 @@ func (d *Dependencies) ListMiddlewares(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, middlewares, d.Logger)
 }
 
-// CreateMiddleware creates a new mw and persists it in the database.
+// CreateMiddleware creates a new middleware and persists it in the database.
 //
 // @Summary     Create a middleware
 // @Description Creates a new middleware.
 // @Tags        middlewares
 // @Accept      json
 // @Produce     json
-// @Param       mw body      model.Middleware true "Filter definition"
+// @Param       middleware body model.Middleware true "Middleware definition"
 // @Success     201    {object}  model.Middleware
 // @Failure     400    {object}  respond.ErrorBody
 // @Failure     500    {object}  respond.ErrorBody
@@ -60,7 +60,7 @@ func (d *Dependencies) CreateMiddleware(w http.ResponseWriter, r *http.Request) 
 	respond.JSON(w, http.StatusCreated, mw, d.Logger)
 }
 
-// GetMiddleware returns the mw identified by middlewareId.
+// GetMiddleware returns the middleware identified by middlewareId.
 //
 // @Summary     Get a middleware
 // @Description Returns the middleware with the given ID.
@@ -82,7 +82,7 @@ func (d *Dependencies) GetMiddleware(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, mw, d.Logger)
 }
 
-// UpdateMiddleware replaces an existing mw.
+// UpdateMiddleware replaces an existing middleware.
 //
 // @Summary     Update a middleware
 // @Description Replaces the middleware with the given ID.
@@ -90,7 +90,7 @@ func (d *Dependencies) GetMiddleware(w http.ResponseWriter, r *http.Request) {
 // @Accept      json
 // @Produce     json
 // @Param       middlewareId path     string       true "Filter ID"
-// @Param       mw   body     model.Middleware true "Updated mw definition"
+// @Param       middleware body model.Middleware true "Updated middleware definition"
 // @Success     200      {object} model.Middleware
 // @Failure     400      {object} respond.ErrorBody
 // @Failure     404      {object} respond.ErrorBody
@@ -119,7 +119,7 @@ func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) 
 	respond.JSON(w, http.StatusOK, mw, d.Logger)
 }
 
-// DeleteMiddleware removes the mw identified by middlewareId.
+// DeleteMiddleware removes the middleware identified by middlewareId.
 //
 // @Summary     Delete a middleware
 // @Description Deletes the middleware with the given ID.

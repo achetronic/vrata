@@ -23,27 +23,27 @@ type Route struct {
 	// Match defines the conditions that a request must satisfy.
 	Match MatchRule `json:"match" yaml:"match"`
 
-	// Forward instructs Envoy to proxy the request to one or more upstream
+	// Forward proxies the request to one or more upstream
 	// Destinations. Contains all forwarding behaviour: backends, timeouts,
 	// retries, URL rewriting, and traffic mirroring.
 	// Mutually exclusive with Redirect and DirectResponse.
 	Forward *ForwardAction `json:"forward,omitempty" yaml:"forward,omitempty"`
 
-	// Redirect instructs Envoy to return an HTTP redirect to the client
+	// Redirect returns an HTTP redirect to the client
 	// instead of forwarding to an upstream.
 	// Mutually exclusive with Forward and DirectResponse.
 	Redirect *RouteRedirect `json:"redirect,omitempty" yaml:"redirect,omitempty"`
 
-	// DirectResponse instructs Envoy to return a fixed HTTP response without
+	// DirectResponse returns a fixed HTTP response without
 	// contacting any upstream. Useful for health-check endpoints, maintenance
 	// pages, or returning a static 404.
 	// Mutually exclusive with Forward and Redirect.
 	DirectResponse *RouteDirectResponse `json:"directResponse,omitempty" yaml:"directResponse,omitempty"`
 
 	// MiddlewareIDs lists the IDs of Middleware entities active on this route.
-	// The builder registers these in the Envoy HCM pipeline and enables them
+	// The builder activates them
 	// only for this route (other routes where the middleware is not listed
-	// get it disabled via per_filter_config).
+	// are not active)..
 	MiddlewareIDs []string `json:"middlewareIds,omitempty" yaml:"middlewareIds,omitempty"`
 
 	// MiddlewareOverrides carries per-route overrides for active middlewares.
@@ -53,9 +53,8 @@ type Route struct {
 	MiddlewareOverrides map[string]MiddlewareOverride `json:"middlewareOverrides,omitempty" yaml:"middlewareOverrides,omitempty"`
 }
 
-// ForwardAction groups all configuration that controls how Envoy forwards a
-// matched request to an upstream Destination. It maps directly to Envoy's
-// RouteAction proto.
+// ForwardAction groups all configuration that controls how Rutoso forwards
+// a matched request to upstream Destinations.
 type ForwardAction struct {
 	// Backends lists the upstream Destinations for this route.
 	// Each entry references a Destination by ID and carries a traffic weight.
@@ -77,11 +76,11 @@ type ForwardAction struct {
 	// its response is discarded and never affects the client.
 	Mirror *RouteMirror `json:"mirror,omitempty" yaml:"mirror,omitempty"`
 
-	// HashPolicy controls how Envoy computes the consistent-hash key for
+	// HashPolicy controls how Rutoso computes the consistent-hash key for
 	// sticky sessions. Only relevant when the Destination uses RING_HASH or
 	// MAGLEV balancing (configured in Destination.Options.Balancing).
 	//
-	// This field lives on the route — not on the Destination — because Envoy
+	// This field lives on the route — not on the Destination — because Rutoso
 	// evaluates hash_policy at routing time using request attributes (headers,
 	// cookies, client IP) that are only available in the RouteAction context.
 	// The Destination defines *which algorithm* and ring parameters to use;
@@ -89,12 +88,12 @@ type ForwardAction struct {
 	// Both sides must be configured for sticky sessions to work.
 	//
 	// Entries are evaluated in order; the first one that produces a value wins.
-	// Maps to RouteAction.hash_policy in Envoy.
+	// Evaluated at routing time before selecting an endpoint.
 	HashPolicy []HashPolicy `json:"hashPolicy,omitempty" yaml:"hashPolicy,omitempty"`
 
 
 	// MaxGRPCTimeout caps the timeout that a gRPC client can request via
-	// the grpc-timeout header. If the client asks for more, Envoy clamps
+	// the grpc-timeout header. If the client asks for more, Rutoso clamps
 	// it to this value. Accepts Go duration strings (e.g. "30s").
 	// Maps to RouteAction.max_grpc_timeout.
 	MaxGRPCTimeout string `json:"maxGrpcTimeout,omitempty" yaml:"maxGrpcTimeout,omitempty"`
@@ -104,7 +103,7 @@ type ForwardAction struct {
 // RouteTimeouts controls how long a request is allowed to take.
 type RouteTimeouts struct {
 	// Request is the total time the entire request may take from the moment
-	// Envoy receives the first byte from the client until the response is
+	// Rutoso receives the first byte from the client until the response is
 	// fully sent. Accepts Go duration strings (e.g. "30s", "1m").
 	Request string `json:"request,omitempty" yaml:"request,omitempty"`
 
@@ -115,7 +114,7 @@ type RouteTimeouts struct {
 }
 
 // RetryCondition is a semantic name for a class of upstream failures that
-// should trigger a retry. Rutoso translates these into the Envoy-specific
+// should trigger a retry. These are translated internally into
 // retry_on values internally.
 type RetryCondition string
 
@@ -203,7 +202,7 @@ type RewriteRegex struct {
 	Substitution string `json:"substitution" yaml:"substitution"`
 }
 
-// RouteRedirect instructs Envoy to return an HTTP redirect to the client.
+// RouteRedirect returns an HTTP redirect to the client.
 // Fields are combined: if both Scheme and Host are set, both are applied.
 type RouteRedirect struct {
 	// URL is the complete target URL. When set, Scheme, Host, Path, and
@@ -227,7 +226,7 @@ type RouteRedirect struct {
 	Code uint32 `json:"code,omitempty" yaml:"code,omitempty"`
 }
 
-// RouteDirectResponse instructs Envoy to return a fixed HTTP response
+// RouteDirectResponse returns a fixed HTTP response
 // without forwarding the request to any upstream.
 type RouteDirectResponse struct {
 	// Status is the HTTP status code to return. Required.

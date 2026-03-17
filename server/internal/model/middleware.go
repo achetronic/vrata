@@ -1,7 +1,7 @@
 // Package model defines the core domain types used throughout Rutoso.
 package model
 
-// MiddlewareType identifies which Envoy HTTP filter a Filter entity configures.
+// MiddlewareType identifies which middleware behaviour a Middleware entity configures.
 type MiddlewareType string
 
 const (
@@ -11,54 +11,54 @@ const (
 	// MiddlewareTypeJWT configures JWT authentication.
 	MiddlewareTypeJWT MiddlewareType = "jwt"
 
-	// MiddlewareTypeExtAuthz configures the Envoy external authorisation filter
+	// MiddlewareTypeExtAuthz configures external authorisation
 	// (external authorization).
 	MiddlewareTypeExtAuthz MiddlewareType = "extAuthz"
 
-	// MiddlewareTypeExtProc configures the Envoy external processing filter
+	// MiddlewareTypeExtProc configures external processing
 	// (external processing).
 	MiddlewareTypeExtProc MiddlewareType = "extProc"
 
-	// MiddlewareTypeRateLimit configures the Envoy rate limit filter
+	// MiddlewareTypeRateLimit configures rate limiting
 	// provides embedded rate limiting.
 	MiddlewareTypeRateLimit MiddlewareType = "rateLimit"
 
-	// MiddlewareTypeHeaders configures the Envoy header mutation filter
+	// MiddlewareTypeHeaders configures header manipulation
 	// Adds or removes request/response
-	// headers as a middleware, consistent with the Filter entity pattern.
+	// headers as a middleware, consistent with the middleware pattern.
 	MiddlewareTypeHeaders MiddlewareType = "headers"
 )
 
-// Filter is an independent first-class entity that holds the configuration for a
-// single Envoy HTTP filter. Filters are registered on Listeners by referencing
-// their ID in Listener.FilterIDs. Per-route behaviour can be tuned through
+// Middleware is an independent first-class entity that holds the configuration for a
+// single middleware behaviour. Middlewares are attached to Routes or Groups via
+// their ID in middlewareIds. Per-route behaviour can be tuned through
 // MiddlewareOverride entries on Route or RouteGroup.
 type Middleware struct {
-	// ID is the unique identifier of the filter.
+	// ID is the unique identifier of the middleware.
 	ID string `json:"id" yaml:"id"`
 
-	// Name is a human-readable label for the filter.
+	// Name is a human-readable label for the middleware.
 	Name string `json:"name" yaml:"name"`
 
-	// Type identifies which Envoy HTTP filter this entity configures.
+	// Type identifies which middleware type this entity provides.
 	// Exactly one of the Config* fields below must match this type.
 	Type MiddlewareType `json:"type" yaml:"type"`
 
-	// CORS holds the CORS filter configuration. Set when Type == "cors".
+	// CORS holds the CORS configuration. Set when Type == "cors".
 	CORS *CORSConfig `json:"cors,omitempty" yaml:"cors,omitempty"`
 
-	// JWT holds the JWT authn filter configuration. Set when Type == "jwt".
+	// JWT holds the JWT authentication configuration. Set when Type == "jwt".
 	JWT *JWTConfig `json:"jwt,omitempty" yaml:"jwt,omitempty"`
 
-	// ExtAuthz holds the external authorisation filter configuration.
+	// ExtAuthz holds the external authorisation configuration.
 	// Set when Type == "extAuthz".
 	ExtAuthz *ExtAuthzConfig `json:"extAuthz,omitempty" yaml:"extAuthz,omitempty"`
 
-	// ExtProc holds the external processing filter configuration.
+	// ExtProc holds the external processing configuration.
 	// Set when Type == "extProc".
 	ExtProc *ExtProcConfig `json:"extProc,omitempty" yaml:"extProc,omitempty"`
 
-	// RateLimit holds the rate limit filter configuration.
+	// RateLimit holds the rate limit configuration.
 	// Set when Type == "rateLimit".
 	RateLimit *RateLimitConfig `json:"rateLimit,omitempty" yaml:"rateLimit,omitempty"`
 
@@ -71,7 +71,7 @@ type Middleware struct {
 // CORS
 // ────────────────────────────────────────────────────────────────────────────
 
-// CORSConfig holds the configuration for the Envoy CORS HTTP filter.
+// CORSConfig holds the configuration for CORS.
 type CORSConfig struct {
 	// AllowOrigins lists the allowed origin patterns.
 	// Each entry is matched as an exact string or a regex if Regex is true.
@@ -108,7 +108,7 @@ type CORSOrigin struct {
 // JWT
 // ────────────────────────────────────────────────────────────────────────────
 
-// JWTConfig holds the configuration for the Envoy jwt_authn HTTP filter.
+// JWTConfig holds the configuration for JWT authentication.
 type JWTConfig struct {
 	// Providers is a map of provider name to JWTProvider configuration.
 	// The map key is referenced from per-route overrides to select a specific
@@ -242,7 +242,7 @@ type ExtAuthzOnDeny struct {
 // ExtProc
 // ────────────────────────────────────────────────────────────────────────────
 
-// ExtProcConfig holds the configuration for the Envoy ext_proc HTTP filter.
+// ExtProcConfig holds the configuration for external processing.
 type ExtProcConfig struct {
 	// DestinationID references the Destination entity that hosts the
 	// external processing service. Must be a gRPC service.
@@ -304,7 +304,7 @@ type RateLimitConfig struct {
 // Header Manipulation
 // ────────────────────────────────────────────────────────────────────────────
 
-// HeadersConfig holds the configuration for the Envoy header mutation filter.
+// HeadersConfig holds the configuration for header manipulation.
 // Adds or removes request/response headers. Modeled as a Filter entity so it
 // follows the same middleware pattern as CORS, JWT, etc.
 type HeadersConfig struct {
