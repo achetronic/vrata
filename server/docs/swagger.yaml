@@ -66,6 +66,18 @@ definitions:
         - $ref: '#/definitions/model.RingSizeOptions'
         description: RingSize tunes the consistent hash ring. Only used with RING_HASH.
     type: object
+  model.BodyMode:
+    enum:
+    - none
+    - buffered
+    - bufferedPartial
+    - streamed
+    type: string
+    x-enum-varnames:
+    - BodyModeNone
+    - BodyModeBuffered
+    - BodyModeBufferedPartial
+    - BodyModeStreamed
   model.CORSConfig:
     properties:
       allowCredentials:
@@ -285,50 +297,108 @@ definitions:
     type: object
   model.ExtProcConfig:
     properties:
+      allowOnError:
+        description: |-
+          AllowOnError lets requests pass through when the processor is
+          unreachable or returns an error. When false (default), requests
+          are rejected with StatusOnError.
+        type: boolean
+      allowedMutations:
+        allOf:
+        - $ref: '#/definitions/model.MutationRules'
+        description: |-
+          AllowedMutations restricts which headers the processor is allowed
+          to set or remove. If nil, all headers can be mutated.
       destinationId:
         description: |-
           DestinationID references the Destination entity that hosts the
-          external processing service. Must be a gRPC service.
+          external processor service.
         type: string
-      processingMode:
-        allOf:
-        - $ref: '#/definitions/model.ExtProcMode'
+      disableReject:
         description: |-
-          ProcessingMode controls which parts of the HTTP transaction are sent to
-          the external processor.
+          DisableReject prevents the processor from rejecting requests.
+          When true, RejectRequest responses from the processor are ignored
+          and the request continues normally.
+        type: boolean
+      forwardRules:
+        allOf:
+        - $ref: '#/definitions/model.ForwardRules'
+        description: |-
+          ForwardRules restricts which request headers are sent to the
+          processor. Use this to prevent forwarding sensitive headers
+          like Authorization or Cookie. If nil, all headers are forwarded.
+      metricsPrefix:
+        description: |-
+          MetricsPrefix is an optional prefix for metrics emitted by this
+          middleware instance. Allows distinguishing between multiple
+          external processors in the same proxy.
+        type: string
+      mode:
+        description: |-
+          Mode selects the transport protocol: "grpc" (bidirectional stream)
+          or "http" (one POST per phase). Default: "grpc".
+        type: string
+      observeOnly:
+        description: |-
+          ObserveOnly enables fire-and-forget mode. Rutoso sends phases to
+          the processor but does not wait for responses. Useful for logging,
+          auditing, or analytics processors.
+        type: boolean
+      phases:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcPhases'
+        description: |-
+          Phases controls which parts of the HTTP transaction are sent to the
+          processor. If nil, only request and response headers are sent.
+      statusOnError:
+        description: |-
+          StatusOnError is the HTTP status code returned to the client when
+          the processor fails and AllowOnError is false. Default: 500.
+        type: integer
       timeout:
-        description: Timeout is the processing request deadline (e.g. "2s").
+        description: |-
+          Timeout is the per-message deadline (e.g. "200ms", "2s").
+          If the processor does not respond within this duration, the phase
+          is treated as a failure (subject to AllowOnError). Default: "200ms".
         type: string
     type: object
-  model.ExtProcMode:
+  model.ExtProcOverride:
     properties:
-      requestBodyMode:
+      allowOnError:
+        description: AllowOnError overrides the fail-open behavior for this route.
+        type: boolean
+      phases:
         allOf:
-        - $ref: '#/definitions/model.ExtProcPhase'
-        description: RequestBodyMode controls processing of the request body.
-      requestHeaderMode:
-        allOf:
-        - $ref: '#/definitions/model.ExtProcPhase'
-        description: RequestHeaderMode controls processing of request headers.
-      responseBodyMode:
-        allOf:
-        - $ref: '#/definitions/model.ExtProcPhase'
-        description: ResponseBodyMode controls processing of the response body.
-      responseHeaderMode:
-        allOf:
-        - $ref: '#/definitions/model.ExtProcPhase'
-        description: ResponseHeaderMode controls processing of response headers.
+        - $ref: '#/definitions/model.ExtProcPhases'
+        description: Phases overrides the processing phases for this route.
     type: object
-  model.ExtProcPhase:
-    enum:
-    - SKIP
-    - SEND
-    - BUFFERED
-    type: string
-    x-enum-varnames:
-    - ExtProcPhaseSkip
-    - ExtProcPhaseSend
-    - ExtProcPhaseBuffered
+  model.ExtProcPhases:
+    properties:
+      requestBody:
+        allOf:
+        - $ref: '#/definitions/model.BodyMode'
+        description: |-
+          RequestBody controls how the request body is sent.
+          "none" (default), "buffered", "bufferedPartial", or "streamed".
+      requestHeaders:
+        allOf:
+        - $ref: '#/definitions/model.PhaseMode'
+        description: |-
+          RequestHeaders controls whether request headers are sent.
+          "send" (default) or "skip".
+      responseBody:
+        allOf:
+        - $ref: '#/definitions/model.BodyMode'
+        description: |-
+          ResponseBody controls how the response body is sent.
+          "none" (default), "buffered", "bufferedPartial", or "streamed".
+      responseHeaders:
+        allOf:
+        - $ref: '#/definitions/model.PhaseMode'
+        description: |-
+          ResponseHeaders controls whether response headers are sent.
+          "send" (default) or "skip".
+    type: object
   model.ForwardAction:
     properties:
       backends:
@@ -384,6 +454,23 @@ definitions:
         allOf:
         - $ref: '#/definitions/model.RouteTimeouts'
         description: Timeouts controls how long the request is allowed to take.
+    type: object
+  model.ForwardRules:
+    properties:
+      allowHeaders:
+        description: |-
+          AllowHeaders lists header names that are forwarded to the processor.
+          If empty, all headers are forwarded (subject to DenyHeaders).
+        items:
+          type: string
+        type: array
+      denyHeaders:
+        description: |-
+          DenyHeaders lists header names that are never forwarded to the
+          processor. Overrides AllowHeaders if a header appears in both.
+        items:
+          type: string
+        type: array
     type: object
   model.HashPolicy:
     properties:
@@ -767,6 +854,12 @@ definitions:
           Disabled completely disables the filter for this route/group.
           When true, no other field is evaluated.
         type: boolean
+      extProc:
+        allOf:
+        - $ref: '#/definitions/model.ExtProcOverride'
+        description: |-
+          ExtProc overrides external processor settings for this route/group.
+          Only meaningful when the referenced middleware is of type "extProc".
       headers:
         allOf:
         - $ref: '#/definitions/model.HeadersConfig'
@@ -797,6 +890,23 @@ definitions:
     - MiddlewareTypeRateLimit
     - MiddlewareTypeHeaders
     - MiddlewareTypeAccessLog
+  model.MutationRules:
+    properties:
+      allowHeaders:
+        description: |-
+          AllowHeaders lists header names the processor is allowed to mutate.
+          If empty, all headers are allowed (subject to DenyHeaders).
+        items:
+          type: string
+        type: array
+      denyHeaders:
+        description: |-
+          DenyHeaders lists header names the processor is NOT allowed to mutate.
+          Overrides AllowHeaders if a header appears in both.
+        items:
+          type: string
+        type: array
+    type: object
   model.OutlierDetectionOptions:
     properties:
       baseEjectionTime:
@@ -820,6 +930,14 @@ definitions:
           Default: 10.'
         type: integer
     type: object
+  model.PhaseMode:
+    enum:
+    - send
+    - skip
+    type: string
+    x-enum-varnames:
+    - PhaseModeSend
+    - PhaseModeSkip
   model.QueryParamMatcher:
     properties:
       name:

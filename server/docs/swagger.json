@@ -1389,6 +1389,21 @@
                 }
             }
         },
+        "model.BodyMode": {
+            "type": "string",
+            "enum": [
+                "none",
+                "buffered",
+                "bufferedPartial",
+                "streamed"
+            ],
+            "x-enum-varnames": [
+                "BodyModeNone",
+                "BodyModeBuffered",
+                "BodyModeBufferedPartial",
+                "BodyModeStreamed"
+            ]
+        },
         "model.CORSConfig": {
             "type": "object",
             "properties": {
@@ -1679,73 +1694,117 @@
         "model.ExtProcConfig": {
             "type": "object",
             "properties": {
-                "destinationId": {
-                    "description": "DestinationID references the Destination entity that hosts the\nexternal processing service. Must be a gRPC service.",
-                    "type": "string"
+                "allowOnError": {
+                    "description": "AllowOnError lets requests pass through when the processor is\nunreachable or returns an error. When false (default), requests\nare rejected with StatusOnError.",
+                    "type": "boolean"
                 },
-                "processingMode": {
-                    "description": "ProcessingMode controls which parts of the HTTP transaction are sent to\nthe external processor.",
+                "allowedMutations": {
+                    "description": "AllowedMutations restricts which headers the processor is allowed\nto set or remove. If nil, all headers can be mutated.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/model.ExtProcMode"
+                            "$ref": "#/definitions/model.MutationRules"
                         }
                     ]
+                },
+                "destinationId": {
+                    "description": "DestinationID references the Destination entity that hosts the\nexternal processor service.",
+                    "type": "string"
+                },
+                "disableReject": {
+                    "description": "DisableReject prevents the processor from rejecting requests.\nWhen true, RejectRequest responses from the processor are ignored\nand the request continues normally.",
+                    "type": "boolean"
+                },
+                "forwardRules": {
+                    "description": "ForwardRules restricts which request headers are sent to the\nprocessor. Use this to prevent forwarding sensitive headers\nlike Authorization or Cookie. If nil, all headers are forwarded.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ForwardRules"
+                        }
+                    ]
+                },
+                "metricsPrefix": {
+                    "description": "MetricsPrefix is an optional prefix for metrics emitted by this\nmiddleware instance. Allows distinguishing between multiple\nexternal processors in the same proxy.",
+                    "type": "string"
+                },
+                "mode": {
+                    "description": "Mode selects the transport protocol: \"grpc\" (bidirectional stream)\nor \"http\" (one POST per phase). Default: \"grpc\".",
+                    "type": "string"
+                },
+                "observeOnly": {
+                    "description": "ObserveOnly enables fire-and-forget mode. Rutoso sends phases to\nthe processor but does not wait for responses. Useful for logging,\nauditing, or analytics processors.",
+                    "type": "boolean"
+                },
+                "phases": {
+                    "description": "Phases controls which parts of the HTTP transaction are sent to the\nprocessor. If nil, only request and response headers are sent.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcPhases"
+                        }
+                    ]
+                },
+                "statusOnError": {
+                    "description": "StatusOnError is the HTTP status code returned to the client when\nthe processor fails and AllowOnError is false. Default: 500.",
+                    "type": "integer"
                 },
                 "timeout": {
-                    "description": "Timeout is the processing request deadline (e.g. \"2s\").",
+                    "description": "Timeout is the per-message deadline (e.g. \"200ms\", \"2s\").\nIf the processor does not respond within this duration, the phase\nis treated as a failure (subject to AllowOnError). Default: \"200ms\".",
                     "type": "string"
                 }
             }
         },
-        "model.ExtProcMode": {
+        "model.ExtProcOverride": {
             "type": "object",
             "properties": {
-                "requestBodyMode": {
-                    "description": "RequestBodyMode controls processing of the request body.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.ExtProcPhase"
-                        }
-                    ]
+                "allowOnError": {
+                    "description": "AllowOnError overrides the fail-open behavior for this route.",
+                    "type": "boolean"
                 },
-                "requestHeaderMode": {
-                    "description": "RequestHeaderMode controls processing of request headers.",
+                "phases": {
+                    "description": "Phases overrides the processing phases for this route.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/model.ExtProcPhase"
-                        }
-                    ]
-                },
-                "responseBodyMode": {
-                    "description": "ResponseBodyMode controls processing of the response body.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.ExtProcPhase"
-                        }
-                    ]
-                },
-                "responseHeaderMode": {
-                    "description": "ResponseHeaderMode controls processing of response headers.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.ExtProcPhase"
+                            "$ref": "#/definitions/model.ExtProcPhases"
                         }
                     ]
                 }
             }
         },
-        "model.ExtProcPhase": {
-            "type": "string",
-            "enum": [
-                "SKIP",
-                "SEND",
-                "BUFFERED"
-            ],
-            "x-enum-varnames": [
-                "ExtProcPhaseSkip",
-                "ExtProcPhaseSend",
-                "ExtProcPhaseBuffered"
-            ]
+        "model.ExtProcPhases": {
+            "type": "object",
+            "properties": {
+                "requestBody": {
+                    "description": "RequestBody controls how the request body is sent.\n\"none\" (default), \"buffered\", \"bufferedPartial\", or \"streamed\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.BodyMode"
+                        }
+                    ]
+                },
+                "requestHeaders": {
+                    "description": "RequestHeaders controls whether request headers are sent.\n\"send\" (default) or \"skip\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.PhaseMode"
+                        }
+                    ]
+                },
+                "responseBody": {
+                    "description": "ResponseBody controls how the response body is sent.\n\"none\" (default), \"buffered\", \"bufferedPartial\", or \"streamed\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.BodyMode"
+                        }
+                    ]
+                },
+                "responseHeaders": {
+                    "description": "ResponseHeaders controls whether response headers are sent.\n\"send\" (default) or \"skip\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.PhaseMode"
+                        }
+                    ]
+                }
+            }
         },
         "model.ForwardAction": {
             "type": "object",
@@ -1799,6 +1858,25 @@
                             "$ref": "#/definitions/model.RouteTimeouts"
                         }
                     ]
+                }
+            }
+        },
+        "model.ForwardRules": {
+            "type": "object",
+            "properties": {
+                "allowHeaders": {
+                    "description": "AllowHeaders lists header names that are forwarded to the processor.\nIf empty, all headers are forwarded (subject to DenyHeaders).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "denyHeaders": {
+                    "description": "DenyHeaders lists header names that are never forwarded to the\nprocessor. Overrides AllowHeaders if a header appears in both.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -2222,6 +2300,14 @@
                     "description": "Disabled completely disables the filter for this route/group.\nWhen true, no other field is evaluated.",
                     "type": "boolean"
                 },
+                "extProc": {
+                    "description": "ExtProc overrides external processor settings for this route/group.\nOnly meaningful when the referenced middleware is of type \"extProc\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExtProcOverride"
+                        }
+                    ]
+                },
                 "headers": {
                     "description": "Headers overrides header manipulation for this route/group.\nOnly meaningful when the referenced filter is of type \"headers\".",
                     "allOf": [
@@ -2257,6 +2343,25 @@
                 "MiddlewareTypeAccessLog"
             ]
         },
+        "model.MutationRules": {
+            "type": "object",
+            "properties": {
+                "allowHeaders": {
+                    "description": "AllowHeaders lists header names the processor is allowed to mutate.\nIf empty, all headers are allowed (subject to DenyHeaders).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "denyHeaders": {
+                    "description": "DenyHeaders lists header names the processor is NOT allowed to mutate.\nOverrides AllowHeaders if a header appears in both.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "model.OutlierDetectionOptions": {
             "type": "object",
             "properties": {
@@ -2281,6 +2386,17 @@
                     "type": "integer"
                 }
             }
+        },
+        "model.PhaseMode": {
+            "type": "string",
+            "enum": [
+                "send",
+                "skip"
+            ],
+            "x-enum-varnames": [
+                "PhaseModeSend",
+                "PhaseModeSkip"
+            ]
         },
         "model.QueryParamMatcher": {
             "type": "object",
