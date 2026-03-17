@@ -123,12 +123,32 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 	}
 
 	// Server name via response header middleware.
-	if l.ServerName != "" {
+	if l.ServerName != "" || l.AccessLog != nil || l.MaxRequestHeadersKB > 0 {
 		original := srv.Handler
 		srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Server", l.ServerName)
+			if l.ServerName != "" {
+				w.Header().Set("Server", l.ServerName)
+			}
+			if l.MaxRequestHeadersKB > 0 {
+				// Check total header size (approximate).
+				totalSize := 0
+				for k, values := range r.Header {
+					for _, v := range values {
+						totalSize += len(k) + len(v)
+					}
+				}
+				if totalSize > int(l.MaxRequestHeadersKB)*1024 {
+					http.Error(w, "request headers too large", http.StatusRequestHeaderFieldsTooLarge)
+					return
+				}
+			}
 			original.ServeHTTP(w, r)
 		})
+	}
+
+	// Access log middleware wraps the handler.
+	if l.AccessLog != nil {
+		srv.Handler = AccessLogMiddleware(l.AccessLog)(srv.Handler)
 	}
 
 	lm.servers[l.ID] = &managedServer{

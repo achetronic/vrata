@@ -73,12 +73,14 @@ func run() error {
 	// Proxy router and listener manager.
 	proxyRouter := proxy.NewRouter()
 	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
+	healthChecker := proxy.NewHealthChecker(logger)
 
 	// Gateway: bridges store events → proxy config updates.
 	gw := gateway.New(gateway.Dependencies{
 		Store:           st,
 		Router:          proxyRouter,
 		ListenerManager: listenerMgr,
+		HealthChecker:   healthChecker,
 		Logger:          logger,
 	})
 
@@ -94,6 +96,8 @@ func run() error {
 
 	// Run components concurrently.
 	errCh := make(chan error, 2)
+
+	healthChecker.Start(ctx)
 
 	go func() {
 		if err := gw.Run(ctx); err != nil {
@@ -111,6 +115,7 @@ func run() error {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
+		healthChecker.Stop()
 		listenerMgr.Shutdown()
 		_ = httpSrv.Shutdown(context.Background())
 		return nil

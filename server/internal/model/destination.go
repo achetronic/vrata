@@ -96,15 +96,7 @@ type DestinationOptions struct {
 	// upstream HTTP protocol options.
 	HTTP2 bool `json:"http2,omitempty"`
 
-	// DNSRefreshRate controls how often STRICT_DNS clusters re-resolve the
-	// host. Ignored for STATIC and EDS clusters. Accepts Go duration strings.
-	// Default: "5s". Maps to Cluster.dns_refresh_rate.
-	DNSRefreshRate string `json:"dnsRefreshRate,omitempty"`
 
-	// DNSLookupFamily selects the IP version for DNS resolution.
-	// Accepted values: "AUTO", "V4_ONLY", "V6_ONLY". Default: "AUTO".
-	// Maps to Cluster.dns_lookup_family.
-	DNSLookupFamily string `json:"dnsLookupFamily,omitempty"`
 
 	// MaxRequestsPerConnection drains a connection to the upstream after this
 	// many requests. 0 means unlimited. Useful for load balancing across new

@@ -17,22 +17,31 @@ import (
 )
 
 // Upstream represents a destination with its reverse proxy, TLS config,
-// and health state.
+// health state, balancer, and circuit breaker.
 type Upstream struct {
-	Destination model.Destination
-	Transport   *http.Transport
-	Healthy     bool
-	mu          sync.RWMutex
+	Destination    model.Destination
+	Transport      *http.Transport
+	Healthy        bool
+	Balancer       Balancer
+	CircuitBreaker *CircuitBreaker
+	mu             sync.RWMutex
 }
 
 // NewUpstream creates an Upstream from a Destination, configuring TLS if needed.
 func NewUpstream(d model.Destination) (*Upstream, error) {
+	connectTimeout := 5 * time.Second
+	if d.Options != nil && d.Options.ConnectTimeout != "" {
+		if dur, err := time.ParseDuration(d.Options.ConnectTimeout); err == nil {
+			connectTimeout = dur
+		}
+	}
+
 	transport := &http.Transport{
 		MaxIdleConns:        100,
 		IdleConnTimeout:     90 * time.Second,
 		MaxIdleConnsPerHost: 10,
 		DialContext: (&net.Dialer{
-			Timeout:   5 * time.Second,
+			Timeout:   connectTimeout,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 	}
@@ -57,10 +66,53 @@ func NewUpstream(d model.Destination) (*Upstream, error) {
 	}
 
 	return &Upstream{
-		Destination: d,
-		Transport:   transport,
-		Healthy:     true,
+		Destination:    d,
+		Transport:      transport,
+		Healthy:        true,
+		Balancer:       buildBalancer(d),
+		CircuitBreaker: buildCircuitBreaker(d),
 	}, nil
+}
+
+// buildBalancer creates the appropriate balancer for a destination.
+func buildBalancer(d model.Destination) Balancer {
+	if d.Options == nil || d.Options.Balancing == nil {
+		return nil // default weighted random handled by SelectBackend
+	}
+	switch d.Options.Balancing.Algorithm {
+	case model.LBPolicyRingHash:
+		min, max := 1024, 8388608
+		if d.Options.Balancing.RingSize != nil {
+			if d.Options.Balancing.RingSize.Min > 0 {
+				min = int(d.Options.Balancing.RingSize.Min)
+			}
+			if d.Options.Balancing.RingSize.Max > 0 {
+				max = int(d.Options.Balancing.RingSize.Max)
+			}
+		}
+		return NewRingHashBalancer(min, max)
+	case model.LBPolicyMaglev:
+		size := 65537
+		if d.Options.Balancing.MaglevTableSize > 0 {
+			size = int(d.Options.Balancing.MaglevTableSize)
+		}
+		return NewMaglevBalancer(size)
+	case model.LBPolicyLeastRequest:
+		return NewLeastRequestBalancer()
+	case model.LBPolicyRandom:
+		return RandomBalancer{}
+	default:
+		return nil
+	}
+}
+
+// buildCircuitBreaker creates a circuit breaker if configured.
+func buildCircuitBreaker(d model.Destination) *CircuitBreaker {
+	if d.Options == nil || d.Options.CircuitBreaker == nil {
+		return nil
+	}
+	cb := d.Options.CircuitBreaker
+	return NewCircuitBreaker(cb.MaxConnections, cb.MaxPendingRequests, cb.MaxRequests, cb.MaxRetries)
 }
 
 // buildTLSConfig creates a tls.Config from Destination TLS options.

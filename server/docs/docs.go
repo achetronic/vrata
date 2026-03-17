@@ -185,19 +185,11 @@ const docTemplate = `{
                     "discovery": {
                         "$ref": "#/components/schemas/model.DestinationDiscovery"
                     },
-                    "dnsLookupFamily": {
-                        "description": "DNSLookupFamily selects the IP version for DNS resolution.\nAccepted values: \"AUTO\", \"V4_ONLY\", \"V6_ONLY\". Default: \"AUTO\".\nMaps to Cluster.dns_lookup_family.",
-                        "type": "string"
-                    },
-                    "dnsRefreshRate": {
-                        "description": "DNSRefreshRate controls how often STRICT_DNS clusters re-resolve the\nhost. Ignored for STATIC and EDS clusters. Accepts Go duration strings.\nDefault: \"5s\". Maps to Cluster.dns_refresh_rate.",
-                        "type": "string"
-                    },
                     "healthCheck": {
                         "$ref": "#/components/schemas/model.HealthCheckOptions"
                     },
                     "http2": {
-                        "description": "HTTP2 enables HTTP/2 to the upstream. Required when the backend speaks\ngRPC or HTTP/2. Maps to Cluster.typed_extension_protocol_options with\nenvoy.extensions.upstreams.http.v3.HttpProtocolOptions.",
+                        "description": "HTTP2 enables HTTP/2 to the upstream. Required when the backend speaks\ngRPC or HTTP/2. Maps to Cluster.typed_extension_protocol_options with\nupstream HTTP protocol options.",
                         "type": "boolean"
                     },
                     "maxRequestsPerConnection": {
@@ -654,14 +646,6 @@ const docTemplate = `{
                         "description": "ID is the unique identifier of the listener.",
                         "type": "string"
                     },
-                    "listenerFilters": {
-                        "description": "ListenerFilters are TCP-level filters evaluated before the HTTP\nconnection manager. Common examples: tls_inspector (required for\nTLS/SNI), proxy_protocol (PROXY protocol v1/v2 from load balancers).\nMaps to Listener.listener_filters.",
-                        "items": {
-                            "$ref": "#/components/schemas/model.ListenerFilter"
-                        },
-                        "type": "array",
-                        "uniqueItems": false
-                    },
                     "maxRequestHeadersKB": {
                         "description": "MaxRequestHeadersKB limits the total size of request headers in\nkilobytes. Requests exceeding this limit receive a 431 response.\nDefault: 60 (Envoy's default). Maps to HCM.max_request_headers_kb.",
                         "type": "integer"
@@ -675,7 +659,7 @@ const docTemplate = `{
                         "type": "integer"
                     },
                     "serverName": {
-                        "description": "ServerName sets the \"server\" header Envoy adds to responses.\nWhen empty, Envoy uses its default (\"envoy\").\nMaps to HttpConnectionManager.server_name.",
+                        "description": "ServerName sets the \"server\" header Envoy adds to responses.\nWhen empty, Rutoso does not set this header.\nMaps to HttpConnectionManager.server_name.",
                         "type": "string"
                     },
                     "tls": {
@@ -683,28 +667,6 @@ const docTemplate = `{
                     }
                 },
                 "type": "object"
-            },
-            "model.ListenerFilter": {
-                "properties": {
-                    "type": {
-                        "$ref": "#/components/schemas/model.ListenerFilterType"
-                    }
-                },
-                "type": "object"
-            },
-            "model.ListenerFilterType": {
-                "description": "Type selects the listener filter.",
-                "enum": [
-                    "tls_inspector",
-                    "proxy_protocol",
-                    "original_dst"
-                ],
-                "type": "string",
-                "x-enum-varnames": [
-                    "ListenerFilterTLSInspector",
-                    "ListenerFilterProxyProtocol",
-                    "ListenerFilterOriginalDst"
-                ]
             },
             "model.ListenerTLS": {
                 "description": "TLS holds optional TLS termination configuration.\nWhen nil, the listener operates in plaintext mode.\nNOTE: TLS support is modelled here but not yet implemented in the xDS\nbuilder. The field is accepted and stored; it has no effect until the\nbuilder is updated to emit a DownstreamTlsContext.",
@@ -1247,7 +1209,7 @@ const docTemplate = `{
                 ]
             },
             "model.TLSOptions": {
-                "description": "TLS controls upstream TLS / mTLS configuration.\nMaps to Cluster.transport_socket (envoy.transport_sockets.tls).",
+                "description": "TLS controls upstream TLS / mTLS configuration.\nConfigures upstream TLS transport.",
                 "properties": {
                     "caFile": {
                         "description": "CAFile is the path to the CA certificate PEM file used to verify\nthe server certificate. Applies to both tls and mtls modes.\nMaps to common_tls_context.validation_context.trusted_ca.filename.",

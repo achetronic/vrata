@@ -44,11 +44,9 @@ type Listener struct {
 	// Maps to HttpConnectionManager.codec_type.
 	HTTP2 bool `json:"http2,omitempty" yaml:"http2,omitempty"`
 
-	// ListenerFilters are TCP-level filters evaluated before the HTTP
 	// connection manager. Common examples: tls_inspector (required for
 	// TLS/SNI), proxy_protocol (PROXY protocol v1/v2 from load balancers).
 	// Maps to Listener.listener_filters.
-	ListenerFilters []ListenerFilter `json:"listenerFilters,omitempty" yaml:"listenerFilters,omitempty"`
 
 	// ServerName sets the "server" header Envoy adds to responses.
 	// When empty, Rutoso does not set this header.
@@ -99,26 +97,3 @@ type AccessLogConfig struct {
 	JSON bool `json:"json,omitempty" yaml:"json,omitempty"`
 }
 
-// ListenerFilterType identifies a TCP-level listener filter.
-type ListenerFilterType string
-
-const (
-	// ListenerFilterTLSInspector detects TLS and extracts the SNI. Required
-	// for TLS termination and SNI-based routing.
-	ListenerFilterTLSInspector ListenerFilterType = "tls_inspector"
-
-	// ListenerFilterProxyProtocol parses the PROXY protocol header (v1/v2)
-	// to extract the real client IP from upstream load balancers.
-	ListenerFilterProxyProtocol ListenerFilterType = "proxy_protocol"
-
-	// ListenerFilterOriginalDst recovers the original destination address
-	// for connections redirected by iptables REDIRECT / TPROXY.
-	ListenerFilterOriginalDst ListenerFilterType = "original_dst"
-)
-
-// ListenerFilter represents a TCP-level filter applied before the HTTP
-// connection manager. Maps to Listener.listener_filters entries.
-type ListenerFilter struct {
-	// Type selects the listener filter.
-	Type ListenerFilterType `json:"type" yaml:"type"`
-}

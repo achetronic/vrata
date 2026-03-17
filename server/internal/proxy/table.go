@@ -81,6 +81,11 @@ func BuildTable(
 	}, nil
 }
 
+// Upstreams returns the upstream map from the routing table.
+func (t *routingTable) Upstreams() map[string]*Upstream {
+	return t.destinations
+}
+
 // compileRoute pre-compiles a route for fast matching.
 func compileRoute(
 	r model.Route,

@@ -17,6 +17,7 @@ type Dependencies struct {
 	Store           store.Store
 	Router          *proxy.Router
 	ListenerManager *proxy.ListenerManager
+	HealthChecker   *proxy.HealthChecker
 	Logger          *slog.Logger
 }
 
@@ -110,6 +111,11 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 
 	// Atomic swap.
 	gw.deps.Router.SwapTable(table)
+
+	// Update health checker with new upstreams.
+	if gw.deps.HealthChecker != nil {
+		gw.deps.HealthChecker.Update(table.Upstreams())
+	}
 
 	// Reconcile listeners.
 	gw.deps.ListenerManager.Reconcile(listeners)
