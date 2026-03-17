@@ -19,6 +19,14 @@ Principios:
   legado de Envoy.
 - Reload sin corte: conexiones activas terminan con config vieja, nuevas usan la nueva
 - Un solo binario. Sin Envoy. Sin protos. Sin traducciones.
+- Componente crítico: CERO tolerancia a errores no manejados. Todos los error
+  paths cubiertos, todos los edge cases contemplados. Si algo falla, falla
+  limpio con un mensaje claro, nunca con un panic o un comportamiento
+  indefinido.
+- Tests obligatorios: unit tests de cada función, integration tests del proxy
+  completo (routing, TLS, middlewares, reload, failover), tests de carga,
+  tests de cada middleware individualmente. Coverage real, no por cumplir.
+  Si no tiene test, no existe.
 
 Features requeridas (paridad + mejoras):
 - Listener: address:port, TLS downstream con reload de certs, HTTP/2, access log,
