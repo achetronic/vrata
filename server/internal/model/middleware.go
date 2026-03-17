@@ -191,12 +191,11 @@ type ExtAuthzConfig struct {
 	// "grpc" or "http". Default: "http".
 	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
 
-	// PathPrefix is prepended to the original request path when Envoy sends
-	// the check request to the authz service in HTTP mode. For example, if
-	// PathPrefix is "/oauth2/auth" and the client requests "/pepe", Envoy
-	// sends GET /oauth2/auth/pepe to the authz service.
+	// Path is the path of the authorization endpoint on the service.
+	// Example: "/oauth2/auth". Rutoso appends it to the Destination's
+	// host:port to build the full server_uri automatically.
 	// Ignored in gRPC mode.
-	PathPrefix string `json:"pathPrefix,omitempty" yaml:"pathPrefix,omitempty"`
+	Path string `json:"path,omitempty" yaml:"path,omitempty"`
 
 	// Timeout is the authorisation request deadline (e.g. "5s", "500ms").
 	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`

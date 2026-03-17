@@ -232,16 +232,13 @@ func marshalExtAuthz(c *model.ExtAuthzConfig, destByID map[string]model.Destinat
 			},
 		}
 	} else {
-		uri := buildDestinationURI(c.DestinationID, destByID)
+		uri := buildDestinationURI(c.DestinationID, c.Path, destByID)
 		httpSvc := &extauthzv3.HttpService{
 			ServerUri: &corev3.HttpUri{
 				Uri:              uri,
 				HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: c.DestinationID},
 				Timeout:          timeout,
 			},
-		}
-		if c.PathPrefix != "" {
-			httpSvc.PathPrefix = c.PathPrefix
 		}
 		if len(c.AllowedHeaders) > 0 || len(c.HeadersToAdd) > 0 {
 			httpSvc.AuthorizationRequest = buildAuthzRequest(c)
@@ -543,7 +540,7 @@ func marshalMiddlewareOverride(ft model.MiddlewareType, ov model.MiddlewareOverr
 
 // buildDestinationURI constructs the full URI (scheme://host:port) from a
 // Destination. Uses https if TLS is configured, http otherwise.
-func buildDestinationURI(destID string, destByID map[string]model.Destination) string {
+func buildDestinationURI(destID string, path string, destByID map[string]model.Destination) string {
 	if destByID == nil {
 		return destID
 	}
@@ -555,7 +552,11 @@ func buildDestinationURI(destID string, destByID map[string]model.Destination) s
 	if d.Options != nil && d.Options.TLS != nil && d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s:%d", scheme, d.Host, d.Port)
+	uri := fmt.Sprintf("%s://%s:%d", scheme, d.Host, d.Port)
+	if path != "" {
+		uri += path
+	}
+	return uri
 }
 
 // buildAuthzRequest builds the AuthorizationRequest from ExtAuthzConfig.
