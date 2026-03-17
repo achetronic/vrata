@@ -4,52 +4,41 @@ components:
       description: |-
         AccessLog configures access logging for this listener.
         When nil, no access logs are emitted.
-        Maps to HttpConnectionManager.access_log.
       properties:
         format:
           description: |-
-            Format is the log line format using Envoy's command operator syntax.
-            When empty, Envoy uses its default format.
-            Example: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL% %RESPONSE_CODE%"
+            Format is the log line format template. Available placeholders depend
+            on the output mode (see JSON field). When empty, Rutoso uses a
+            sensible default: "METHOD PATH CLIENT_IP STATUS DURATION_MS BYTES".
           type: string
         json:
-          description: |-
-            JSON switches the log output to JSON format. When true, Format is
-            interpreted as a JSON template (map of key to format string).
-            When false, Format is used as a plain text template.
+          description: JSON switches the log output to JSON format.
           type: boolean
         path:
           description: |-
             Path is the file path where access logs are written.
-            Use "/dev/stdout" for container-friendly stdout logging.
+            Use "/dev/stdout" or "stdout" for container-friendly stdout logging.
           type: string
       type: object
     model.BackendRef:
       properties:
         destinationId:
-          description: DestinationID is the ID of the Destination this backend points
-            to.
+          description: DestinationID is the ID of the Destination.
           type: string
         weight:
-          description: |-
-            Weight controls the proportion of traffic sent to this Destination
-            when multiple backends are defined. Values across all BackendRefs in
-            a Route must sum to 100.
+          description: Weight controls the proportion of traffic. Must sum to 100
+            across backends.
           type: integer
       type: object
     model.BalancingOptions:
-      description: |-
-        Balancing controls the load-balancing algorithm and its parameters.
-        Maps to Cluster.lb_policy + ring_hash_lb_config / maglev_lb_config.
+      description: Balancing controls the load-balancing algorithm and its parameters.
       properties:
         algorithm:
           $ref: '#/components/schemas/model.LBPolicy'
         maglevTableSize:
           description: |-
             MaglevTableSize sets the Maglev hash table size.
-            Must be a prime number. Default: 65537.
-            Ignored unless Algorithm is MAGLEV.
-            Maps to Cluster.maglev_lb_config.table_size.
+            Must be a prime number. Default: 65537. Only used with MAGLEV.
           type: integer
         ringSize:
           $ref: '#/components/schemas/model.RingSizeOptions'
@@ -106,29 +95,19 @@ components:
           type: string
       type: object
     model.CircuitBreakerOptions:
-      description: |-
-        CircuitBreaker limits in-flight traffic to protect the upstream.
-        Maps to Cluster.circuit_breakers.thresholds.
+      description: CircuitBreaker limits in-flight traffic to protect the upstream.
       properties:
         maxConnections:
-          description: |-
-            MaxConnections is the maximum number of concurrent TCP connections.
-            Maps to max_connections.
+          description: MaxConnections is the maximum number of concurrent TCP connections.
           type: integer
         maxPendingRequests:
-          description: |-
-            MaxPendingRequests is the maximum number of requests queued while
-            waiting for a connection. Maps to max_pending_requests.
+          description: MaxPendingRequests is the maximum number of requests queued.
           type: integer
         maxRequests:
-          description: |-
-            MaxRequests is the maximum number of concurrent requests.
-            Maps to max_requests.
+          description: MaxRequests is the maximum number of concurrent requests.
           type: integer
         maxRetries:
-          description: |-
-            MaxRetries is the maximum number of concurrent retries.
-            Maps to max_retries.
+          description: MaxRetries is the maximum number of concurrent retries.
           type: integer
       type: object
     model.Destination:
@@ -137,9 +116,7 @@ components:
           description: |-
             Host is the upstream FQDN or IP address.
             For Kubernetes Services use the full FQDN:
-              pepe.default.svc.cluster.local
-            When Options.Discovery.Type is "kubernetes" the service name and
-            namespace are parsed from this field automatically.
+              my-svc.my-namespace.svc.cluster.local
           type: string
         id:
           description: ID is the unique identifier of this destination.
@@ -156,17 +133,13 @@ components:
     model.DestinationDiscovery:
       description: |-
         Discovery enables dynamic endpoint resolution.
-        When nil, Rutoso derives the Envoy cluster type from the host value:
-          IP address  → STATIC
-          FQDN        → STRICT_DNS
+        When nil, Rutoso connects directly to host:port.
       properties:
         type:
           $ref: '#/components/schemas/model.DiscoveryType'
       type: object
     model.DestinationOptions:
-      description: |-
-        Options contains advanced Envoy cluster configuration.
-        All fields are optional — sensible defaults are applied when omitted.
+      description: Options contains advanced configuration. All fields are optional.
       properties:
         balancing:
           $ref: '#/components/schemas/model.BalancingOptions'
@@ -174,37 +147,28 @@ components:
           $ref: '#/components/schemas/model.CircuitBreakerOptions'
         connectTimeout:
           description: |-
-            ConnectTimeout is the timeout for establishing a new TCP connection
-            to the upstream. Accepts Go duration strings (e.g. "3s", "500ms").
-            Maps to Cluster.connect_timeout. Default: 5s.
+            ConnectTimeout is the timeout for establishing a new TCP connection.
+            Accepts Go duration strings (e.g. "3s", "500ms"). Default: 5s.
           type: string
         discovery:
           $ref: '#/components/schemas/model.DestinationDiscovery'
         healthCheck:
           $ref: '#/components/schemas/model.HealthCheckOptions'
         http2:
-          description: |-
-            HTTP2 enables HTTP/2 to the upstream. Required when the backend speaks
-            gRPC or HTTP/2. Maps to Cluster.typed_extension_protocol_options with
-            upstream HTTP protocol options.
+          description: HTTP2 enables HTTP/2 to the upstream. Required for gRPC backends.
           type: boolean
         maxRequestsPerConnection:
           description: |-
-            MaxRequestsPerConnection drains a connection to the upstream after this
-            many requests. 0 means unlimited. Useful for load balancing across new
-            pods. Maps to Cluster.max_requests_per_connection.
+            MaxRequestsPerConnection drains a connection after this many requests.
+            0 means unlimited.
           type: integer
         outlierDetection:
           $ref: '#/components/schemas/model.OutlierDetectionOptions'
-        slowStart:
-          $ref: '#/components/schemas/model.SlowStartOptions'
         tls:
           $ref: '#/components/schemas/model.TLSOptions'
       type: object
     model.DiscoveryType:
-      description: |-
-        Type selects the discovery mechanism.
-        Currently only "kubernetes" is supported.
+      description: Type selects the discovery mechanism. Currently only "kubernetes".
       enum:
       - kubernetes
       type: string
@@ -386,21 +350,17 @@ components:
     model.HashPolicy:
       properties:
         cookie:
-          description: |-
-            Cookie uses the named cookie as the hash key. If the cookie is absent
-            Envoy creates it with the given TTL (e.g. "3600s").
+          description: Cookie uses the named cookie as the hash key.
           type: string
         cookieTtl:
-          description: |-
-            CookieTTL is the TTL Envoy sets when generating a new sticky cookie.
-            Ignored unless Cookie is set. Accepts Go duration strings.
+          description: CookieTTL is the TTL for auto-generated sticky cookies. Accepts
+            Go durations.
           type: string
         header:
-          description: Header uses the value of the named request header as the hash
-            key.
+          description: Header uses the named request header as the hash key.
           type: string
         sourceIP:
-          description: SourceIP uses the downstream client IP as the hash key.
+          description: SourceIP uses the client IP as the hash key.
           type: boolean
       type: object
     model.HeaderMatcher:
@@ -470,39 +430,24 @@ components:
           uniqueItems: false
       type: object
     model.HealthCheckOptions:
-      description: |-
-        HealthCheck configures active HTTP health checking against the upstream.
-        Maps to Cluster.health_checks.
+      description: HealthCheck configures active HTTP health checking.
       properties:
         healthyThreshold:
-          description: |-
-            HealthyThreshold is the number of consecutive successes before an
-            unhealthy endpoint is returned to the pool. Default: 2.
-            Maps to healthy_threshold.
+          description: 'HealthyThreshold is consecutive successes before marking healthy.
+            Default: 2.'
           type: integer
         interval:
-          description: |-
-            Interval is how often Envoy sends a health-check request.
-            Accepts Go duration strings. Default: "10s".
-            Maps to interval.
+          description: 'Interval is how often health checks run. Default: "10s".'
           type: string
         path:
-          description: |-
-            Path is the HTTP path Envoy sends health-check requests to.
-            Example: "/healthz". Required.
-            Maps to http_health_check.path.
+          description: Path is the HTTP path for health-check requests. Required.
           type: string
         timeout:
-          description: |-
-            Timeout is how long Envoy waits for a health-check response.
-            Accepts Go duration strings. Default: "5s".
-            Maps to timeout.
+          description: 'Timeout is how long to wait for a response. Default: "5s".'
           type: string
         unhealthyThreshold:
-          description: |-
-            UnhealthyThreshold is the number of consecutive failures before an
-            endpoint is marked unhealthy. Default: 3.
-            Maps to unhealthy_threshold.
+          description: 'UnhealthyThreshold is consecutive failures before marking
+            unhealthy. Default: 3.'
           type: integer
       type: object
     model.InternalRedirectPolicy:
@@ -625,10 +570,7 @@ components:
           uniqueItems: false
       type: object
     model.LBPolicy:
-      description: |-
-        Algorithm selects the load-balancing policy.
-        Default: ROUND_ROBIN.
-        Maps to Cluster.lb_policy.
+      description: 'Algorithm selects the load-balancing policy. Default: ROUND_ROBIN.'
       enum:
       - ROUND_ROBIN
       - LEAST_REQUEST
@@ -654,9 +596,8 @@ components:
         http2:
           description: |-
             HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.
-            When true, the HCM codec type is set to AUTO (accepts both HTTP/1.1
-            and HTTP/2). When false, only HTTP/1.1 is accepted.
-            Maps to HttpConnectionManager.codec_type.
+            With TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Rutoso
+            enables h2c upgrade support.
           type: boolean
         id:
           description: ID is the unique identifier of the listener.
@@ -665,7 +606,7 @@ components:
           description: |-
             MaxRequestHeadersKB limits the total size of request headers in
             kilobytes. Requests exceeding this limit receive a 431 response.
-            Default: 60 (Envoy's default). Maps to HCM.max_request_headers_kb.
+            Default: 0 (no limit).
           type: integer
         name:
           description: Name is a human-readable label for the listener.
@@ -673,11 +614,16 @@ components:
         port:
           description: Port is the TCP port the listener binds to.
           type: integer
+        proxyProtocol:
+          description: |-
+            ProxyProtocol enables PROXY protocol v1/v2 parsing. Required when
+            the listener is behind a load balancer that sends PROXY protocol
+            to communicate the real client IP.
+          type: boolean
         serverName:
           description: |-
-            ServerName sets the "server" header Envoy adds to responses.
-            When empty, Rutoso does not set this header.
-            Maps to HttpConnectionManager.server_name.
+            ServerName sets the "Server" response header.
+            When empty, no Server header is added.
           type: string
         tls:
           $ref: '#/components/schemas/model.ListenerTLS'
@@ -686,9 +632,6 @@ components:
       description: |-
         TLS holds optional TLS termination configuration.
         When nil, the listener operates in plaintext mode.
-        NOTE: TLS support is modelled here but not yet implemented in the xDS
-        builder. The field is accepted and stored; it has no effect until the
-        builder is updated to emit a DownstreamTlsContext.
       properties:
         certPath:
           description: CertPath is the path to the PEM-encoded TLS certificate file.
@@ -826,39 +769,28 @@ components:
       - MiddlewareTypeHeaders
     model.OutlierDetectionOptions:
       description: |-
-        OutlierDetection automatically ejects endpoints that return consecutive
-        errors, without requiring active health checks.
-        Maps to Cluster.outlier_detection.
+        OutlierDetection automatically ejects endpoints that return
+        consecutive errors, without requiring active health checks.
       properties:
         baseEjectionTime:
-          description: |-
-            BaseEjectionTime is how long an endpoint stays ejected the first time.
-            Each subsequent ejection multiplies this value by the ejection count.
-            Accepts Go duration strings. Default: "30s".
-            Maps to base_ejection_time.
+          description: 'BaseEjectionTime is how long an endpoint stays ejected. Default:
+            "30s".'
           type: string
         consecutive5xx:
-          description: |-
-            Consecutive5xx is the number of consecutive 5xx responses that trigger
-            ejection. Default: 5. Maps to consecutive_5xx.
+          description: 'Consecutive5xx is consecutive 5xx responses that trigger ejection.
+            Default: 5.'
           type: integer
         consecutiveGatewayErrors:
-          description: |-
-            ConsecutiveGatewayErrors is the number of consecutive gateway errors
-            (502, 503, 504) that trigger ejection.
-            Maps to consecutive_gateway_failure.
+          description: ConsecutiveGatewayErrors is consecutive 502/503/504 that trigger
+            ejection.
           type: integer
         interval:
-          description: |-
-            Interval is how often Envoy evaluates ejection conditions.
-            Accepts Go duration strings. Default: "10s".
-            Maps to interval.
+          description: 'Interval is how often ejection conditions are evaluated. Default:
+            "10s".'
           type: string
         maxEjectionPercent:
-          description: |-
-            MaxEjectionPercent is the maximum percentage of endpoints that can be
-            ejected simultaneously. Default: 10.
-            Maps to max_ejection_percent.
+          description: 'MaxEjectionPercent is the maximum percentage of endpoints
+            ejected. Default: 10.'
           type: integer
       type: object
     model.QueryParamMatcher:
@@ -929,20 +861,13 @@ components:
           type: string
       type: object
     model.RingSizeOptions:
-      description: |-
-        RingSize tunes the consistent hash ring used by RING_HASH.
-        Ignored unless Algorithm is RING_HASH.
-        Maps to Cluster.ring_hash_lb_config.
+      description: RingSize tunes the consistent hash ring. Only used with RING_HASH.
       properties:
         max:
-          description: |-
-            Max is the maximum number of virtual nodes in the ring.
-            Default: 8388608. Maps to maximum_ring_size.
+          description: 'Max is the maximum number of virtual nodes. Default: 8388608.'
           type: integer
         min:
-          description: |-
-            Min is the minimum number of virtual nodes in the ring.
-            Default: 1024. Maps to minimum_ring_size.
+          description: 'Min is the minimum number of virtual nodes. Default: 1024.'
           type: integer
       type: object
     model.Route:
@@ -1187,29 +1112,8 @@ components:
             fully sent. Accepts Go duration strings (e.g. "30s", "1m").
           type: string
       type: object
-    model.SlowStartOptions:
-      description: |-
-        SlowStart configures gradual traffic ramp-up to new endpoints.
-        Helps avoid overwhelming a freshly-started pod with full traffic.
-        Maps to Cluster.slow_start_config.
-      properties:
-        aggression:
-          description: |-
-            Aggression controls how aggressively weight ramps up. Values > 1.0
-            produce a steeper ramp at the end; values < 1.0 ramp steeply at the
-            start. Default: 1.0 (linear). Maps to aggression.
-          type: number
-        window:
-          description: |-
-            Window is how long the slow-start period lasts after an endpoint
-            becomes healthy. Accepts Go duration strings (e.g. "30s", "2m").
-            Maps to slow_start_window.
-          type: string
-      type: object
     model.TLSMode:
-      description: |-
-        Mode selects the connection security model.
-        Default: none (plaintext).
+      description: 'Mode selects the connection security model. Default: none (plaintext).'
       enum:
       - none
       - tls
@@ -1224,47 +1128,37 @@ components:
       - TLSModeTLS
       - TLSModeMTLS
     model.TLSOptions:
-      description: |-
-        TLS controls upstream TLS / mTLS configuration.
-        Configures upstream TLS transport.
+      description: TLS controls upstream TLS / mTLS configuration.
       properties:
         caFile:
           description: |-
-            CAFile is the path to the CA certificate PEM file used to verify
-            the server certificate. Applies to both tls and mtls modes.
-            Maps to common_tls_context.validation_context.trusted_ca.filename.
+            CAFile is the path to the CA certificate PEM file. When empty,
+            the system CA bundle (/etc/ssl/certs/ca-certificates.crt) is used.
           type: string
         certFile:
           description: |-
             CertFile is the path to the client certificate PEM file.
             Required when Mode is mtls.
-            Maps to common_tls_context.tls_certificates[0].certificate_chain.filename.
           type: string
         keyFile:
           description: |-
             KeyFile is the path to the client private key PEM file.
             Required when Mode is mtls.
-            Maps to common_tls_context.tls_certificates[0].private_key.filename.
           type: string
         maxVersion:
-          description: |-
-            MaxVersion is the maximum TLS protocol version Envoy will negotiate.
-            Accepted values: same as MinVersion.
-            Maps to common_tls_context.tls_params.tls_maximum_protocol_version.
+          description: MaxVersion is the maximum TLS protocol version.
           type: string
         minVersion:
           description: |-
-            MinVersion is the minimum TLS protocol version Envoy will negotiate.
+            MinVersion is the minimum TLS protocol version.
             Accepted values: "TLSv1_0", "TLSv1_1", "TLSv1_2", "TLSv1_3".
-            Maps to common_tls_context.tls_params.tls_minimum_protocol_version.
           type: string
         mode:
           $ref: '#/components/schemas/model.TLSMode'
         sni:
           description: |-
-            SNI overrides the Server Name Indication sent during the TLS handshake.
-            When empty, Envoy uses the upstream host value.
-            Maps to UpstreamTlsContext.sni.
+            SNI overrides the Server Name Indication sent during TLS handshake.
+            When empty, the destination host is used.
           type: string
       type: object
     respond.ErrorBody:

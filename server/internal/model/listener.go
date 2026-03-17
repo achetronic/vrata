@@ -1,17 +1,7 @@
 // Package model defines the core domain types used throughout Rutoso.
 package model
 
-// Listener is a first-class entity that describes an Envoy listener:
-// the address/port it binds to, the ordered set of HTTP filters active on it,
-// and optional TLS termination config.
-//
-// HTTP filters are referenced by ID. The order of FilterIDs determines the
-// order in which Envoy evaluates them in the filter chain. The router filter
-// is always appended last automatically — do not include it here.
-//
-// Per-route and per-group filter behaviour is controlled via FilterOverrides
-// on Route and RouteGroup respectively. When both levels carry an override for
-// the same filter, the Route override wins (more specific takes precedence).
+// Listener describes a network entry point where Rutoso accepts HTTP traffic.
 type Listener struct {
 	// ID is the unique identifier of the listener.
 	ID string `json:"id" yaml:"id"`
@@ -28,41 +18,33 @@ type Listener struct {
 
 	// TLS holds optional TLS termination configuration.
 	// When nil, the listener operates in plaintext mode.
-	// NOTE: TLS support is modelled here but not yet implemented in the xDS
-	// builder. The field is accepted and stored; it has no effect until the
-	// builder is updated to emit a DownstreamTlsContext.
 	TLS *ListenerTLS `json:"tls,omitempty" yaml:"tls,omitempty"`
 
 	// AccessLog configures access logging for this listener.
 	// When nil, no access logs are emitted.
-	// Maps to HttpConnectionManager.access_log.
 	AccessLog *AccessLogConfig `json:"accessLog,omitempty" yaml:"accessLog,omitempty"`
 
 	// HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.
-	// When true, the HCM codec type is set to AUTO (accepts both HTTP/1.1
-	// and HTTP/2). When false, only HTTP/1.1 is accepted.
-	// Maps to HttpConnectionManager.codec_type.
+	// With TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Rutoso
+	// enables h2c upgrade support.
 	HTTP2 bool `json:"http2,omitempty" yaml:"http2,omitempty"`
 
-	// connection manager. Common examples: tls_inspector (required for
-	// TLS/SNI), proxy_protocol (PROXY protocol v1/v2 from load balancers).
-	// Maps to Listener.listener_filters.
-
-	// ServerName sets the "server" header Envoy adds to responses.
-	// When empty, Rutoso does not set this header.
-	// Maps to HttpConnectionManager.server_name.
+	// ServerName sets the "Server" response header.
+	// When empty, no Server header is added.
 	ServerName string `json:"serverName,omitempty" yaml:"serverName,omitempty"`
 
 	// MaxRequestHeadersKB limits the total size of request headers in
 	// kilobytes. Requests exceeding this limit receive a 431 response.
-	// Default: 60 (Envoy's default). Maps to HCM.max_request_headers_kb.
+	// Default: 0 (no limit).
 	MaxRequestHeadersKB uint32 `json:"maxRequestHeadersKB,omitempty" yaml:"maxRequestHeadersKB,omitempty"`
+
+	// ProxyProtocol enables PROXY protocol v1/v2 parsing. Required when
+	// the listener is behind a load balancer that sends PROXY protocol
+	// to communicate the real client IP.
+	ProxyProtocol bool `json:"proxyProtocol,omitempty" yaml:"proxyProtocol,omitempty"`
 }
 
 // ListenerTLS holds TLS termination parameters for a Listener.
-// All fields are optional; Envoy applies sensible defaults for omitted values.
-//
-// NOTE: not yet implemented in the xDS builder — stored only.
 type ListenerTLS struct {
 	// CertPath is the path to the PEM-encoded TLS certificate file.
 	CertPath string `json:"certPath,omitempty" yaml:"certPath,omitempty"`
@@ -83,17 +65,14 @@ type ListenerTLS struct {
 // AccessLogConfig configures access logging for a Listener.
 type AccessLogConfig struct {
 	// Path is the file path where access logs are written.
-	// Use "/dev/stdout" for container-friendly stdout logging.
+	// Use "/dev/stdout" or "stdout" for container-friendly stdout logging.
 	Path string `json:"path" yaml:"path"`
 
-	// Format is the log line format using Envoy's command operator syntax.
-	// When empty, Envoy uses its default format.
-	// Example: "%REQ(:METHOD)% %REQ(X-ENVOY-ORIGINAL-PATH?:PATH)% %PROTOCOL% %RESPONSE_CODE%"
+	// Format is the log line format template. Available placeholders depend
+	// on the output mode (see JSON field). When empty, Rutoso uses a
+	// sensible default: "METHOD PATH CLIENT_IP STATUS DURATION_MS BYTES".
 	Format string `json:"format,omitempty" yaml:"format,omitempty"`
 
-	// JSON switches the log output to JSON format. When true, Format is
-	// interpreted as a JSON template (map of key to format string).
-	// When false, Format is used as a plain text template.
+	// JSON switches the log output to JSON format.
 	JSON bool `json:"json,omitempty" yaml:"json,omitempty"`
 }
-

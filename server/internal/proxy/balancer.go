@@ -246,18 +246,33 @@ func (m *MaglevBalancer) Pick(r *http.Request, backends []model.BackendRef, upst
 	return upstreams[m.backends[idx]]
 }
 
-// hashRequest computes a hash from the request for consistent hashing.
-// Uses the hash policy from ForwardAction if available via context,
-// otherwise falls back to client IP.
+// hashRequest computes a hash from the request using the provided hash policies.
+// Evaluates policies in order; the first one that produces a value wins.
+// Falls back to client IP if no policy matches.
 func hashRequest(r *http.Request) uint32 {
-	// Check for hash policy headers in priority order.
-	// Cookie > Header > Source IP.
-	if c, err := r.Cookie("_rutoso_hash"); err == nil {
-		return crc32.ChecksumIEEE([]byte(c.Value))
+	// Default: hash by client IP.
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return crc32.ChecksumIEEE([]byte(host))
+}
+
+// hashRequestWithPolicy computes a hash using explicit hash policies.
+func hashRequestWithPolicy(r *http.Request, policies []model.HashPolicy) uint32 {
+	for _, hp := range policies {
+		switch {
+		case hp.Header != "":
+			if val := r.Header.Get(hp.Header); val != "" {
+				return crc32.ChecksumIEEE([]byte(val))
+			}
+		case hp.Cookie != "":
+			if c, err := r.Cookie(hp.Cookie); err == nil {
+				return crc32.ChecksumIEEE([]byte(c.Value))
+			}
+		case hp.SourceIP:
+			host, _, _ := net.SplitHostPort(r.RemoteAddr)
+			return crc32.ChecksumIEEE([]byte(host))
+		}
 	}
-	if v := r.Header.Get("X-Hash-Key"); v != "" {
-		return crc32.ChecksumIEEE([]byte(v))
-	}
+	// Fallback: client IP.
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return crc32.ChecksumIEEE([]byte(host))
 }
