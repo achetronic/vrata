@@ -576,12 +576,6 @@ definitions:
     - LBPolicyRandom
   model.Listener:
     properties:
-      accessLog:
-        allOf:
-        - $ref: '#/definitions/model.AccessLogConfig'
-        description: |-
-          AccessLog configures access logging for this listener.
-          When nil, no access logs are emitted.
       address:
         description: |-
           Address is the IP address the listener binds to.
@@ -687,6 +681,12 @@ definitions:
     type: object
   model.Middleware:
     properties:
+      accessLog:
+        allOf:
+        - $ref: '#/definitions/model.AccessLogConfig'
+        description: |-
+          AccessLog holds the access log configuration.
+          Set when Type == "accessLog".
       cors:
         allOf:
         - $ref: '#/definitions/model.CORSConfig'
@@ -760,6 +760,7 @@ definitions:
     - extProc
     - rateLimit
     - headers
+    - accessLog
     type: string
     x-enum-varnames:
     - MiddlewareTypeCORS
@@ -768,6 +769,7 @@ definitions:
     - MiddlewareTypeExtProc
     - MiddlewareTypeRateLimit
     - MiddlewareTypeHeaders
+    - MiddlewareTypeAccessLog
   model.OutlierDetectionOptions:
     properties:
       baseEjectionTime:

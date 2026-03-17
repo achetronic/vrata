@@ -20,10 +20,6 @@ type Listener struct {
 	// When nil, the listener operates in plaintext mode.
 	TLS *ListenerTLS `json:"tls,omitempty" yaml:"tls,omitempty"`
 
-	// AccessLog configures access logging for this listener.
-	// When nil, no access logs are emitted.
-	AccessLog *AccessLogConfig `json:"accessLog,omitempty" yaml:"accessLog,omitempty"`
-
 	// HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.
 	// With TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Rutoso
 	// enables h2c upgrade support.

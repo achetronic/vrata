@@ -114,19 +114,23 @@ func (s *Store) SaveRoute(_ context.Context, route model.Route) error {
 		return fmt.Errorf("marshalling route: %w", err)
 	}
 
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketRoutes))
 		if err := b.Put([]byte(route.ID), data); err != nil {
 			return fmt.Errorf("saving route %q: %w", route.ID, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceRoute, ID: route.ID})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceRoute, ID: route.ID})
+	return nil
 }
 
 // DeleteRoute removes the route with the given ID.
 func (s *Store) DeleteRoute(_ context.Context, id string) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketRoutes))
 		if b.Get([]byte(id)) == nil {
 			return fmt.Errorf("route %q: %w", id, model.ErrNotFound)
@@ -134,9 +138,13 @@ func (s *Store) DeleteRoute(_ context.Context, id string) error {
 		if err := b.Delete([]byte(id)); err != nil {
 			return fmt.Errorf("deleting route %q: %w", id, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceRoute, ID: id})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceRoute, ID: id})
+	return nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -193,19 +201,23 @@ func (s *Store) SaveGroup(_ context.Context, group model.RouteGroup) error {
 		return fmt.Errorf("marshalling group: %w", err)
 	}
 
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketGroups))
 		if err := b.Put([]byte(group.ID), data); err != nil {
 			return fmt.Errorf("saving group %q: %w", group.ID, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceGroup, ID: group.ID})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceGroup, ID: group.ID})
+	return nil
 }
 
 // DeleteGroup removes the group with the given ID.
 func (s *Store) DeleteGroup(_ context.Context, id string) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketGroups))
 		if b.Get([]byte(id)) == nil {
 			return fmt.Errorf("group %q: %w", id, model.ErrNotFound)
@@ -213,9 +225,13 @@ func (s *Store) DeleteGroup(_ context.Context, id string) error {
 		if err := b.Delete([]byte(id)); err != nil {
 			return fmt.Errorf("deleting group %q: %w", id, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceGroup, ID: id})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceGroup, ID: id})
+	return nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -272,19 +288,23 @@ func (s *Store) SaveMiddleware(_ context.Context, filter model.Middleware) error
 		return fmt.Errorf("marshalling filter: %w", err)
 	}
 
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketMiddlewares))
 		if err := b.Put([]byte(filter.ID), data); err != nil {
 			return fmt.Errorf("saving filter %q: %w", filter.ID, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceMiddleware, ID: filter.ID})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceMiddleware, ID: filter.ID})
+	return nil
 }
 
 // DeleteMiddleware removes the filter with the given ID.
 func (s *Store) DeleteMiddleware(_ context.Context, id string) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketMiddlewares))
 		if b.Get([]byte(id)) == nil {
 			return fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
@@ -292,9 +312,13 @@ func (s *Store) DeleteMiddleware(_ context.Context, id string) error {
 		if err := b.Delete([]byte(id)); err != nil {
 			return fmt.Errorf("deleting filter %q: %w", id, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceMiddleware, ID: id})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceMiddleware, ID: id})
+	return nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -351,19 +375,23 @@ func (s *Store) SaveListener(_ context.Context, listener model.Listener) error {
 		return fmt.Errorf("marshalling listener: %w", err)
 	}
 
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketListeners))
 		if err := b.Put([]byte(listener.ID), data); err != nil {
 			return fmt.Errorf("saving listener %q: %w", listener.ID, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceListener, ID: listener.ID})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceListener, ID: listener.ID})
+	return nil
 }
 
 // DeleteListener removes the listener with the given ID.
 func (s *Store) DeleteListener(_ context.Context, id string) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketListeners))
 		if b.Get([]byte(id)) == nil {
 			return fmt.Errorf("listener %q: %w", id, model.ErrNotFound)
@@ -371,9 +399,13 @@ func (s *Store) DeleteListener(_ context.Context, id string) error {
 		if err := b.Delete([]byte(id)); err != nil {
 			return fmt.Errorf("deleting listener %q: %w", id, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceListener, ID: id})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceListener, ID: id})
+	return nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -430,19 +462,23 @@ func (s *Store) SaveDestination(_ context.Context, d model.Destination) error {
 		return fmt.Errorf("marshalling destination: %w", err)
 	}
 
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketDestinations))
 		if err := b.Put([]byte(d.ID), data); err != nil {
 			return fmt.Errorf("saving destination %q: %w", d.ID, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceDestination, ID: d.ID})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceDestination, ID: d.ID})
+	return nil
 }
 
 // DeleteDestination removes the destination with the given ID.
 func (s *Store) DeleteDestination(_ context.Context, id string) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketDestinations))
 		if b.Get([]byte(id)) == nil {
 			return fmt.Errorf("destination %q: %w", id, model.ErrNotFound)
@@ -450,9 +486,13 @@ func (s *Store) DeleteDestination(_ context.Context, id string) error {
 		if err := b.Delete([]byte(id)); err != nil {
 			return fmt.Errorf("deleting destination %q: %w", id, err)
 		}
-		s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceDestination, ID: id})
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceDestination, ID: id})
+	return nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────

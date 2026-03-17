@@ -103,6 +103,8 @@ func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) middle
 		return middlewares.RateLimitMiddleware(mw.RateLimit)
 	case model.MiddlewareTypeJWT:
 		return middlewares.JWTMiddleware(mw.JWT, services)
+	case model.MiddlewareTypeAccessLog:
+		return middlewares.AccessLogMiddleware(mw.AccessLog)
 	default:
 		return nil
 	}

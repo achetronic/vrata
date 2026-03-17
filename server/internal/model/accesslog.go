@@ -1,6 +1,7 @@
 package model
 
-// AccessLogConfig configures access logging for a Listener.
+// AccessLogConfig configures access logging. Attached to routes/groups
+// as a middleware (type "accessLog").
 type AccessLogConfig struct {
 	// Path is the file path where access logs are written.
 	// Use "/dev/stdout" or "stdout" for container-friendly stdout logging.

@@ -1822,14 +1822,6 @@ const docTemplate = `{
         "model.Listener": {
             "type": "object",
             "properties": {
-                "accessLog": {
-                    "description": "AccessLog configures access logging for this listener.\nWhen nil, no access logs are emitted.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.AccessLogConfig"
-                        }
-                    ]
-                },
                 "address": {
                     "description": "Address is the IP address the listener binds to.\nDefaults to \"0.0.0.0\" if empty.",
                     "type": "string"
@@ -1941,6 +1933,14 @@ const docTemplate = `{
         "model.Middleware": {
             "type": "object",
             "properties": {
+                "accessLog": {
+                    "description": "AccessLog holds the access log configuration.\nSet when Type == \"accessLog\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.AccessLogConfig"
+                        }
+                    ]
+                },
                 "cors": {
                     "description": "CORS holds the CORS configuration. Set when Type == \"cors\".",
                     "allOf": [
@@ -2036,7 +2036,8 @@ const docTemplate = `{
                 "extAuthz",
                 "extProc",
                 "rateLimit",
-                "headers"
+                "headers",
+                "accessLog"
             ],
             "x-enum-varnames": [
                 "MiddlewareTypeCORS",
@@ -2044,7 +2045,8 @@ const docTemplate = `{
                 "MiddlewareTypeExtAuthz",
                 "MiddlewareTypeExtProc",
                 "MiddlewareTypeRateLimit",
-                "MiddlewareTypeHeaders"
+                "MiddlewareTypeHeaders",
+                "MiddlewareTypeAccessLog"
             ]
         },
         "model.OutlierDetectionOptions": {

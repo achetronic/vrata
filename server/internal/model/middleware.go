@@ -27,6 +27,9 @@ const (
 	// Adds or removes request/response
 	// headers as a middleware, consistent with the middleware pattern.
 	MiddlewareTypeHeaders MiddlewareType = "headers"
+
+	// MiddlewareTypeAccessLog configures access logging per route/group.
+	MiddlewareTypeAccessLog MiddlewareType = "accessLog"
 )
 
 // Middleware is an independent first-class entity that holds the configuration for a
@@ -65,6 +68,10 @@ type Middleware struct {
 	// Headers holds the header mutation filter configuration.
 	// Set when Type == "headers".
 	Headers *HeadersConfig `json:"headers,omitempty" yaml:"headers,omitempty"`
+
+	// AccessLog holds the access log configuration.
+	// Set when Type == "accessLog".
+	AccessLog *AccessLogConfig `json:"accessLog,omitempty" yaml:"accessLog,omitempty"`
 }
 
 // ────────────────────────────────────────────────────────────────────────────
