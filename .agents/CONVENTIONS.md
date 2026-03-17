@@ -4,6 +4,12 @@
 
 - **DRY, KISS, elegant** — every abstraction must earn its place. If it can be done with
   less code without sacrificing clarity, do it with less code.
+- **Fault isolation between entities** — a compile-time or validation error in one route,
+  middleware, destination, or any other entity must NEVER prevent the rest from working.
+  The broken entity is skipped with a visible `slog.Error` log, and the routing table is
+  built with everything else. This applies to CEL compilation, regex compilation, middleware
+  construction, and any per-entity processing. One bad config must not be fatal to the
+  entire proxy.
 - **Explicit dependency injection** — shared dependencies (store, xDS cache, logger, config)
   are passed via a `Dependencies` struct. No package-level globals, no `init()` side effects.
 - **Error bubbling** — functions return errors to their caller. Only handler-level code

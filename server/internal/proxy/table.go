@@ -1,10 +1,12 @@
 package proxy
 
 import (
+	"log/slog"
 	"regexp"
 	"strings"
 
 	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/rutoso/internal/proxy/celeval"
 )
 
 // BuildTable compiles a routing table from model entities.
@@ -56,6 +58,11 @@ func BuildTable(
 			gCopy := g
 			cr, err := compileRoute(r, &gCopy, upstreams, mwByID)
 			if err != nil {
+				slog.Error("proxy: skipping route with compile error",
+					slog.String("route", r.Name),
+					slog.String("id", r.ID),
+					slog.String("error", err.Error()),
+				)
 				continue
 			}
 			compiled = append(compiled, cr)
@@ -69,6 +76,11 @@ func BuildTable(
 		}
 		cr, err := compileRoute(r, nil, upstreams, mwByID)
 		if err != nil {
+			slog.Error("proxy: skipping route with compile error",
+				slog.String("route", r.Name),
+				slog.String("id", r.ID),
+				slog.String("error", err.Error()),
+			)
 			continue
 		}
 		compiled = append(compiled, cr)
@@ -180,6 +192,15 @@ func compileRoute(
 		if !found {
 			cr.hostnames = append(cr.hostnames, h)
 		}
+	}
+
+	// CEL expression.
+	if r.Match.CEL != "" {
+		prg, err := celeval.Compile(r.Match.CEL)
+		if err != nil {
+			return cr, err
+		}
+		cr.celProgram = prg
 	}
 
 	// Build handler with middleware chain.

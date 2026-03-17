@@ -2091,6 +2091,10 @@ const docTemplate = `{
         "model.MatchRule": {
             "type": "object",
             "properties": {
+                "cel": {
+                    "description": "CEL is an optional Common Expression Language expression evaluated\nagainst the incoming request. When set, the expression must return\ntrue for the route to match. It is evaluated as an AND condition\ntogether with all other matchers — static matchers run first (fast\npath), and CEL is only evaluated if they all pass.\n\nAvailable variables:\n  request.method      — HTTP method (string)\n  request.path        — URL path (string)\n  request.host        — hostname without port (string)\n  request.scheme      — \"http\" or \"https\" (string)\n  request.headers     — request headers (map\u003cstring, string\u003e)\n  request.queryParams — query parameters (map\u003cstring, string\u003e)\n  request.clientIp    — client IP address (string)\n\nExample: request.path.startsWith(\"/api\") \u0026\u0026 \"admin\" in request.headers[\"x-role\"]",
+                    "type": "string"
+                },
                 "grpc": {
                     "description": "GRPC restricts this match to gRPC requests only (content-type\napplication/grpc). Maps to RouteMatch.grpc.",
                     "type": "boolean"

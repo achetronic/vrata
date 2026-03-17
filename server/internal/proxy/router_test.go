@@ -167,3 +167,148 @@ func TestRouterAtomicSwap(t *testing.T) {
 		t.Errorf("after swap should 200, got %d", w2.Code)
 	}
 }
+
+func TestRouterCELOnlyMatch(t *testing.T) {
+	router := NewRouter()
+
+	table, err := BuildTable(
+		[]model.Route{
+			{
+				ID:   "r1",
+				Match: model.MatchRule{
+					PathPrefix: "/",
+					CEL:        `request.method == "POST" && "x-api-key" in request.headers`,
+				},
+				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "cel-ok"},
+			},
+		},
+		nil, nil, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.SwapTable(table)
+
+	// POST with header — match.
+	r := httptest.NewRequest("POST", "/anything", nil)
+	r.Header.Set("X-Api-Key", "secret")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	if w.Code != 200 || w.Body.String() != "cel-ok" {
+		t.Errorf("CEL match: got %d %q", w.Code, w.Body.String())
+	}
+
+	// GET with header — CEL fails (method).
+	r2 := httptest.NewRequest("GET", "/anything", nil)
+	r2.Header.Set("X-Api-Key", "secret")
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, r2)
+	if w2.Code != 404 {
+		t.Errorf("CEL method mismatch: got %d, want 404", w2.Code)
+	}
+
+	// POST without header — CEL fails (missing header).
+	r3 := httptest.NewRequest("POST", "/anything", nil)
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, r3)
+	if w3.Code != 404 {
+		t.Errorf("CEL header mismatch: got %d, want 404", w3.Code)
+	}
+}
+
+func TestRouterCELWithStaticMatchers(t *testing.T) {
+	router := NewRouter()
+
+	table, err := BuildTable(
+		[]model.Route{
+			{
+				ID: "r1",
+				Match: model.MatchRule{
+					PathPrefix: "/api",
+					Methods:    []string{"GET"},
+					CEL:        `"debug" in request.queryParams && request.queryParams["debug"] == "1"`,
+				},
+				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "debug-on"},
+			},
+		},
+		nil, nil, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.SwapTable(table)
+
+	// All matchers pass.
+	r := httptest.NewRequest("GET", "/api/test?debug=1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Errorf("all match: got %d, want 200", w.Code)
+	}
+
+	// Static passes, CEL fails (no debug param).
+	r2 := httptest.NewRequest("GET", "/api/test", nil)
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, r2)
+	if w2.Code != 404 {
+		t.Errorf("CEL fail: got %d, want 404", w2.Code)
+	}
+
+	// Static fails (wrong method), CEL would pass.
+	r3 := httptest.NewRequest("POST", "/api/test?debug=1", nil)
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, r3)
+	if w3.Code != 404 {
+		t.Errorf("static fail: got %d, want 404", w3.Code)
+	}
+
+	// Static fails (wrong path).
+	r4 := httptest.NewRequest("GET", "/web/test?debug=1", nil)
+	w4 := httptest.NewRecorder()
+	router.ServeHTTP(w4, r4)
+	if w4.Code != 404 {
+		t.Errorf("path fail: got %d, want 404", w4.Code)
+	}
+}
+
+func TestRouterCELInvalidExpressionSkipsRoute(t *testing.T) {
+	router := NewRouter()
+
+	table, err := BuildTable(
+		[]model.Route{
+			{
+				ID:   "r-bad",
+				Name: "bad-cel",
+				Match: model.MatchRule{PathPrefix: "/bad", CEL: "not valid cel !!!"},
+				DirectResponse: &model.RouteDirectResponse{Status: 200},
+			},
+			{
+				ID:   "r-good",
+				Name: "good",
+				Match: model.MatchRule{PathPrefix: "/good"},
+				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
+			},
+		},
+		nil, nil, nil,
+	)
+	if err != nil {
+		t.Fatalf("BuildTable should not fail, got: %v", err)
+	}
+	router.SwapTable(table)
+
+	// Good route still works.
+	r := httptest.NewRequest("GET", "/good", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	if w.Code != 200 || w.Body.String() != "ok" {
+		t.Errorf("good route: got %d %q, want 200 ok", w.Code, w.Body.String())
+	}
+
+	// Bad route was skipped.
+	r2 := httptest.NewRequest("GET", "/bad", nil)
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, r2)
+	if w2.Code != 404 {
+		t.Errorf("bad CEL route should be skipped (404), got %d", w2.Code)
+	}
+}

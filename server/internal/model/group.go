@@ -133,4 +133,22 @@ type MatchRule struct {
 	// GRPC restricts this match to gRPC requests only (content-type
 	// application/grpc). Maps to RouteMatch.grpc.
 	GRPC bool `json:"grpc,omitempty" yaml:"grpc,omitempty"`
+
+	// CEL is an optional Common Expression Language expression evaluated
+	// against the incoming request. When set, the expression must return
+	// true for the route to match. It is evaluated as an AND condition
+	// together with all other matchers — static matchers run first (fast
+	// path), and CEL is only evaluated if they all pass.
+	//
+	// Available variables:
+	//   request.method      — HTTP method (string)
+	//   request.path        — URL path (string)
+	//   request.host        — hostname without port (string)
+	//   request.scheme      — "http" or "https" (string)
+	//   request.headers     — request headers (map<string, string>)
+	//   request.queryParams — query parameters (map<string, string>)
+	//   request.clientIp    — client IP address (string)
+	//
+	// Example: request.path.startsWith("/api") && "admin" in request.headers["x-role"]
+	CEL string `json:"cel,omitempty" yaml:"cel,omitempty"`
 }

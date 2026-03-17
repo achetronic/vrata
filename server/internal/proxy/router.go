@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 
 	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/rutoso/internal/proxy/celeval"
 )
 
 // Router holds the current routing table and dispatches incoming requests
@@ -37,6 +38,7 @@ type compiledRoute struct {
 	queryParams []model.QueryParamMatcher
 	grpcOnly    bool
 	hostnames   []string
+	celProgram  *celeval.Program // nil if no CEL expression
 	handler     http.Handler
 }
 
@@ -155,6 +157,11 @@ func (cr *compiledRoute) match(req *http.Request) bool {
 				return false
 			}
 		}
+	}
+
+	// CEL expression (evaluated last — most expensive check).
+	if cr.celProgram != nil && !cr.celProgram.Eval(req) {
+		return false
 	}
 
 	return true
