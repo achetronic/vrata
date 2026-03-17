@@ -35,6 +35,14 @@
 
 ## Forbidden Patterns
 
+- **No manual ResponseWriter wrappers** — never create a custom struct that embeds
+  `http.ResponseWriter` to intercept `WriteHeader`, `Write`, or `Flush`. These break
+  optional interfaces (`http.Flusher`, `http.Hijacker`, `http.Pusher`, `io.ReaderFrom`)
+  that the underlying writer may implement, silently breaking SSE, WebSockets, and
+  HTTP/2. Always use `github.com/felixge/httpsnoop` instead:
+  - `httpsnoop.CaptureMetrics(next, w, r)` to capture status, bytes, and duration.
+  - `httpsnoop.Wrap(w, httpsnoop.Hooks{...})` to intercept specific methods with hooks.
+  httpsnoop preserves all optional interfaces automatically.
 - **No external router libraries** (Gin, Echo, Chi, etc.) unless there is a concrete,
   documented, justified reason. `net/http` is the baseline.
 - **No global state** — no package-level variables that hold mutable runtime state.

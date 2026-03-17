@@ -10,18 +10,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/felixge/httpsnoop"
 	"github.com/google/uuid"
+
+	"github.com/achetronic/rutoso/internal/model"
 )
 
 // AccessLogMiddleware creates a middleware that logs request and response
 // as two separate log entries linked by a generated request ID.
 func AccessLogMiddleware(cfg *model.AccessLogConfig) Middleware {
 	if cfg == nil || cfg.Path == "" {
-		return func(next http.Handler) http.Handler { return next }
+		return passthrough
 	}
 	if cfg.OnRequest == nil && cfg.OnResponse == nil {
-		return func(next http.Handler) http.Handler { return next }
+		return passthrough
 	}
 
 	writer := openLogWriter(cfg.Path)
@@ -32,24 +34,15 @@ func AccessLogMiddleware(cfg *model.AccessLogConfig) Middleware {
 			requestID := uuid.NewString()
 			start := time.Now()
 
-			// Log request.
 			if cfg.OnRequest != nil {
-				entry := interpolateFields(cfg.OnRequest.Fields, r, nil, requestID, start, 0, 0)
+				entry := interpolateFields(cfg.OnRequest.Fields, r, 0, 0, requestID, start, 0)
 				writeLine(writer, entry, useJSON)
 			}
 
-			// Wrap response writer to capture status and bytes.
-			lrw := &logResponseWriter{
-				ResponseWriter: w,
-				statusCode:     http.StatusOK,
-			}
+			m := httpsnoop.CaptureMetrics(next, w, r)
 
-			next.ServeHTTP(lrw, r)
-
-			// Log response.
 			if cfg.OnResponse != nil {
-				duration := time.Since(start)
-				entry := interpolateFields(cfg.OnResponse.Fields, r, lrw, requestID, start, duration, lrw.bytesWritten)
+				entry := interpolateFields(cfg.OnResponse.Fields, r, m.Code, m.Written, requestID, start, m.Duration)
 				writeLine(writer, entry, useJSON)
 			}
 		})
@@ -74,21 +67,18 @@ func openLogWriter(path string) io.Writer {
 func interpolateFields(
 	fields map[string]string,
 	r *http.Request,
-	lrw *logResponseWriter,
+	statusCode int,
+	bytesWritten int64,
 	requestID string,
 	start time.Time,
 	duration time.Duration,
-	bytesWritten int64,
 ) map[string]string {
 	result := make(map[string]string, len(fields))
 
 	for key, tmpl := range fields {
 		val := tmpl
 
-		// Static replacements.
 		val = strings.ReplaceAll(val, "${id}", requestID)
-
-		// Request fields.
 		val = strings.ReplaceAll(val, "${request.method}", r.Method)
 		val = strings.ReplaceAll(val, "${request.path}", r.URL.Path)
 		val = strings.ReplaceAll(val, "${request.host}", reqHost(r))
@@ -101,45 +91,24 @@ func interpolateFields(
 		}
 		val = strings.ReplaceAll(val, "${request.scheme}", scheme)
 
-		// Request headers.
 		for {
-			start := strings.Index(val, "${request.header.")
-			if start == -1 {
+			s := strings.Index(val, "${request.header.")
+			if s == -1 {
 				break
 			}
-			end := strings.Index(val[start:], "}")
+			end := strings.Index(val[s:], "}")
 			if end == -1 {
 				break
 			}
-			end += start
-			placeholder := val[start : end+1]
-			headerName := val[start+len("${request.header.") : end]
+			end += s
+			placeholder := val[s : end+1]
+			headerName := val[s+len("${request.header.") : end]
 			val = strings.Replace(val, placeholder, r.Header.Get(headerName), 1)
 		}
 
-		// Response fields (only available in onResponse).
-		if lrw != nil {
-			val = strings.ReplaceAll(val, "${response.status}", fmt.Sprintf("%d", lrw.statusCode))
-			val = strings.ReplaceAll(val, "${response.bytes}", fmt.Sprintf("%d", bytesWritten))
+		val = strings.ReplaceAll(val, "${response.status}", fmt.Sprintf("%d", statusCode))
+		val = strings.ReplaceAll(val, "${response.bytes}", fmt.Sprintf("%d", bytesWritten))
 
-			// Response headers.
-			for {
-				s := strings.Index(val, "${response.header.")
-				if s == -1 {
-					break
-				}
-				e := strings.Index(val[s:], "}")
-				if e == -1 {
-					break
-				}
-				e += s
-				placeholder := val[s : e+1]
-				headerName := val[s+len("${response.header.") : e]
-				val = strings.Replace(val, placeholder, lrw.Header().Get(headerName), 1)
-			}
-		}
-
-		// Duration fields.
 		val = strings.ReplaceAll(val, "${duration.ms}", fmt.Sprintf("%d", duration.Milliseconds()))
 		val = strings.ReplaceAll(val, "${duration.us}", fmt.Sprintf("%d", duration.Microseconds()))
 		val = strings.ReplaceAll(val, "${duration.s}", fmt.Sprintf("%.3f", duration.Seconds()))
@@ -180,35 +149,4 @@ func clientIPFromRequest(r *http.Request) string {
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return host
-}
-
-// logResponseWriter captures status code and bytes written.
-type logResponseWriter struct {
-	http.ResponseWriter
-	statusCode   int
-	bytesWritten int64
-	wroteHeader  bool
-}
-
-func (lrw *logResponseWriter) WriteHeader(code int) {
-	if !lrw.wroteHeader {
-		lrw.wroteHeader = true
-		lrw.statusCode = code
-	}
-	lrw.ResponseWriter.WriteHeader(code)
-}
-
-func (lrw *logResponseWriter) Write(b []byte) (int, error) {
-	if !lrw.wroteHeader {
-		lrw.WriteHeader(http.StatusOK)
-	}
-	n, err := lrw.ResponseWriter.Write(b)
-	lrw.bytesWritten += int64(n)
-	return n, err
-}
-
-func (lrw *logResponseWriter) Flush() {
-	if f, ok := lrw.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
 }

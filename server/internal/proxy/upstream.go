@@ -24,6 +24,7 @@ type Upstream struct {
 	Healthy          bool
 	Balancer         Balancer
 	CircuitBreaker   *CircuitBreaker
+	OnResponse       func(destID string, statusCode int)
 	mu               sync.RWMutex
 	lastHealthAt     time.Time
 }
@@ -196,6 +197,7 @@ func (u *Upstream) ReverseProxy() *httputil.ReverseProxy {
 }
 
 // SelectBackend picks a backend from weighted backends using weighted random.
+// When all weights are zero, backends are selected uniformly at random.
 func SelectBackend(backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream {
 	if len(backends) == 0 {
 		return nil
@@ -204,13 +206,18 @@ func SelectBackend(backends []model.BackendRef, upstreams map[string]*Upstream) 
 		return upstreams[backends[0].DestinationID]
 	}
 
-	// Weighted random selection.
 	total := uint32(0)
+	allZero := true
 	for _, b := range backends {
 		total += b.Weight
+		if b.Weight > 0 {
+			allZero = false
+		}
 	}
-	if total == 0 {
-		total = uint32(len(backends))
+
+	if allZero {
+		idx := rand.Intn(len(backends))
+		return upstreams[backends[idx].DestinationID]
 	}
 
 	r := rand.Uint32() % total

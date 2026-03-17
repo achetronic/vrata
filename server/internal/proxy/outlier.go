@@ -100,8 +100,10 @@ func (od *OutlierDetector) RecordResponse(destID string, statusCode int) {
 
 	if shouldEject && !t.ejected.Load() {
 		t.ejected.Store(true)
+		od.mu.Lock()
 		t.ejectedAt = time.Now()
 		t.ejectionCount++
+		od.mu.Unlock()
 		t.upstream.mu.Lock()
 		t.upstream.Healthy = false
 		t.upstream.mu.Unlock()

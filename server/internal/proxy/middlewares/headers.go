@@ -3,6 +3,8 @@ package middlewares
 import (
 	"net/http"
 
+	"github.com/felixge/httpsnoop"
+
 	"github.com/achetronic/rutoso/internal/model"
 )
 
@@ -10,12 +12,11 @@ import (
 // response headers.
 func HeadersMiddleware(cfg *model.HeadersConfig) Middleware {
 	if cfg == nil {
-		return func(next http.Handler) http.Handler { return next }
+		return passthrough
 	}
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Request headers: add.
 			for _, h := range cfg.RequestHeadersToAdd {
 				if h.Append {
 					r.Header.Add(h.Key, h.Value)
@@ -24,61 +25,29 @@ func HeadersMiddleware(cfg *model.HeadersConfig) Middleware {
 				}
 			}
 
-			// Request headers: remove.
 			for _, name := range cfg.RequestHeadersToRemove {
 				r.Header.Del(name)
 			}
 
-			// Wrap response writer to intercept response headers.
-			rw := &headerResponseWriter{
-				ResponseWriter: w,
-				cfg:            cfg,
-				wroteHeader:    false,
-			}
+			wrappedW := httpsnoop.Wrap(w, httpsnoop.Hooks{
+				WriteHeader: func(next httpsnoop.WriteHeaderFunc) httpsnoop.WriteHeaderFunc {
+					return func(code int) {
+						for _, h := range cfg.ResponseHeadersToAdd {
+							if h.Append {
+								w.Header().Add(h.Key, h.Value)
+							} else {
+								w.Header().Set(h.Key, h.Value)
+							}
+						}
+						for _, name := range cfg.ResponseHeadersToRemove {
+							w.Header().Del(name)
+						}
+						next(code)
+					}
+				},
+			})
 
-			next.ServeHTTP(rw, r)
+			next.ServeHTTP(wrappedW, r)
 		})
-	}
-}
-
-// headerResponseWriter intercepts WriteHeader to add/remove response headers.
-type headerResponseWriter struct {
-	http.ResponseWriter
-	cfg         *model.HeadersConfig
-	wroteHeader bool
-}
-
-func (rw *headerResponseWriter) WriteHeader(code int) {
-	if !rw.wroteHeader {
-		rw.wroteHeader = true
-
-		// Response headers: add.
-		for _, h := range rw.cfg.ResponseHeadersToAdd {
-			if h.Append {
-				rw.ResponseWriter.Header().Add(h.Key, h.Value)
-			} else {
-				rw.ResponseWriter.Header().Set(h.Key, h.Value)
-			}
-		}
-
-		// Response headers: remove.
-		for _, name := range rw.cfg.ResponseHeadersToRemove {
-			rw.ResponseWriter.Header().Del(name)
-		}
-	}
-
-	rw.ResponseWriter.WriteHeader(code)
-}
-
-func (rw *headerResponseWriter) Write(b []byte) (int, error) {
-	if !rw.wroteHeader {
-		rw.WriteHeader(http.StatusOK)
-	}
-	return rw.ResponseWriter.Write(b)
-}
-
-func (rw *headerResponseWriter) Flush() {
-	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
 	}
 }

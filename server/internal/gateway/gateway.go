@@ -119,6 +119,10 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	}
 	if gw.deps.OutlierDetector != nil {
 		gw.deps.OutlierDetector.Update(table.Upstreams())
+		od := gw.deps.OutlierDetector
+		for _, u := range table.Upstreams() {
+			u.OnResponse = od.RecordResponse
+		}
 	}
 
 	// Reconcile listeners.

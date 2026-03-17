@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/felixge/httpsnoop"
+
 	"github.com/achetronic/rutoso/internal/model"
 	"github.com/achetronic/rutoso/internal/proxy/middlewares"
 )
@@ -234,59 +236,41 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 			}
 		}
 
-		sw := &statusWriter{ResponseWriter: w}
+		capturedStatus := http.StatusOK
+		wrappedW := httpsnoop.Wrap(w, httpsnoop.Hooks{
+			WriteHeader: func(next httpsnoop.WriteHeaderFunc) httpsnoop.WriteHeaderFunc {
+				return func(code int) {
+					capturedStatus = code
+					next(code)
+				}
+			},
+		})
 
 		if fwd.Timeouts != nil && fwd.Timeouts.Request != "" {
 			if d, err := time.ParseDuration(fwd.Timeouts.Request); err == nil {
-				http.TimeoutHandler(proxy, d, "request timeout").ServeHTTP(sw, r)
-				recordUpstreamResult(upstream, sw.status)
+				http.TimeoutHandler(proxy, d, "request timeout").ServeHTTP(wrappedW, r)
+				recordUpstreamResult(upstream, capturedStatus)
 				return
 			}
 		}
 
-		proxy.ServeHTTP(sw, r)
-		recordUpstreamResult(upstream, sw.status)
+		proxy.ServeHTTP(wrappedW, r)
+		recordUpstreamResult(upstream, capturedStatus)
 	})
 }
 
 // recordUpstreamResult records success or failure on the circuit breaker
-// based on the upstream response status code.
+// and notifies the outlier detector based on the upstream response status.
 func recordUpstreamResult(upstream *Upstream, status int) {
-	if upstream.CircuitBreaker == nil {
-		return
+	if upstream.CircuitBreaker != nil {
+		if status >= 500 {
+			upstream.CircuitBreaker.RecordFailure()
+		} else {
+			upstream.CircuitBreaker.RecordSuccess()
+		}
 	}
-	if status >= 500 {
-		upstream.CircuitBreaker.RecordFailure()
-	} else {
-		upstream.CircuitBreaker.RecordSuccess()
-	}
-}
-
-// statusWriter captures the response status code written by the upstream.
-type statusWriter struct {
-	http.ResponseWriter
-	status      int
-	wroteHeader bool
-}
-
-func (sw *statusWriter) WriteHeader(code int) {
-	if !sw.wroteHeader {
-		sw.status = code
-		sw.wroteHeader = true
-	}
-	sw.ResponseWriter.WriteHeader(code)
-}
-
-func (sw *statusWriter) Write(b []byte) (int, error) {
-	if !sw.wroteHeader {
-		sw.WriteHeader(http.StatusOK)
-	}
-	return sw.ResponseWriter.Write(b)
-}
-
-func (sw *statusWriter) Flush() {
-	if f, ok := sw.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
+	if upstream.OnResponse != nil {
+		upstream.OnResponse(upstream.Destination.ID, status)
 	}
 }
 

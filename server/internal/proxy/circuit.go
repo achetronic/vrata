@@ -10,10 +10,13 @@ import (
 type CircuitState int32
 
 const (
-	CircuitClosed   CircuitState = 0 // normal operation
-	CircuitOpen     CircuitState = 1 // failing, reject requests
-	CircuitHalfOpen CircuitState = 2 // testing recovery
+	CircuitClosed   CircuitState = 0
+	CircuitOpen     CircuitState = 1
+	CircuitHalfOpen CircuitState = 2
 )
+
+const defaultFailureThreshold = 5
+const defaultOpenDuration = 30 * time.Second
 
 // CircuitBreaker tracks failures per destination and opens the circuit
 // when thresholds are exceeded.
@@ -24,12 +27,11 @@ type CircuitBreaker struct {
 	maxRetries         uint32
 
 	activeConnections atomic.Int64
-	pendingRequests   atomic.Int64
 	activeRequests    atomic.Int64
-	activeRetries     atomic.Int64
 
 	consecutiveFailures atomic.Int64
 	state               atomic.Int32
+	halfOpenAllowed     atomic.Int32
 	lastFailure         time.Time
 	mu                  sync.Mutex
 	openDuration        time.Duration
@@ -54,7 +56,7 @@ func NewCircuitBreaker(maxConn, maxPending, maxReq, maxRetry uint32) *CircuitBre
 		maxPendingRequests: maxPending,
 		maxRequests:        maxReq,
 		maxRetries:         maxRetry,
-		openDuration:       30 * time.Second,
+		openDuration:       defaultOpenDuration,
 	}
 }
 
@@ -68,17 +70,17 @@ func (cb *CircuitBreaker) Allow() bool {
 		elapsed := time.Since(cb.lastFailure)
 		cb.mu.Unlock()
 		if elapsed > cb.openDuration {
-			cb.state.CompareAndSwap(int32(CircuitOpen), int32(CircuitHalfOpen))
-			return true
+			if cb.state.CompareAndSwap(int32(CircuitOpen), int32(CircuitHalfOpen)) {
+				cb.halfOpenAllowed.Store(1)
+			}
+			return cb.halfOpenAllowed.Add(-1) >= 0
 		}
 		return false
 
 	case CircuitHalfOpen:
-		// Allow one request through to test.
-		return true
+		return cb.halfOpenAllowed.Add(-1) >= 0
 	}
 
-	// Closed — check thresholds.
 	if cb.activeConnections.Load() >= int64(cb.maxConnections) {
 		return false
 	}
@@ -89,16 +91,16 @@ func (cb *CircuitBreaker) Allow() bool {
 	return true
 }
 
-// RecordSuccess marks a successful request.
+// RecordSuccess marks a successful request. Closes the circuit if half-open.
 func (cb *CircuitBreaker) RecordSuccess() {
 	cb.consecutiveFailures.Store(0)
 	cb.state.Store(int32(CircuitClosed))
 }
 
-// RecordFailure marks a failed request.
+// RecordFailure marks a failed request. Opens the circuit after consecutive failures.
 func (cb *CircuitBreaker) RecordFailure() {
 	failures := cb.consecutiveFailures.Add(1)
-	if failures >= 5 {
+	if failures >= defaultFailureThreshold {
 		cb.state.Store(int32(CircuitOpen))
 		cb.mu.Lock()
 		cb.lastFailure = time.Now()

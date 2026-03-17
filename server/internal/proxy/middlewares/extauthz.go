@@ -1,6 +1,7 @@
 package middlewares
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"strings"
@@ -67,8 +68,18 @@ func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, services map[string]Service) 
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Build check request.
-			checkReq, err := http.NewRequestWithContext(r.Context(), r.Method, baseURL, nil)
+			var checkBody io.Reader
+			if cfg.IncludeBody && r.Body != nil {
+				bodyBytes, err := io.ReadAll(r.Body)
+				if err != nil {
+					handleAuthzError(w, r, next, cfg.FailureModeAllow, "failed to read request body")
+					return
+				}
+				r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+				checkBody = bytes.NewReader(bodyBytes)
+			}
+
+			checkReq, err := http.NewRequestWithContext(r.Context(), r.Method, baseURL, checkBody)
 			if err != nil {
 				handleAuthzError(w, r, next, cfg.FailureModeAllow, "failed to create check request")
 				return
