@@ -1,6 +1,11 @@
-// Package k8s watches Kubernetes EndpointSlices for Destinations whose
-// discovery type is "kubernetes" and maintains an up-to-date map of
-// resolved endpoints (pod IPs) keyed by Destination ID.
+// Package k8s watches Kubernetes EndpointSlices and Services for Destinations
+// whose discovery type is "kubernetes" and maintains an up-to-date map of
+// resolved endpoints keyed by Destination ID.
+//
+// For regular Services (ClusterIP, NodePort, LoadBalancer), the watcher
+// observes EndpointSlices and resolves individual pod IPs. For ExternalName
+// Services, the watcher reads spec.externalName and uses it as the sole
+// endpoint, re-checking whenever the Service object changes.
 //
 // The Watcher is a pure endpoint provider: it does not touch the proxy
 // config directly. It calls OnChange() whenever the endpoint set changes
@@ -14,6 +19,7 @@ import (
 	"strings"
 	"sync"
 
+	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -25,7 +31,7 @@ import (
 	"github.com/achetronic/rutoso/internal/store"
 )
 
-// Endpoint represents a single resolved pod IP + port.
+// Endpoint represents a single resolved address + port.
 type Endpoint struct {
 	Address string
 	Port    uint32
@@ -39,11 +45,12 @@ type Dependencies struct {
 	OnChange func(ctx context.Context) error
 }
 
-// Watcher observes Kubernetes EndpointSlices for EDS-backed Destinations.
+// Watcher observes Kubernetes EndpointSlices and Services for EDS-backed
+// Destinations.
 type Watcher struct {
 	deps      Dependencies
 	mu        sync.RWMutex
-	endpoints map[string][]Endpoint // keyed by Destination ID
+	endpoints map[string][]Endpoint
 	cancels   map[string]context.CancelFunc
 }
 
@@ -74,7 +81,7 @@ func (w *Watcher) Endpoints() map[string][]Endpoint {
 	return out
 }
 
-// Run subscribes to the store and reconciles EndpointSlice watches.
+// Run subscribes to the store and reconciles watches on every Destination change.
 func (w *Watcher) Run(ctx context.Context) error {
 	events, err := w.deps.Store.Subscribe(ctx)
 	if err != nil {
@@ -112,6 +119,8 @@ func (w *Watcher) Run(ctx context.Context) error {
 	}
 }
 
+// reconcile diffs the current watches against the desired state from the store
+// and starts/stops watches as needed.
 func (w *Watcher) reconcile(ctx context.Context) error {
 	destinations, err := w.deps.Store.ListDestinations(ctx)
 	if err != nil {
@@ -151,16 +160,42 @@ func (w *Watcher) reconcile(ctx context.Context) error {
 			)
 			continue
 		}
+
 		watchCtx, cancel := context.WithCancel(ctx)
 		w.cancels[id] = cancel
-		go w.watchEndpointSlices(watchCtx, id, d.Port, ns, svc)
+
+		// Check the Service type to decide how to resolve endpoints.
+		svcObj, err := w.deps.Client.CoreV1().Services(ns).Get(ctx, svc, metav1.GetOptions{})
+		if err != nil {
+			w.deps.Logger.Warn("k8s watcher: cannot get Service",
+				slog.String("destID", id),
+				slog.String("namespace", ns),
+				slog.String("service", svc),
+				slog.String("error", err.Error()),
+			)
+			cancel()
+			delete(w.cancels, id)
+			continue
+		}
+
+		if svcObj.Spec.Type == corev1.ServiceTypeExternalName {
+			go w.watchExternalNameService(watchCtx, id, d.Port, ns, svc)
+		} else {
+			go w.watchEndpointSlices(watchCtx, id, d.Port, ns, svc)
+		}
 	}
 
 	return nil
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// EndpointSlice watcher (ClusterIP / NodePort / LoadBalancer)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// watchEndpointSlices observes EndpointSlices for a regular Kubernetes Service
+// and updates the endpoint map on every change.
 func (w *Watcher) watchEndpointSlices(ctx context.Context, destID string, destPort uint32, namespace, service string) {
-	w.deps.Logger.Info("k8s watcher: starting EndpointSlice watch",
+	w.deps.Logger.Info("k8s watcher: watching EndpointSlices",
 		slog.String("destID", destID),
 		slog.String("namespace", namespace),
 		slog.String("service", service),
@@ -212,16 +247,7 @@ func (w *Watcher) watchEndpointSlices(ctx context.Context, destID string, destPo
 	<-ctx.Done()
 }
 
-func (w *Watcher) stopAll() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	for id, cancel := range w.cancels {
-		cancel()
-		delete(w.cancels, id)
-		delete(w.endpoints, id)
-	}
-}
-
+// buildEndpoints extracts ready pod IPs from a list of EndpointSlice objects.
 func buildEndpoints(destPort uint32, objs []interface{}) []Endpoint {
 	var eps []Endpoint
 	for _, obj := range objs {
@@ -246,6 +272,109 @@ func buildEndpoints(destPort uint32, objs []interface{}) []Endpoint {
 		}
 	}
 	return eps
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ExternalName watcher
+// ─────────────────────────────────────────────────────────────────────────────
+
+// watchExternalNameService observes a Kubernetes Service of type ExternalName
+// and uses spec.externalName as the sole endpoint. The watcher reacts to
+// Service updates so that changes to the externalName are picked up.
+func (w *Watcher) watchExternalNameService(ctx context.Context, destID string, destPort uint32, namespace, service string) {
+	w.deps.Logger.Info("k8s watcher: watching ExternalName Service",
+		slog.String("destID", destID),
+		slog.String("namespace", namespace),
+		slog.String("service", service),
+	)
+
+	factory := informers.NewSharedInformerFactoryWithOptions(
+		w.deps.Client,
+		0,
+		informers.WithNamespace(namespace),
+		informers.WithTweakListOptions(func(opts *metav1.ListOptions) {
+			opts.FieldSelector = "metadata.name=" + service
+		}),
+	)
+
+	informer := factory.Core().V1().Services().Informer()
+
+	onEvent := func(obj interface{}) {
+		svcObj, ok := obj.(*corev1.Service)
+		if !ok {
+			return
+		}
+		if svcObj.Spec.Type != corev1.ServiceTypeExternalName || svcObj.Spec.ExternalName == "" {
+			w.mu.Lock()
+			w.endpoints[destID] = nil
+			w.mu.Unlock()
+
+			w.deps.Logger.Warn("k8s watcher: ExternalName Service has no externalName or changed type",
+				slog.String("destID", destID),
+				slog.String("service", service),
+			)
+			return
+		}
+
+		eps := []Endpoint{{Address: svcObj.Spec.ExternalName, Port: destPort}}
+
+		w.mu.Lock()
+		w.endpoints[destID] = eps
+		w.mu.Unlock()
+
+		w.deps.Logger.Info("k8s watcher: ExternalName resolved",
+			slog.String("destID", destID),
+			slog.String("externalName", svcObj.Spec.ExternalName),
+			slog.Uint64("port", uint64(destPort)),
+		)
+
+		if err := w.deps.OnChange(ctx); err != nil {
+			w.deps.Logger.Error("k8s watcher: OnChange failed",
+				slog.String("destID", destID),
+				slog.String("error", err.Error()),
+			)
+		}
+	}
+
+	informer.AddEventHandler(kcache.ResourceEventHandlerFuncs{
+		AddFunc:    onEvent,
+		UpdateFunc: func(_, newObj interface{}) { onEvent(newObj) },
+		DeleteFunc: func(_ interface{}) {
+			w.mu.Lock()
+			w.endpoints[destID] = nil
+			w.mu.Unlock()
+
+			w.deps.Logger.Warn("k8s watcher: ExternalName Service deleted",
+				slog.String("destID", destID),
+			)
+
+			if err := w.deps.OnChange(ctx); err != nil {
+				w.deps.Logger.Error("k8s watcher: OnChange failed",
+					slog.String("destID", destID),
+					slog.String("error", err.Error()),
+				)
+			}
+		},
+	})
+
+	factory.Start(ctx.Done())
+	factory.WaitForCacheSync(ctx.Done())
+
+	<-ctx.Done()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+func (w *Watcher) stopAll() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for id, cancel := range w.cancels {
+		cancel()
+		delete(w.cancels, id)
+		delete(w.endpoints, id)
+	}
 }
 
 func isEDS(d model.Destination) bool {
