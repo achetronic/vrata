@@ -221,7 +221,7 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 				if grpcTimeout := r.Header.Get("grpc-timeout"); grpcTimeout != "" {
 					if clientDur, err := parseGRPCTimeout(grpcTimeout); err == nil {
 						if clientDur > maxDur {
-							r.Header.Set("grpc-timeout", fmt.Sprintf("%dm", int(maxDur.Milliseconds())))
+							r.Header.Set("grpc-timeout", formatGRPCTimeout(maxDur))
 						}
 					}
 				}
@@ -429,6 +429,15 @@ func parseGRPCTimeout(s string) (time.Duration, error) {
 		return 0, fmt.Errorf("unknown grpc-timeout unit: %c", unit)
 	}
 	return d, nil
+}
+
+// formatGRPCTimeout formats a duration as a grpc-timeout header value,
+// using the most precise unit that avoids truncation.
+func formatGRPCTimeout(d time.Duration) string {
+	if us := d.Microseconds(); us < 1000 {
+		return fmt.Sprintf("%du", us)
+	}
+	return fmt.Sprintf("%dm", d.Milliseconds())
 }
 
 // regexCache caches compiled regular expressions to avoid recompilation

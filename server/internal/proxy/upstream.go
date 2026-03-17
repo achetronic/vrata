@@ -77,6 +77,9 @@ func NewUpstream(d model.Destination) (*Upstream, error) {
 	// HTTP/2.
 	if d.Options != nil && d.Options.HTTP2 {
 		transport.ForceAttemptHTTP2 = true
+		if transport.TLSClientConfig != nil {
+			transport.TLSClientConfig.NextProtos = append(transport.TLSClientConfig.NextProtos, "h2")
+		}
 	}
 
 	return &Upstream{

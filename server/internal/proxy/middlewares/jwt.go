@@ -35,6 +35,7 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 			audiences:      p.Audiences,
 			forward:        p.ForwardJWT,
 			claimToHeaders: p.ClaimToHeaders,
+			stop:           make(chan struct{}),
 		}
 
 		if p.JWKsInline != "" {
@@ -149,6 +150,7 @@ type jwtValidator struct {
 	jwksURL        string
 	transport      http.RoundTripper
 	mu             sync.RWMutex
+	stop           chan struct{}
 }
 
 type rsaKey struct {
@@ -258,8 +260,13 @@ func extractBearerToken(r *http.Request) string {
 func (v *jwtValidator) refreshLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		v.refreshKeys()
+	for {
+		select {
+		case <-ticker.C:
+			v.refreshKeys()
+		case <-v.stop:
+			return
+		}
 	}
 }
 

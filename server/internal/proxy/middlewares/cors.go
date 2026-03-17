@@ -50,7 +50,7 @@ func CORSMiddleware(cfg *model.CORSConfig) Middleware {
 			// Check if origin is allowed.
 			allowed := false
 			for _, m := range matchers {
-				if m.exact != "" && m.exact == origin {
+				if m.exact == "*" || m.exact == origin {
 					allowed = true
 					break
 				}
@@ -84,7 +84,7 @@ func CORSMiddleware(cfg *model.CORSConfig) Middleware {
 				if maxAge != "" {
 					w.Header().Set("Access-Control-Max-Age", maxAge)
 				}
-				w.WriteHeader(http.StatusOK)
+				w.WriteHeader(http.StatusNoContent)
 				return
 			}
 

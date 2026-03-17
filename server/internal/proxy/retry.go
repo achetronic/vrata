@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
@@ -67,20 +69,24 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		// Reset body for each attempt.
 		if bodyBytes != nil {
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 
-		// Per-attempt timeout.
+		req.Header.Set("X-Request-Attempt-Count", fmt.Sprintf("%d", attempt+1))
+
 		attemptReq := req
+		var cancelAttempt context.CancelFunc
 		if perAttemptTimeout > 0 {
-			// Note: in production we'd use context.WithTimeout, but for
-			// simplicity we set the transport deadline via the client.
-			_ = perAttemptTimeout
+			var ctx context.Context
+			ctx, cancelAttempt = context.WithTimeout(req.Context(), perAttemptTimeout)
+			attemptReq = req.WithContext(ctx)
 		}
 
 		resp, err := rt.inner.RoundTrip(attemptReq)
+		if cancelAttempt != nil {
+			cancelAttempt()
+		}
 		if err != nil {
 			lastErr = err
 			if attempt < maxAttempts-1 {

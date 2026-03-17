@@ -81,7 +81,11 @@ func proxyGet(t *testing.T, path string, headers map[string]string) (int, http.H
 	t.Helper()
 	req, _ := http.NewRequest("GET", proxyURL+path, nil)
 	for k, v := range headers {
-		req.Header.Set(k, v)
+		if strings.EqualFold(k, "Host") {
+			req.Host = v
+		} else {
+			req.Header.Set(k, v)
+		}
 	}
 	client := &http.Client{
 		Timeout: 5 * time.Second,
@@ -106,7 +110,11 @@ func proxyRequest(t *testing.T, method, path string, body []byte, headers map[st
 	}
 	req, _ := http.NewRequest(method, proxyURL+path, bodyReader)
 	for k, v := range headers {
-		req.Header.Set(k, v)
+		if strings.EqualFold(k, "Host") {
+			req.Host = v
+		} else {
+			req.Header.Set(k, v)
+		}
 	}
 	client := &http.Client{
 		Timeout: 5 * time.Second,
@@ -553,8 +561,8 @@ func TestE2E_Proxy_CORSMiddleware(t *testing.T) {
 	code, headers, _ := proxyRequest(t, "OPTIONS", "/e2e-cors", nil, map[string]string{
 		"Origin": "https://example.com",
 	})
-	if code != 200 {
-		t.Errorf("preflight: expected 200, got %d", code)
+	if code != 204 {
+		t.Errorf("preflight: expected 204, got %d", code)
 	}
 	if headers.Get("Access-Control-Allow-Origin") != "https://example.com" {
 		t.Errorf("expected ACAO header, got %q", headers.Get("Access-Control-Allow-Origin"))
@@ -620,6 +628,178 @@ func TestE2E_Proxy_RateLimitMiddleware(t *testing.T) {
 	}
 	if !rateLimited {
 		t.Error("expected at least one 429 response")
+	}
+}
+
+func TestE2E_Proxy_QueryParamMatch(t *testing.T) {
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name": "e2e-qp",
+		"match": map[string]any{
+			"pathPrefix":  "/e2e-qp",
+			"queryParams": []map[string]any{{"name": "token", "value": "abc"}},
+		},
+		"directResponse": map[string]any{"status": 200, "body": "qp-ok"},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	code, _, body := proxyGet(t, "/e2e-qp?token=abc", nil)
+	if code != 200 || body != "qp-ok" {
+		t.Errorf("with token=abc: expected 200, got %d %q", code, body)
+	}
+
+	code, _, _ = proxyGet(t, "/e2e-qp?token=wrong", nil)
+	if code != 404 {
+		t.Errorf("wrong token: expected 404, got %d", code)
+	}
+
+	code, _, _ = proxyGet(t, "/e2e-qp", nil)
+	if code != 404 {
+		t.Errorf("no token: expected 404, got %d", code)
+	}
+}
+
+func TestE2E_Proxy_GRPCMatch(t *testing.T) {
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name": "e2e-grpc",
+		"match": map[string]any{
+			"pathPrefix": "/e2e-grpc",
+			"grpc":       true,
+		},
+		"directResponse": map[string]any{"status": 200, "body": "grpc-ok"},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	code, _, body := proxyRequest(t, "POST", "/e2e-grpc", nil, map[string]string{
+		"Content-Type": "application/grpc",
+	})
+	if code != 200 || body != "grpc-ok" {
+		t.Errorf("with grpc content-type: expected 200, got %d %q", code, body)
+	}
+
+	code, _, _ = proxyGet(t, "/e2e-grpc", nil)
+	if code != 404 {
+		t.Errorf("without grpc content-type: expected 404, got %d", code)
+	}
+}
+
+func TestE2E_Proxy_HostnameMatch(t *testing.T) {
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name": "e2e-host",
+		"match": map[string]any{
+			"pathPrefix": "/e2e-host",
+			"hostnames":  []string{"test.example.com"},
+		},
+		"directResponse": map[string]any{"status": 200, "body": "host-ok"},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	code, _, body := proxyRequest(t, "GET", "/e2e-host", nil, map[string]string{
+		"Host": "test.example.com",
+	})
+	if code != 200 || body != "host-ok" {
+		t.Errorf("matching host: expected 200, got %d %q", code, body)
+	}
+
+	code, _, _ = proxyGet(t, "/e2e-host", nil)
+	if code != 404 {
+		t.Errorf("non-matching host: expected 404, got %d", code)
+	}
+}
+
+func TestE2E_Proxy_CORSWildcard(t *testing.T) {
+	_, mw := apiPost(t, "/middlewares", map[string]any{
+		"name": "e2e-cors-wildcard",
+		"type": "cors",
+		"cors": map[string]any{
+			"allowOrigins": []map[string]any{{"value": "*"}},
+			"allowMethods": []string{"GET"},
+		},
+	})
+	defer apiDelete(t, "/middlewares/"+id(mw))
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":           "e2e-cors-wild",
+		"match":          map[string]any{"pathPrefix": "/e2e-cors-wild"},
+		"directResponse": map[string]any{"status": 200, "body": "ok"},
+		"middlewareIds":  []string{id(mw)},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	code, headers, _ := proxyGet(t, "/e2e-cors-wild", map[string]string{"Origin": "https://anything.com"})
+	if code != 200 {
+		t.Errorf("expected 200, got %d", code)
+	}
+	if headers.Get("Access-Control-Allow-Origin") != "https://anything.com" {
+		t.Errorf("expected ACAO for any origin, got %q", headers.Get("Access-Control-Allow-Origin"))
+	}
+}
+
+func TestE2E_Proxy_CORSPreflight204(t *testing.T) {
+	_, mw := apiPost(t, "/middlewares", map[string]any{
+		"name": "e2e-cors-204",
+		"type": "cors",
+		"cors": map[string]any{
+			"allowOrigins": []map[string]any{{"value": "https://test.com"}},
+			"allowMethods": []string{"POST"},
+		},
+	})
+	defer apiDelete(t, "/middlewares/"+id(mw))
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":           "e2e-cors-204",
+		"match":          map[string]any{"pathPrefix": "/e2e-cors-204"},
+		"directResponse": map[string]any{"status": 200, "body": "ok"},
+		"middlewareIds":  []string{id(mw)},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	code, _, _ := proxyRequest(t, "OPTIONS", "/e2e-cors-204", nil, map[string]string{
+		"Origin": "https://test.com",
+	})
+	if code != 204 {
+		t.Errorf("preflight: expected 204, got %d", code)
+	}
+}
+
+func TestE2E_Proxy_PathRewriteRegex(t *testing.T) {
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "e2e-rewrite-regex",
+		"match": map[string]any{"pathPrefix": "/e2e-rewrite"},
+		"forward": map[string]any{
+			"backends": []map[string]any{
+				{"destinationId": "c42e5e5f-d729-424e-8787-b829670c5bf5", "weight": 100},
+			},
+			"rewrite": map[string]any{
+				"pathRegex": map[string]any{
+					"pattern":      "^/e2e-rewrite(.*)",
+					"substitution": "/$1",
+				},
+			},
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	code, _, body := proxyGet(t, "/e2e-rewrite", nil)
+	if code != 200 {
+		t.Errorf("regex rewrite: expected 200, got %d: %s", code, body)
 	}
 }
 

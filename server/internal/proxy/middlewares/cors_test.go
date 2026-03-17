@@ -28,8 +28,8 @@ func TestCORSPreflightAllowed(t *testing.T) {
 
 	handler.ServeHTTP(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200", w.Code)
+	if w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204", w.Code)
 	}
 	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "https://example.com" {
 		t.Errorf("allow-origin = %q, want https://example.com", got)
