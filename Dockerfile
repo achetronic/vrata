@@ -21,6 +21,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /bin/rutoso /rutoso
 
-EXPOSE 8080 18000
+# Management API (default :8080). Proxy listeners are dynamic.
+EXPOSE 8080
 
 ENTRYPOINT ["/rutoso"]
