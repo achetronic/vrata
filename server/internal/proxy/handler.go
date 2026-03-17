@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -86,6 +87,8 @@ func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) Middle
 		return ExtAuthzMiddleware(mw.ExtAuthz, upstreams)
 	case model.MiddlewareTypeRateLimit:
 		return RateLimitMiddleware(mw.RateLimit)
+	case model.MiddlewareTypeJWT:
+		return JWTMiddleware(mw.JWT, upstreams)
 	default:
 		return nil
 	}
@@ -141,10 +144,22 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream) ht
 
 		proxy := upstream.ReverseProxy()
 
+		// Retry.
+		if fwd.Retry != nil {
+			proxy.Transport = newRetryTransport(proxy.Transport, fwd.Retry)
+		}
+
 		// Path rewrite.
 		if fwd.Rewrite != nil {
 			applyRewrite(r, fwd.Rewrite)
 		}
+
+		// Request mirror (fire-and-forget).
+		if fwd.Mirror != nil {
+			go mirrorRequest(r, fwd.Mirror, upstreams)
+		}
+
+		// WebSocket upgrade — ReverseProxy handles it natively.
 
 		// Timeouts.
 		if fwd.Timeouts != nil && fwd.Timeouts.Request != "" {
@@ -154,12 +169,35 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream) ht
 			}
 		}
 
-		// WebSocket upgrade — ReverseProxy handles it natively if the
-		// backend supports it. No special config needed.
-
 		proxy.ServeHTTP(w, r)
 	})
 }
+
+// mirrorRequest sends a copy of the request to the mirror destination.
+// Runs in a goroutine — fire-and-forget, response is discarded.
+func mirrorRequest(original *http.Request, mirror *model.RouteMirror, upstreams map[string]*Upstream) {
+	if mirror.Percentage > 0 && mirror.Percentage < 100 {
+		if rand.Uint32()%100 >= mirror.Percentage {
+			return
+		}
+	}
+
+	upstream, ok := upstreams[mirror.DestinationID]
+	if !ok {
+		return
+	}
+
+	proxy := upstream.ReverseProxy()
+	// Create a no-op response writer.
+	proxy.ServeHTTP(&discardResponseWriter{}, original)
+}
+
+// discardResponseWriter discards all output.
+type discardResponseWriter struct{}
+
+func (discardResponseWriter) Header() http.Header        { return http.Header{} }
+func (discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (discardResponseWriter) WriteHeader(int)             {}
 
 // applyRewrite modifies the request URL based on RouteRewrite config.
 func applyRewrite(r *http.Request, rw *model.RouteRewrite) {
