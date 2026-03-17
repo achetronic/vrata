@@ -1220,6 +1220,38 @@
         "url": ""
     },
 "paths": {
+        "/debug/config": {
+            "get": {
+                "description": "Returns every stored entity in a single response for debugging.",
+                "responses": {
+                    "200": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "additionalProperties": {},
+                                    "type": "object"
+                                }
+                            }
+                        },
+                        "description": "OK"
+                    },
+                    "500": {
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/respond.ErrorBody"
+                                }
+                            }
+                        },
+                        "description": "Internal Server Error"
+                    }
+                },
+                "summary": "Get config dump",
+                "tags": [
+                    "debug"
+                ]
+            }
+        },
         "/destinations": {
             "get": {
                 "description": "Returns the full list of destinations.",

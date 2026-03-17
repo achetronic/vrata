@@ -53,6 +53,9 @@ func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
 
 	// Destination endpoints
 	mux.HandleFunc("GET /api/v1/destinations", deps.ListDestinations)
+
+	// Debug
+	mux.HandleFunc("GET /api/v1/debug/config", deps.GetConfigDump)
 	mux.HandleFunc("POST /api/v1/destinations", deps.CreateDestination)
 	mux.HandleFunc("GET /api/v1/destinations/{destinationId}", deps.GetDestination)
 	mux.HandleFunc("PUT /api/v1/destinations/{destinationId}", deps.UpdateDestination)
