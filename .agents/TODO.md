@@ -13,8 +13,10 @@ RouteGroup, Middleware). Por debajo, Go nativo haciendo reverse proxy.
 
 Principios:
 - Las 5 entidades se mantienen: Destination, Listener, Route, RouteGroup, Middleware
-- La API REST no cambia. Lo que cambia es que ya no genera protos xDS, sino que
-  reconfigura el proxy interno en caliente
+- La API REST PUEDE cambiar donde tenga sentido. Si un campo existe solo porque
+  Envoy lo necesitaba (filter_enabled, per_filter_config, server_uri...) se
+  elimina o se rediseña. La API debe ser limpia para el proxy nativo, no un
+  legado de Envoy.
 - Reload sin corte: conexiones activas terminan con config vieja, nuevas usan la nueva
 - Un solo binario. Sin Envoy. Sin protos. Sin traducciones.
 
