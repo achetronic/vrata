@@ -150,7 +150,7 @@ func BuildSnapshot(version string, modelListeners []model.Listener, modelMiddlew
 
 	var envoyListeners []types.Resource
 	for _, ml := range modelListeners {
-		el, err := buildListenerFromModel(ml, mwByID, usedMwIDs, routeConfig.Name)
+		el, err := buildListenerFromModel(ml, mwByID, destByID, usedMwIDs, routeConfig.Name)
 		if err != nil {
 			return nil, fmt.Errorf("building listener %q: %w", ml.ID, err)
 		}
@@ -1091,7 +1091,7 @@ func parseTLSVersion(v string) tlsv3.TlsParameters_TlsProtocol {
 	}
 }
 
-func buildListenerFromModel(ml model.Listener, mwByID map[string]model.Middleware, usedMwIDs map[string]bool, routeConfigName string) (*listenerv3.Listener, error) {
+func buildListenerFromModel(ml model.Listener, mwByID map[string]model.Middleware, destByID map[string]model.Destination, usedMwIDs map[string]bool, routeConfigName string) (*listenerv3.Listener, error) {
 	router, err := anypb.New(&routerv3.Router{})
 	if err != nil {
 		return nil, fmt.Errorf("marshalling router filter: %w", err)
@@ -1104,7 +1104,7 @@ func buildListenerFromModel(ml model.Listener, mwByID map[string]model.Middlewar
 		if !ok {
 			continue
 		}
-		hf, err := buildHTTPFilter(mw)
+		hf, err := buildHTTPFilterWithDest(mw, destByID)
 		if err != nil {
 			return nil, fmt.Errorf("building middleware %q: %w", mwID, err)
 		}
@@ -1240,7 +1240,11 @@ func buildListenerFromModel(ml model.Listener, mwByID map[string]model.Middlewar
 // buildHTTPFilter converts a model.Middleware into an Envoy HttpFilter proto.
 // Delegates to buildHTTPFilterReal in filters.go for the actual typed config.
 func buildHTTPFilter(f model.Middleware) (*hcmv3.HttpFilter, error) {
-	return buildHTTPFilterReal(f)
+	return buildHTTPFilterReal(f, nil)
+}
+
+func buildHTTPFilterWithDest(f model.Middleware, destByID map[string]model.Destination) (*hcmv3.HttpFilter, error) {
+	return buildHTTPFilterReal(f, destByID)
 }
 
 // contains reports whether s appears in the slice.

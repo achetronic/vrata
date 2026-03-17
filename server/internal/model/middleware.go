@@ -183,8 +183,8 @@ type JWTRule struct {
 // ExtAuthzConfig holds the configuration for the Envoy ext_authz HTTP filter.
 type ExtAuthzConfig struct {
 	// DestinationID references the Destination entity that hosts the
-	// authorisation service. The Destination's cluster (with its TLS,
-	// timeouts, health checks, etc.) is used as the upstream for ext_authz.
+	// authorisation service. Rutoso builds the full server_uri from the
+	// Destination's host, port, and TLS config automatically.
 	DestinationID string `json:"destinationId" yaml:"destinationId"`
 
 	// Mode selects the transport protocol to the authz service.
@@ -208,6 +208,24 @@ type ExtAuthzConfig struct {
 
 	// IncludeRequestBodyInCheck forwards the request body to the authz service.
 	IncludeRequestBodyInCheck bool `json:"includeRequestBodyInCheck,omitempty" yaml:"includeRequestBodyInCheck,omitempty"`
+
+	// AllowedHeaders lists header patterns from the client request that are
+	// forwarded to the authz service. Host, Method, Path, Content-Length,
+	// and Authorization are always included automatically.
+	AllowedHeaders []string `json:"allowedHeaders,omitempty" yaml:"allowedHeaders,omitempty"`
+
+	// HeadersToAdd are extra headers injected into the check request sent
+	// to the authz service.
+	HeadersToAdd []HeaderValue `json:"headersToAdd,omitempty" yaml:"headersToAdd,omitempty"`
+
+	// AllowedUpstreamHeaders lists header patterns from the authz response
+	// that are added to the original client request (forwarded to upstream)
+	// when the authz service returns 200 OK.
+	AllowedUpstreamHeaders []string `json:"allowedUpstreamHeaders,omitempty" yaml:"allowedUpstreamHeaders,omitempty"`
+
+	// AllowedClientHeaders lists header patterns from the authz response
+	// that are returned to the client when the authz service denies.
+	AllowedClientHeaders []string `json:"allowedClientHeaders,omitempty" yaml:"allowedClientHeaders,omitempty"`
 }
 
 // ────────────────────────────────────────────────────────────────────────────

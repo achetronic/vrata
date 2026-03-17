@@ -56,7 +56,7 @@ func envoyFilterName(ft model.MiddlewareType) string {
 
 // buildHTTPFilterReal builds a fully configured Envoy HttpFilter from a Rutoso
 // Filter entity. This replaces the stubs that were in builder.go.
-func buildHTTPFilterReal(f model.Middleware) (*hcmv3.HttpFilter, error) {
+func buildHTTPFilterReal(f model.Middleware, destByID map[string]model.Destination) (*hcmv3.HttpFilter, error) {
 	name := envoyFilterName(f.Type)
 	if name == "" {
 		return nil, nil
@@ -70,7 +70,7 @@ func buildHTTPFilterReal(f model.Middleware) (*hcmv3.HttpFilter, error) {
 	case model.MiddlewareTypeJWT:
 		msg, err = marshalJWT(f.JWT)
 	case model.MiddlewareTypeExtAuthz:
-		msg, err = marshalExtAuthz(f.ExtAuthz)
+		msg, err = marshalExtAuthz(f.ExtAuthz, destByID)
 	case model.MiddlewareTypeExtProc:
 		msg, err = marshalExtProc(f.ExtProc)
 	case model.MiddlewareTypeRateLimit:
@@ -210,43 +210,50 @@ func marshalJWT(c *model.JWTConfig) (*anypb.Any, error) {
 
 // ─── ExtAuthz ────────────────────────────────────────────────────────────────
 
-func marshalExtAuthz(c *model.ExtAuthzConfig) (*anypb.Any, error) {
+func marshalExtAuthz(c *model.ExtAuthzConfig, destByID map[string]model.Destination) (*anypb.Any, error) {
 	ea := &extauthzv3.ExtAuthz{}
-	if c != nil && c.DestinationID != "" {
-		ea.FailureModeAllow = c.FailureModeAllow
-		timeout := durationpb.New(5 * time.Second)
-		if c.Timeout != "" {
-			if dur, err := time.ParseDuration(c.Timeout); err == nil {
-				timeout = durationpb.New(dur)
-			}
+	if c == nil || c.DestinationID == "" {
+		return anypb.New(ea)
+	}
+	ea.FailureModeAllow = c.FailureModeAllow
+	timeout := durationpb.New(5 * time.Second)
+	if c.Timeout != "" {
+		if dur, err := time.ParseDuration(c.Timeout); err == nil {
+			timeout = durationpb.New(dur)
 		}
-		if c.Mode == "grpc" {
-			ea.Services = &extauthzv3.ExtAuthz_GrpcService{
-				GrpcService: &corev3.GrpcService{
-					TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
-						EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{ClusterName: c.DestinationID},
-					},
-					Timeout: timeout,
+	}
+	if c.Mode == "grpc" {
+		ea.Services = &extauthzv3.ExtAuthz_GrpcService{
+			GrpcService: &corev3.GrpcService{
+				TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
+					EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{ClusterName: c.DestinationID},
 				},
-			}
-		} else {
-			httpSvc := &extauthzv3.HttpService{
-				ServerUri: &corev3.HttpUri{
-					Uri:              c.DestinationID,
-					HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: c.DestinationID},
-					Timeout:          timeout,
-				},
-			}
-			if c.PathPrefix != "" {
-				httpSvc.PathPrefix = c.PathPrefix
-			}
-			ea.Services = &extauthzv3.ExtAuthz_HttpService{HttpService: httpSvc}
+				Timeout: timeout,
+			},
 		}
-		if c.IncludeRequestBodyInCheck {
-			ea.WithRequestBody = &extauthzv3.BufferSettings{
-				MaxRequestBytes:     4096,
-				AllowPartialMessage: true,
-			}
+	} else {
+		uri := buildDestinationURI(c.DestinationID, destByID)
+		httpSvc := &extauthzv3.HttpService{
+			ServerUri: &corev3.HttpUri{
+				Uri:              uri,
+				HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: c.DestinationID},
+				Timeout:          timeout,
+			},
+		}
+		if c.PathPrefix != "" {
+			httpSvc.PathPrefix = c.PathPrefix
+		}
+		if len(c.AllowedHeaders) > 0 || len(c.HeadersToAdd) > 0 {
+			httpSvc.AuthorizationRequest = buildAuthzRequest(c)
+		}
+		if len(c.AllowedUpstreamHeaders) > 0 || len(c.AllowedClientHeaders) > 0 {
+			httpSvc.AuthorizationResponse = buildAuthzResponse(c)
+		}
+		ea.Services = &extauthzv3.ExtAuthz_HttpService{HttpService: httpSvc}
+	}
+	if c.IncludeRequestBodyInCheck {
+		ea.WithRequestBody = &extauthzv3.BufferSettings{
+			MaxRequestBytes: 4096, AllowPartialMessage: true,
 		}
 	}
 	return anypb.New(ea)
@@ -532,4 +539,58 @@ func marshalMiddlewareOverride(ft model.MiddlewareType, ov model.MiddlewareOverr
 		}
 	}
 	return nil, nil
+}
+
+// buildDestinationURI constructs the full URI (scheme://host:port) from a
+// Destination. Uses https if TLS is configured, http otherwise.
+func buildDestinationURI(destID string, destByID map[string]model.Destination) string {
+	if destByID == nil {
+		return destID
+	}
+	d, ok := destByID[destID]
+	if !ok {
+		return destID
+	}
+	scheme := "http"
+	if d.Options != nil && d.Options.TLS != nil && d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s:%d", scheme, d.Host, d.Port)
+}
+
+// buildAuthzRequest builds the AuthorizationRequest from ExtAuthzConfig.
+func buildAuthzRequest(c *model.ExtAuthzConfig) *extauthzv3.AuthorizationRequest {
+	ar := &extauthzv3.AuthorizationRequest{}
+	if len(c.HeadersToAdd) > 0 {
+		for _, h := range c.HeadersToAdd {
+			ar.HeadersToAdd = append(ar.HeadersToAdd, &corev3.HeaderValue{
+				Key: h.Key, Value: h.Value,
+			})
+		}
+	}
+	return ar
+}
+
+// buildAuthzResponse builds the AuthorizationResponse from ExtAuthzConfig.
+func buildAuthzResponse(c *model.ExtAuthzConfig) *extauthzv3.AuthorizationResponse {
+	ar := &extauthzv3.AuthorizationResponse{}
+	if len(c.AllowedUpstreamHeaders) > 0 {
+		ar.AllowedUpstreamHeaders = buildListStringMatcher(c.AllowedUpstreamHeaders)
+	}
+	if len(c.AllowedClientHeaders) > 0 {
+		ar.AllowedClientHeaders = buildListStringMatcher(c.AllowedClientHeaders)
+	}
+	return ar
+}
+
+// buildListStringMatcher converts a []string into a ListStringMatcher with
+// exact match patterns.
+func buildListStringMatcher(patterns []string) *matcherv3.ListStringMatcher {
+	lsm := &matcherv3.ListStringMatcher{}
+	for _, p := range patterns {
+		lsm.Patterns = append(lsm.Patterns, &matcherv3.StringMatcher{
+			MatchPattern: &matcherv3.StringMatcher_Exact{Exact: p},
+		})
+	}
+	return lsm
 }

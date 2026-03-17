@@ -236,13 +236,45 @@
             "model.ExtAuthzConfig": {
                 "description": "ExtAuthz holds the external authorisation filter configuration.\nSet when Type == \"extAuthz\".",
                 "properties": {
+                    "allowedClientHeaders": {
+                        "description": "AllowedClientHeaders lists header patterns from the authz response\nthat are returned to the client when the authz service denies.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "allowedHeaders": {
+                        "description": "AllowedHeaders lists header patterns from the client request that are\nforwarded to the authz service. Host, Method, Path, Content-Length,\nand Authorization are always included automatically.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
+                    "allowedUpstreamHeaders": {
+                        "description": "AllowedUpstreamHeaders lists header patterns from the authz response\nthat are added to the original client request (forwarded to upstream)\nwhen the authz service returns 200 OK.",
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
+                    },
                     "destinationId": {
-                        "description": "DestinationID references the Destination entity that hosts the\nauthorisation service. The Destination's cluster (with its TLS,\ntimeouts, health checks, etc.) is used as the upstream for ext_authz.",
+                        "description": "DestinationID references the Destination entity that hosts the\nauthorisation service. Rutoso builds the full server_uri from the\nDestination's host, port, and TLS config automatically.",
                         "type": "string"
                     },
                     "failureModeAllow": {
                         "description": "FailureModeAllow controls what happens when the authz service is\nunreachable. If true, requests are allowed through (fail-open).\nDefault is false (fail-closed).",
                         "type": "boolean"
+                    },
+                    "headersToAdd": {
+                        "description": "HeadersToAdd are extra headers injected into the check request sent\nto the authz service.",
+                        "items": {
+                            "$ref": "#/components/schemas/model.HeaderValue"
+                        },
+                        "type": "array",
+                        "uniqueItems": false
                     },
                     "includeRequestBodyInCheck": {
                         "description": "IncludeRequestBodyInCheck forwards the request body to the authz service.",
