@@ -6,6 +6,39 @@ _(nothing)_
 
 ## Pending
 
+### Sticky destination affinity (canary-safe)
+Weighted backend selection is stateless: each request picks a destination
+independently by weight. This is a problem for canary deployments where
+a user who landed on v2 should STAY on v2 for subsequent requests.
+
+Ring hash and maglev solve sticky sessions to a specific POD within a
+destination, but NOT sticky selection of which destination to use.
+These are two different layers:
+
+  1. Destination selection: "user X goes to v2" (weighted, then sticky)
+  2. Pod selection within destination: "user X goes to pod-3 of v2" (ring hash)
+
+What's needed:
+- A per-route `affinity` config (e.g. `affinity: {type: "cookie", name: "_rutoso_dest"}`)
+- On first request (no cookie): weighted random selects the destination.
+  Rutoso injects `Set-Cookie: _rutoso_dest=<destinationID>` in the response.
+- On subsequent requests (cookie present): Rutoso reads the cookie and
+  routes directly to that destination ID, bypassing weight selection.
+  If the destination no longer exists (canary rolled back), fall back
+  to weighted random and set a new cookie.
+- This is NOT ring hash. It's explicit state persisted in a cookie that
+  maps the client to a destination ID.
+- The cookie TTL should be configurable so affinity expires naturally.
+- Works independently of the pod-level balancing (ring hash, maglev,
+  round robin) which happens AFTER the destination is selected.
+
+Design notes:
+- Lives in ForwardAction as `Affinity *AffinityConfig`
+- AffinityConfig: type ("cookie"), cookieName, cookieTTL
+- Implemented in pickUpstream: check cookie -> if valid destination ID, use it;
+  else weighted random + set cookie in response
+- Need to pass ResponseWriter to pickUpstream or use a middleware wrapper
+
 ### HITO MAYOR: Rutoso como proxy nativo Go (eliminar dependencia de Envoy)
 Rutoso deja de ser un control plane para Envoy y pasa a ser el proxy en sí.
 Mismo binario, misma API REST, mismas entidades (Destination, Listener, Route,
