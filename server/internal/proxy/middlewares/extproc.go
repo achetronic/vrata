@@ -694,6 +694,12 @@ func (irw *interceptResponseWriter) flush() {
 	}
 }
 
+func (irw *interceptResponseWriter) Flush() {
+	if f, ok := irw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Config helpers
 // ─────────────────────────────────────────────────────────────────────────────

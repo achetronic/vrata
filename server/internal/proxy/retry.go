@@ -24,6 +24,11 @@ func newRetryTransport(inner http.RoundTripper, retry *model.RouteRetry) http.Ro
 	return &retryTransport{inner: inner, retry: retry}
 }
 
+// Unwrap returns the underlying transport for safe type unwrapping.
+func (rt *retryTransport) Unwrap() http.RoundTripper {
+	return rt.inner
+}
+
 func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// Buffer the body so we can replay it on retries.
 	var bodyBytes []byte
@@ -38,7 +43,6 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	maxAttempts := int(rt.retry.Attempts) + 1 // original + retries
 	var lastErr error
-	var lastResp *http.Response
 
 	baseBackoff := 100 * time.Millisecond
 	maxBackoff := 1 * time.Second
@@ -90,7 +94,6 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		// Check if we should retry based on status code.
 		if shouldRetry(resp.StatusCode, rt.retry) && attempt < maxAttempts-1 {
 			resp.Body.Close()
-			lastResp = resp
 			backoff := calcBackoff(baseBackoff, maxBackoff, attempt)
 			time.Sleep(backoff)
 			continue
@@ -99,10 +102,12 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return resp, nil
 	}
 
-	if lastResp != nil {
-		return lastResp, nil
+	// All retries exhausted. Re-execute one last time to get a fresh response
+	// with a readable body.
+	if bodyBytes != nil {
+		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
-	return nil, lastErr
+	return rt.inner.RoundTrip(req)
 }
 
 func shouldRetry(status int, retry *model.RouteRetry) bool {

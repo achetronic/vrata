@@ -11,19 +11,29 @@ import (
 	"github.com/achetronic/rutoso/internal/model"
 )
 
-// HealthChecker periodically checks the health of upstreams and marks them
-// healthy or unhealthy.
+// HealthChecker periodically checks the health of upstreams using active
+// HTTP probes. Each destination can configure its own interval, timeout,
+// and healthy/unhealthy thresholds.
 type HealthChecker struct {
-	mu       sync.Mutex
+	mu        sync.Mutex
 	upstreams map[string]*Upstream
-	cancel   context.CancelFunc
-	logger   *slog.Logger
+	counters  map[string]*healthCounter
+	cancel    context.CancelFunc
+	logger    *slog.Logger
+}
+
+// healthCounter tracks consecutive successes and failures for threshold-based
+// health transitions.
+type healthCounter struct {
+	successes uint32
+	failures  uint32
 }
 
 // NewHealthChecker creates a HealthChecker.
 func NewHealthChecker(logger *slog.Logger) *HealthChecker {
 	return &HealthChecker{
 		upstreams: make(map[string]*Upstream),
+		counters:  make(map[string]*healthCounter),
 		logger:    logger,
 	}
 }
@@ -33,6 +43,16 @@ func (hc *HealthChecker) Update(upstreams map[string]*Upstream) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
 	hc.upstreams = upstreams
+
+	newCounters := make(map[string]*healthCounter, len(upstreams))
+	for id := range upstreams {
+		if c, ok := hc.counters[id]; ok {
+			newCounters[id] = c
+		} else {
+			newCounters[id] = &healthCounter{}
+		}
+	}
+	hc.counters = newCounters
 }
 
 // Start begins health checking in the background.
@@ -40,7 +60,7 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 	ctx, hc.cancel = context.WithCancel(ctx)
 
 	go func() {
-		ticker := time.NewTicker(5 * time.Second)
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 
 		for {
@@ -82,7 +102,20 @@ func (hc *HealthChecker) checkAll(ctx context.Context) {
 				interval = dur
 			}
 		}
-		_ = interval // used by ticker, not per-check
+
+		hc.mu.Lock()
+		counter := hc.counters[id]
+		if counter == nil {
+			counter = &healthCounter{}
+			hc.counters[id] = counter
+		}
+		hc.mu.Unlock()
+
+		elapsed := time.Since(u.lastHealthCheck())
+		if elapsed < interval {
+			continue
+		}
+		u.setLastHealthCheck(time.Now())
 
 		timeout := 5 * time.Second
 		if hcCfg.Timeout != "" {
@@ -91,17 +124,46 @@ func (hc *HealthChecker) checkAll(ctx context.Context) {
 			}
 		}
 
-		healthy := hc.checkOne(ctx, u, hcCfg.Path, timeout)
+		unhealthyThreshold := uint32(3)
+		if hcCfg.UnhealthyThreshold > 0 {
+			unhealthyThreshold = hcCfg.UnhealthyThreshold
+		}
 
-		u.mu.Lock()
-		u.Healthy = healthy
-		u.mu.Unlock()
+		healthyThreshold := uint32(2)
+		if hcCfg.HealthyThreshold > 0 {
+			healthyThreshold = hcCfg.HealthyThreshold
+		}
 
-		if !healthy {
-			hc.logger.Warn("health check failed",
-				slog.String("destination", id),
-				slog.String("host", d.Host),
-			)
+		passed := hc.checkOne(ctx, u, hcCfg.Path, timeout)
+
+		u.mu.RLock()
+		wasHealthy := u.Healthy
+		u.mu.RUnlock()
+
+		if passed {
+			counter.failures = 0
+			counter.successes++
+			if !wasHealthy && counter.successes >= healthyThreshold {
+				u.mu.Lock()
+				u.Healthy = true
+				u.mu.Unlock()
+				hc.logger.Info("health check passed",
+					slog.String("destination", id),
+					slog.String("host", d.Host),
+				)
+			}
+		} else {
+			counter.successes = 0
+			counter.failures++
+			if wasHealthy && counter.failures >= unhealthyThreshold {
+				u.mu.Lock()
+				u.Healthy = false
+				u.mu.Unlock()
+				hc.logger.Warn("health check failed",
+					slog.String("destination", id),
+					slog.String("host", d.Host),
+				)
+			}
 		}
 	}
 }

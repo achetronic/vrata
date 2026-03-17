@@ -3,6 +3,7 @@ package middlewares
 import (
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 // an embedded token bucket per client IP.
 func RateLimitMiddleware(cfg *model.RateLimitConfig) Middleware {
 	if cfg == nil {
-		return func(next http.Handler) http.Handler { return next }
+		return passthrough
 	}
 
 	limiter := newTokenBucketLimiter(cfg.RequestsPerSecond, cfg.Burst)
@@ -32,34 +33,17 @@ func RateLimitMiddleware(cfg *model.RateLimitConfig) Middleware {
 
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := splitFirst(xff, ",")
-		return trimSpace(parts)
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return host
 }
 
-func splitFirst(s, sep string) string {
-	for i := 0; i < len(s); i++ {
-		if s[i] == sep[0] {
-			return s[:i]
-		}
-	}
-	return s
-}
-
-func trimSpace(s string) string {
-	start, end := 0, len(s)
-	for start < end && s[start] == ' ' {
-		start++
-	}
-	for end > start && s[end-1] == ' ' {
-		end--
-	}
-	return s[start:end]
-}
-
-// tokenBucketLimiter is a per-key token bucket rate limiter.
+// tokenBucketLimiter is a per-key token bucket rate limiter with automatic
+// eviction of stale entries.
 type tokenBucketLimiter struct {
 	rps     float64
 	burst   int
@@ -72,6 +56,8 @@ type bucket struct {
 	lastTime time.Time
 }
 
+const bucketEvictionInterval = 60 * time.Second
+
 func newTokenBucketLimiter(rps float64, burst int) *tokenBucketLimiter {
 	if rps <= 0 {
 		rps = 10
@@ -79,13 +65,16 @@ func newTokenBucketLimiter(rps float64, burst int) *tokenBucketLimiter {
 	if burst <= 0 {
 		burst = int(rps)
 	}
-	return &tokenBucketLimiter{
+	l := &tokenBucketLimiter{
 		rps:     rps,
 		burst:   burst,
 		buckets: make(map[string]*bucket),
 	}
+	go l.evictLoop()
+	return l
 }
 
+// Allow checks whether a request from the given key is allowed.
 func (l *tokenBucketLimiter) Allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -109,4 +98,29 @@ func (l *tokenBucketLimiter) Allow(key string) bool {
 	}
 	b.tokens--
 	return true
+}
+
+// evictLoop periodically removes buckets that have been idle long enough
+// to have fully refilled, preventing unbounded memory growth.
+func (l *tokenBucketLimiter) evictLoop() {
+	ticker := time.NewTicker(bucketEvictionInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		l.evictStale()
+	}
+}
+
+func (l *tokenBucketLimiter) evictStale() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := time.Now()
+	refillTime := time.Duration(float64(time.Second) * float64(l.burst) / l.rps)
+	threshold := refillTime * 2
+
+	for key, b := range l.buckets {
+		if now.Sub(b.lastTime) > threshold {
+			delete(l.buckets, key)
+		}
+	}
 }

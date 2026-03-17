@@ -3,6 +3,7 @@ package proxy
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"math/rand"
 	"net"
@@ -130,7 +131,7 @@ func (rh *RingHashBalancer) Build(backends []model.BackendRef) {
 
 	for _, b := range backends {
 		for i := 0; i < vnodes; i++ {
-			key := []byte(b.DestinationID + ":" + string(rune(i)))
+			key := []byte(fmt.Sprintf("%s:%d", b.DestinationID, i))
 			h := crc32.ChecksumIEEE(key)
 			rh.ring = append(rh.ring, ringEntry{hash: h, destID: b.DestinationID})
 		}

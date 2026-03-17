@@ -1,13 +1,16 @@
 package middlewares
 
 import (
+	"crypto"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"strings"
@@ -17,32 +20,37 @@ import (
 	"github.com/achetronic/rutoso/internal/model"
 )
 
-// JWTMiddleware creates a middleware that validates JWT tokens.
-// Supports remote JWKS (fetched from a Destination) and inline JWKS.
+// JWTMiddleware creates a middleware that validates JWT tokens by verifying
+// the RSA signature against keys from JWKS (remote or inline) and checking
+// standard claims (issuer, audience, expiry).
 func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware {
 	if cfg == nil || len(cfg.Providers) == 0 {
-		return func(next http.Handler) http.Handler { return next }
+		return passthrough
 	}
 
 	validators := make(map[string]*jwtValidator)
 	for name, p := range cfg.Providers {
 		v := &jwtValidator{
-			issuer:    p.Issuer,
-			audiences: p.Audiences,
-			forward:   p.ForwardJWT,
+			issuer:         p.Issuer,
+			audiences:      p.Audiences,
+			forward:        p.ForwardJWT,
 			claimToHeaders: p.ClaimToHeaders,
 		}
 
 		if p.JWKsInline != "" {
-			keys, _ := parseJWKS([]byte(p.JWKsInline))
+			keys, err := parseJWKS([]byte(p.JWKsInline))
+			if err != nil {
+				slog.Error("jwt: failed to parse inline JWKS",
+					slog.String("provider", name),
+					slog.String("error", err.Error()),
+				)
+			}
 			v.keys = keys
 		} else if p.JWKsURI != "" && p.JWKsDestinationID != "" {
 			if svc, ok := services[p.JWKsDestinationID]; ok {
 				v.jwksURL = svc.BaseURL + p.JWKsURI
 				v.transport = svc.Transport
-				// Fetch keys on startup.
 				v.refreshKeys()
-				// Refresh periodically.
 				go v.refreshLoop()
 			}
 		}
@@ -54,7 +62,6 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractBearerToken(r)
 			if token == "" {
-				// Check rules for allow-missing.
 				for _, rule := range cfg.Rules {
 					if strings.HasPrefix(r.URL.Path, rule.Match) && rule.AllowMissing {
 						next.ServeHTTP(w, r)
@@ -65,32 +72,46 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 				return
 			}
 
-			// Parse the JWT header to get kid.
 			parts := strings.Split(token, ".")
 			if len(parts) != 3 {
 				http.Error(w, "invalid token format", http.StatusUnauthorized)
 				return
 			}
 
-			// Decode claims.
+			headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+			if err != nil {
+				http.Error(w, "invalid token header", http.StatusUnauthorized)
+				return
+			}
+			var header jwtHeader
+			if err := json.Unmarshal(headerJSON, &header); err != nil {
+				http.Error(w, "invalid token header", http.StatusUnauthorized)
+				return
+			}
+
 			claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
 			if err != nil {
 				http.Error(w, "invalid token claims", http.StatusUnauthorized)
 				return
 			}
-
 			var claims map[string]interface{}
 			if err := json.Unmarshal(claimsJSON, &claims); err != nil {
 				http.Error(w, "invalid token claims", http.StatusUnauthorized)
 				return
 			}
 
-			// Validate against each provider.
+			signature, err := base64.RawURLEncoding.DecodeString(parts[2])
+			if err != nil {
+				http.Error(w, "invalid token signature", http.StatusUnauthorized)
+				return
+			}
+
+			signedContent := parts[0] + "." + parts[1]
+
 			validated := false
 			for _, v := range validators {
-				if v.validate(claims) {
+				if v.validateSignatureAndClaims(header, claims, signedContent, signature) {
 					validated = true
-					// Apply claim-to-header mappings.
 					for _, cth := range v.claimToHeaders {
 						if val, ok := claims[cth.Claim]; ok {
 							r.Header.Set(cth.Header, fmt.Sprintf("%v", val))
@@ -113,6 +134,12 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 	}
 }
 
+// jwtHeader is the decoded JWT header.
+type jwtHeader struct {
+	Alg string `json:"alg"`
+	Kid string `json:"kid"`
+}
+
 type jwtValidator struct {
 	issuer         string
 	audiences      []string
@@ -129,8 +156,44 @@ type rsaKey struct {
 	key *rsa.PublicKey
 }
 
-func (v *jwtValidator) validate(claims map[string]interface{}) bool {
-	// Check issuer.
+// validateSignatureAndClaims verifies the RSA signature and checks claims.
+func (v *jwtValidator) validateSignatureAndClaims(
+	header jwtHeader,
+	claims map[string]interface{},
+	signedContent string,
+	signature []byte,
+) bool {
+	if !v.verifySignature(header, signedContent, signature) {
+		return false
+	}
+	return v.validateClaims(claims)
+}
+
+// verifySignature checks the RSA signature of the JWT.
+func (v *jwtValidator) verifySignature(header jwtHeader, signedContent string, signature []byte) bool {
+	v.mu.RLock()
+	keys := v.keys
+	v.mu.RUnlock()
+
+	if len(keys) == 0 {
+		return false
+	}
+
+	hash := sha256Hash([]byte(signedContent))
+
+	for _, k := range keys {
+		if header.Kid != "" && k.kid != "" && header.Kid != k.kid {
+			continue
+		}
+		if err := rsa.VerifyPKCS1v15(k.key, crypto.SHA256, hash, signature); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// validateClaims checks issuer, audience, and expiry.
+func (v *jwtValidator) validateClaims(claims map[string]interface{}) bool {
 	if v.issuer != "" {
 		iss, ok := claims["iss"].(string)
 		if !ok || iss != v.issuer {
@@ -138,7 +201,6 @@ func (v *jwtValidator) validate(claims map[string]interface{}) bool {
 		}
 	}
 
-	// Check audience.
 	if len(v.audiences) > 0 {
 		aud := extractAudience(claims)
 		found := false
@@ -155,7 +217,6 @@ func (v *jwtValidator) validate(claims map[string]interface{}) bool {
 		}
 	}
 
-	// Check expiry.
 	if exp, ok := claims["exp"].(float64); ok {
 		if time.Now().Unix() > int64(exp) {
 			return false
@@ -163,6 +224,11 @@ func (v *jwtValidator) validate(claims map[string]interface{}) bool {
 	}
 
 	return true
+}
+
+func sha256Hash(data []byte) []byte {
+	h := sha256.Sum256(data)
+	return h[:]
 }
 
 func extractAudience(claims map[string]interface{}) []string {
@@ -188,8 +254,8 @@ func extractBearerToken(r *http.Request) string {
 	}
 	return ""
 }
-func (v *jwtValidator) refreshLoop() {
 
+func (v *jwtValidator) refreshLoop() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -205,6 +271,7 @@ func (v *jwtValidator) refreshKeys() {
 	client := &http.Client{Transport: v.transport, Timeout: 10 * time.Second}
 	resp, err := client.Get(v.jwksURL)
 	if err != nil {
+		slog.Warn("jwt: failed to refresh JWKS", slog.String("url", v.jwksURL), slog.String("error", err.Error()))
 		return
 	}
 	defer resp.Body.Close()
@@ -216,6 +283,7 @@ func (v *jwtValidator) refreshKeys() {
 
 	keys, err := parseJWKS(body)
 	if err != nil {
+		slog.Warn("jwt: failed to parse JWKS", slog.String("error", err.Error()))
 		return
 	}
 
@@ -225,6 +293,7 @@ func (v *jwtValidator) refreshKeys() {
 }
 
 // parseJWKS parses a JSON Web Key Set document and extracts RSA public keys.
+// Also supports raw PEM-encoded public keys as fallback.
 func parseJWKS(data []byte) ([]rsaKey, error) {
 	var jwks struct {
 		Keys []struct {
@@ -236,7 +305,6 @@ func parseJWKS(data []byte) ([]rsaKey, error) {
 	}
 
 	if err := json.Unmarshal(data, &jwks); err != nil {
-		// Try as PEM.
 		block, _ := pem.Decode(data)
 		if block != nil {
 			pub, err := x509.ParsePKIXPublicKey(block.Bytes)

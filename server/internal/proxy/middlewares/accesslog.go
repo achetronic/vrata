@@ -206,3 +206,9 @@ func (lrw *logResponseWriter) Write(b []byte) (int, error) {
 	lrw.bytesWritten += int64(n)
 	return n, err
 }
+
+func (lrw *logResponseWriter) Flush() {
+	if f, ok := lrw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}

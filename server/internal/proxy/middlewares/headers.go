@@ -76,3 +76,9 @@ func (rw *headerResponseWriter) Write(b []byte) (int, error) {
 	}
 	return rw.ResponseWriter.Write(b)
 }
+
+func (rw *headerResponseWriter) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}

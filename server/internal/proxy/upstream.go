@@ -19,12 +19,25 @@ import (
 // Upstream represents a destination with its reverse proxy, TLS config,
 // health state, balancer, and circuit breaker.
 type Upstream struct {
-	Destination    model.Destination
-	Transport      *http.Transport
-	Healthy        bool
-	Balancer       Balancer
-	CircuitBreaker *CircuitBreaker
-	mu             sync.RWMutex
+	Destination      model.Destination
+	Transport        *http.Transport
+	Healthy          bool
+	Balancer         Balancer
+	CircuitBreaker   *CircuitBreaker
+	mu               sync.RWMutex
+	lastHealthAt     time.Time
+}
+
+func (u *Upstream) lastHealthCheck() time.Time {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	return u.lastHealthAt
+}
+
+func (u *Upstream) setLastHealthCheck(t time.Time) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.lastHealthAt = t
 }
 
 // NewUpstream creates an Upstream from a Destination, configuring TLS if needed.

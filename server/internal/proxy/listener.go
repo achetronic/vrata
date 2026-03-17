@@ -197,8 +197,24 @@ func (lm *ListenerManager) Shutdown() {
 
 // sameListener checks if two listener configs are identical (no restart needed).
 func sameListener(a, b model.Listener) bool {
-	return a.Address == b.Address &&
-		a.Port == b.Port &&
-		a.ServerName == b.ServerName &&
-		a.HTTP2 == b.HTTP2
+	if a.Address != b.Address || a.Port != b.Port ||
+		a.ServerName != b.ServerName || a.HTTP2 != b.HTTP2 ||
+		a.MaxRequestHeadersKB != b.MaxRequestHeadersKB {
+		return false
+	}
+	return sameTLS(a.TLS, b.TLS)
+}
+
+// sameTLS compares two TLS configs for equality.
+func sameTLS(a, b *model.ListenerTLS) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.CertPath == b.CertPath &&
+		a.KeyPath == b.KeyPath &&
+		a.MinVersion == b.MinVersion &&
+		a.MaxVersion == b.MaxVersion
 }

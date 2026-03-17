@@ -1,10 +1,14 @@
 package proxy
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/achetronic/rutoso/internal/model"
@@ -172,14 +176,12 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 // forwardHandler creates a handler that proxies to upstream destinations.
 func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, group *model.RouteGroup) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Select backend.
 		upstream := pickUpstream(fwd, upstreams, r)
 		if upstream == nil {
 			http.Error(w, "no upstream available", http.StatusBadGateway)
 			return
 		}
 
-		// Circuit breaker check.
 		if upstream.CircuitBreaker != nil && !upstream.CircuitBreaker.Allow() {
 			http.Error(w, "circuit breaker open", http.StatusServiceUnavailable)
 			return
@@ -192,35 +194,26 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 
 		proxy := upstream.ReverseProxy()
 
-		// Retry.
 		if fwd.Retry != nil {
 			proxy.Transport = newRetryTransport(proxy.Transport, fwd.Retry)
 		}
 
-		// Path rewrite.
 		if fwd.Rewrite != nil {
 			applyRewrite(r, fwd.Rewrite)
 		}
 
-		// Request mirror (fire-and-forget).
 		if fwd.Mirror != nil {
-			go mirrorRequest(r, fwd.Mirror, upstreams)
+			mirrorRequest(r, fwd.Mirror, upstreams)
 		}
 
-		// WebSocket: Go's ReverseProxy handles Upgrade headers natively
-		// for HTTP/1.1. No explicit config needed.
-
-		// Include attempt count header (from group config).
 		if group != nil && group.IncludeAttemptCount {
 			r.Header.Set("X-Request-Attempt-Count", "1")
 		}
 
-		// Apply group default retry if route has none.
 		if fwd.Retry == nil && group != nil && group.RetryDefault != nil {
 			proxy.Transport = newRetryTransport(proxy.Transport, group.RetryDefault)
 		}
 
-		// Max gRPC timeout.
 		if fwd.MaxGRPCTimeout != "" {
 			if maxDur, err := time.ParseDuration(fwd.MaxGRPCTimeout); err == nil {
 				if grpcTimeout := r.Header.Get("grpc-timeout"); grpcTimeout != "" {
@@ -233,29 +226,83 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 			}
 		}
 
-		// Idle timeout.
 		if fwd.Timeouts != nil && fwd.Timeouts.Idle != "" {
 			if d, err := time.ParseDuration(fwd.Timeouts.Idle); err == nil {
-				proxy.Transport.(*http.Transport).IdleConnTimeout = d
+				if t, ok := unwrapHTTPTransport(proxy.Transport); ok {
+					t.IdleConnTimeout = d
+				}
 			}
 		}
 
-		// Request timeout.
+		sw := &statusWriter{ResponseWriter: w}
+
 		if fwd.Timeouts != nil && fwd.Timeouts.Request != "" {
 			if d, err := time.ParseDuration(fwd.Timeouts.Request); err == nil {
-				http.TimeoutHandler(proxy, d, "request timeout").ServeHTTP(w, r)
-				if upstream.CircuitBreaker != nil {
-					upstream.CircuitBreaker.RecordSuccess()
-				}
+				http.TimeoutHandler(proxy, d, "request timeout").ServeHTTP(sw, r)
+				recordUpstreamResult(upstream, sw.status)
 				return
 			}
 		}
 
-		proxy.ServeHTTP(w, r)
-		if upstream.CircuitBreaker != nil {
-			upstream.CircuitBreaker.RecordSuccess()
-		}
+		proxy.ServeHTTP(sw, r)
+		recordUpstreamResult(upstream, sw.status)
 	})
+}
+
+// recordUpstreamResult records success or failure on the circuit breaker
+// based on the upstream response status code.
+func recordUpstreamResult(upstream *Upstream, status int) {
+	if upstream.CircuitBreaker == nil {
+		return
+	}
+	if status >= 500 {
+		upstream.CircuitBreaker.RecordFailure()
+	} else {
+		upstream.CircuitBreaker.RecordSuccess()
+	}
+}
+
+// statusWriter captures the response status code written by the upstream.
+type statusWriter struct {
+	http.ResponseWriter
+	status      int
+	wroteHeader bool
+}
+
+func (sw *statusWriter) WriteHeader(code int) {
+	if !sw.wroteHeader {
+		sw.status = code
+		sw.wroteHeader = true
+	}
+	sw.ResponseWriter.WriteHeader(code)
+}
+
+func (sw *statusWriter) Write(b []byte) (int, error) {
+	if !sw.wroteHeader {
+		sw.WriteHeader(http.StatusOK)
+	}
+	return sw.ResponseWriter.Write(b)
+}
+
+func (sw *statusWriter) Flush() {
+	if f, ok := sw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// unwrapHTTPTransport safely extracts the underlying *http.Transport from
+// a potentially wrapped transport chain (e.g. retryTransport).
+func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
+	for {
+		switch t := rt.(type) {
+		case *http.Transport:
+			return t, true
+		case interface{ Unwrap() http.RoundTripper }:
+			rt = t.Unwrap()
+		default:
+			return nil, false
+		}
+	}
 }
 
 // pickUpstream selects the right upstream based on balancing config and hash policy.
@@ -304,7 +351,8 @@ func isHealthy(u *Upstream) bool {
 	return u.Healthy
 }
 
-// mirrorRequest sends a copy of the request to the mirror destination.
+// mirrorRequest clones the request and sends it to the mirror destination
+// in a background goroutine. The original request is not affected.
 func mirrorRequest(original *http.Request, mirror *model.RouteMirror, upstreams map[string]*Upstream) {
 	if mirror.Percentage > 0 && mirror.Percentage < 100 {
 		if rand.Uint32()%100 >= mirror.Percentage {
@@ -317,8 +365,21 @@ func mirrorRequest(original *http.Request, mirror *model.RouteMirror, upstreams 
 		return
 	}
 
-	proxy := upstream.ReverseProxy()
-	proxy.ServeHTTP(&discardResponseWriter{}, original)
+	var bodyBytes []byte
+	if original.Body != nil {
+		bodyBytes, _ = io.ReadAll(original.Body)
+		original.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	}
+
+	clone := original.Clone(context.Background())
+	if bodyBytes != nil {
+		clone.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	}
+
+	go func() {
+		proxy := upstream.ReverseProxy()
+		proxy.ServeHTTP(&discardResponseWriter{}, clone)
+	}()
 }
 
 type discardResponseWriter struct{}
@@ -331,7 +392,7 @@ func (discardResponseWriter) WriteHeader(int)             {}
 func applyRewrite(r *http.Request, rw *model.RouteRewrite) {
 	if rw.PathRegex != nil {
 		// Regex rewrite.
-		re, err := compileOnce(rw.PathRegex.Pattern)
+		re, err := cachedCompile(rw.PathRegex.Pattern)
 		if err == nil {
 			r.URL.Path = re.ReplaceAllString(r.URL.Path, rw.PathRegex.Substitution)
 		}
@@ -386,7 +447,20 @@ func parseGRPCTimeout(s string) (time.Duration, error) {
 	return d, nil
 }
 
-// compileOnce compiles a regex (should be cached in production).
-func compileOnce(pattern string) (*regexp.Regexp, error) {
-	return regexp.Compile(pattern)
+// regexCache caches compiled regular expressions to avoid recompilation
+// on every request.
+var regexCache sync.Map
+
+// cachedCompile returns a compiled regex, using a cache to avoid
+// recompilation on every request.
+func cachedCompile(pattern string) (*regexp.Regexp, error) {
+	if v, ok := regexCache.Load(pattern); ok {
+		return v.(*regexp.Regexp), nil
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	regexCache.Store(pattern, re)
+	return re, nil
 }
