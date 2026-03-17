@@ -1,192 +1,166 @@
 # Feature Coverage Report — Rutoso
 
-Generated: 2026-03-17
-Method: Empirical testing against live control plane (:8080) + proxy (:3000) + kind cluster (rutoso-dev)
+Generated: 2026-03-17 (rev 2 — corrected after full source audit)
+Method: Source code review of every function + empirical e2e testing against live environment
 
-## Summary
+## How to read this report
 
-| Category | Features | 100% | Partial | 0% |
-|---|---|---|---|---|
-| API CRUD | 5 resources | 5 | 0 | 0 |
-| Proxy routing | 8 match types | 7 | 0 | 1 |
-| Middlewares | 7 types | 4 | 1 | 2 |
-| Snapshots | 5 operations | 5 | 0 | 0 |
-| Sync (SSE) | 1 | 1 | 0 | 0 |
-| K8s discovery | 2 types | 1 | 0 | 1 |
-| Proxy features | 10 | 4 | 2 | 4 |
+- **100%** = Implemented correctly, tested, verified working
+- **Percentage** = Implemented but with known bugs or missing pieces (described)
+- **0%** = Not implemented or dead code
 
-## Detailed Feature Matrix
+## API CRUD (control plane)
 
-### API CRUD (control plane)
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| Routes CRUD | 100% | Unit + E2E | None |
+| Groups CRUD | 100% | Unit + E2E | None |
+| Destinations CRUD | 100% | Unit + E2E | None |
+| Listeners CRUD | 100% | Unit + E2E | None |
+| Middlewares CRUD | 100% | Unit + E2E | None |
+| Config dump | 100% | Unit + E2E | None |
+| Route action validation (exactly-one-of) | 100% | Unit | None |
+| Invalid JSON → 400 | 100% | Unit | None |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Routes: list, create, get, update, delete | 100% | ✅ | ✅ | Action validation (exactly-one-of) works |
-| Groups: list, create, get, update, delete | 100% | ✅ | ✅ | |
-| Destinations: list, create, get, update, delete | 100% | ✅ | ✅ | |
-| Listeners: list, create, get, update, delete | 100% | ✅ | ✅ | Default address 0.0.0.0 applied |
-| Middlewares: list, create, get, update, delete | 100% | ✅ | ✅ | |
-| Config dump (GET /debug/config) | 100% | ✅ | ✅ | Returns all 5 entity types |
-| Invalid JSON body → 400 | 100% | ✅ | — | All 5 create handlers tested |
+## Versioned Snapshots
 
-### Proxy Routing
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| Create snapshot (capture live config) | 100% | Unit + E2E | None |
+| List snapshots (with active flag) | 100% | Unit + E2E | None |
+| Get snapshot (full payload) | 100% | Unit + E2E | None |
+| Delete snapshot (clears active if needed) | 100% | Unit + E2E | None |
+| Activate snapshot | 100% | Unit + E2E | None |
+| SSE stream serves active snapshot | 100% | Unit + E2E | None |
+| SSE pushes on activate | 100% | Unit | None |
+| SSE silent without active snapshot | 100% | Unit + E2E | None |
+| Proxy reconnects on disconnect | 100% | Unit | None |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Path prefix matching | 100% | ✅ | ✅ | Verified via /e2e-forward, /e2e-direct |
-| Path exact matching | 100% | ✅ | — | Tested in router_test.go |
-| Path regex matching | 100% | ✅ | ✅ | Group regex composition /(es\|en\|pk) verified |
-| Method matching | 100% | ✅ | ✅ | POST-only route rejects GET |
-| Header matching | 100% | ✅ | ✅ | X-Test: yes required |
-| Hostname matching | 100% | ✅ | — | Tested in router_test.go |
-| CEL expression matching | 100% | ✅ | ✅ | Complex expression with header check verified |
-| Query param matching | 100% | ✅ | — | Tested in router_test.go (CEL + static) |
-| gRPC matching (content-type) | 0% | — | — | Model exists, not tested end-to-end |
+## Proxy Routing — Matching
 
-### Group Composition
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| Path prefix | 100% | Unit + E2E | None |
+| Path exact | 100% | Unit | None |
+| Path regex | 100% | Unit + E2E | None |
+| Method match | 100% | Unit + E2E | None |
+| Header match | 100% | Unit + E2E | None |
+| Hostname match | 100% | Unit | None |
+| Query param match | 100% | Unit | None |
+| CEL expression match | 100% | Unit + E2E | ~940ns/eval, compiled once |
+| gRPC content-type match | 80% | Unit | Code in match(), not e2e tested |
+| Group pathRegex + route composition | 100% | Unit + E2E | All 8 composition cases |
+| Group hostname/header merge | 100% | Unit | De-duplicated |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Group pathPrefix + route path | 100% | ✅ | — | Concatenation |
-| Group pathRegex + route pathPrefix | 100% | ✅ | ✅ | Regex non-capture group wrapping |
-| Group pathRegex + route pathRegex | 100% | ✅ | — | Double regex composition |
-| Group hostnames merged with route | 100% | ✅ | — | De-duplicated |
-| Group headers merged with route | 100% | ✅ | — | Appended |
+## Route Actions
 
-### Route Actions
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| Direct response | 100% | Unit + E2E | None |
+| Redirect | 100% | Unit + E2E | None |
+| Forward (proxy to upstream) | 100% | Unit + E2E | None |
+| Mutual exclusivity validation | 100% | Unit | None |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Forward (proxy to upstream) | 100% | ✅ | ✅ | Verified with podinfo |
-| Direct response | 100% | ✅ | ✅ | 418 "i am a teapot" |
-| Redirect | 100% | ✅ | ✅ | 302 → https://example.com |
-| Mutual exclusivity validation | 100% | ✅ | — | 400 if >1 or 0 actions set |
+## Forward Action Features
 
-### Forward Action Features
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| Weighted backend selection | 90% | Unit | **Bug**: all-zero weights always picks last backend, not uniform |
+| Path rewrite (prefix) | 100% | E2E | None |
+| Path rewrite (regex) | 70% | Code review | **Bug**: regex recompiled on every request (no cache). `compileOnce` is misnamed |
+| Host rewrite | 70% | Code review | `AutoHost` sets `r.Host=""` — may not propagate correctly to upstream |
+| Retry with backoff | 30% | Code review | **Bug**: `perAttemptTimeout` parsed but never applied. `time.Sleep` ignores context cancel. Final response body already closed on fallback |
+| Request timeout | 80% | Code review | Works but skips circuit breaker recording when timeout handler is used |
+| Idle timeout | 20% | Code review | **Bug**: panics if retry transport is wrapping the real transport — `proxy.Transport.(*http.Transport)` will fail the type assertion |
+| Request mirror | 30% | Code review | **Bug**: passes original `*http.Request` to goroutine — body already read, context may be cancelled. No timeout on mirror call |
+| Hash policy (consistent hashing) | 20% | Code review | **Bug**: `RingHashBalancer.Build()` and `MaglevBalancer.Build()` never called from production code. Ring/table always empty. Falls back to `SelectBackend` every time |
+| Max gRPC timeout | 90% | Code review | Minor: truncates sub-millisecond durations to 0 |
+| WebSocket upgrade | 80% | Code review | Go ReverseProxy handles natively. Not explicitly tested |
+| Group retryDefault / includeAttemptCount | 50% | Code review | `X-Request-Attempt-Count` hardcoded to "1", never incremented on retries |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Weighted backend selection | 100% | ✅ | — | balancer_test.go |
-| Path rewrite (prefix) | 100% | — | ✅ | /e2e-forward → / verified |
-| Path rewrite (regex) | 50% | — | — | Code exists, not e2e tested |
-| Host rewrite | 50% | — | — | Code exists, not e2e tested |
-| Retry with backoff | 50% | — | — | retry.go exists with transport wrapper |
-| Request timeout | 50% | — | — | Code exists in handler.go |
-| Idle timeout | 50% | — | — | Code exists in handler.go |
-| Request mirror | 50% | — | — | mirrorRequest() exists, fire-and-forget |
-| Hash policy (ring hash, maglev) | 100% | ✅ | — | balancer_test.go |
-| WebSocket upgrade | 50% | — | — | Go ReverseProxy handles natively |
-| Max gRPC timeout | 50% | — | — | Code exists, parses grpc-timeout header |
+## Middlewares
 
-### Middlewares
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| CORS | 95% | Unit + E2E | No wildcard `*` origin support. Preflight returns 200 instead of 204. Bad regex silently dropped |
+| Headers (add/remove req/resp) | 90% | Unit + E2E | ResponseWriter wrapper missing `http.Flusher` — breaks SSE/streaming through this middleware |
+| Access Log | 95% | Unit + E2E | File handle never closed. Non-JSON field order non-deterministic. ResponseWriter missing `http.Flusher` |
+| Rate Limit | 85% | Unit + E2E | **Memory leak**: per-IP buckets never evicted. No cleanup goroutine. No `Retry-After` header. Only keyed by client IP |
+| JWT | 40% | Code review | **Critical**: no signature verification. RSA keys parsed but never used to verify JWT. Token with forged signature passes if claims match. Refresh goroutine leaked (no shutdown). Only RSA keys supported |
+| ExtAuthz | 75% | Code review | Functional but: request body never forwarded to authz service (always nil body). `io.Copy` error unchecked. No gRPC mode (HTTP only) |
+| ExtProc (HTTP mode) | 85% | Unit (16 tests) | gRPC connection created per-request (no pooling). ResponseWriter missing `http.Flusher`. Body streaming modes (streamed, bufferedPartial) not implemented yet |
+| ExtProc (gRPC mode) | 60% | Unit | Same issues as HTTP plus no e2e test with real gRPC processor |
+| Middleware chain ordering | 100% | Unit | None |
+| Middleware disable per-route | 100% | Unit | None |
+| Middleware override (group + route merge) | 100% | Unit | None |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| CORS | 100% | ✅ | ✅ | Preflight + normal + no-origin all verified |
-| Headers (add/remove req/resp) | 100% | ✅ | ✅ | Response header injection verified |
-| Access Log | 100% | ✅ | ✅ | JSON to stdout, request + response phases |
-| Rate Limit (token bucket) | 100% | ✅ | ✅ | Burst 2, then 429 verified |
-| External Processor (extProc) | 80% | ✅ | — | 16 unit tests pass. HTTP mode tested. gRPC mode not e2e tested (needs live processor). Missing: streamed body mode, bufferedPartial |
-| JWT | 0% | — | — | Model exists, handler stub exists, no real validation logic |
-| ExtAuthz | 0% | — | — | Model exists, handler stub exists, no real validation logic |
-| Middleware override (disable per-route) | 100% | ✅ | — | Tested in handler.go buildRouteHandler |
-| Middleware chain ordering | 100% | ✅ | — | Outermost first |
+## Kubernetes Discovery
 
-### Versioned Snapshots
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| EndpointSlice watching (ClusterIP) | 100% | Unit (fake client) | None |
+| ExternalName Service resolution | 100% | Unit (fake client) | None |
+| Watch cleanup on destination delete | 100% | Unit | None |
+| Non-EDS destinations ignored | 100% | Unit | None |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Create snapshot (capture live config) | 100% | ✅ | ✅ | All 5 entity types captured |
-| List snapshots (with active flag) | 100% | ✅ | ✅ | Active flag correct |
-| Get snapshot (full payload) | 100% | ✅ | ✅ | |
-| Delete snapshot | 100% | ✅ | ✅ | Clears active pointer if deleted |
-| Activate snapshot | 100% | ✅ | ✅ | Proxy receives config within 500ms |
-| Rollback (activate previous) | 100% | — | ✅ | Implicit: activate any previous ID |
+## Proxy Infrastructure
 
-### SSE Sync Stream
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| Atomic routing table swap | 100% | Unit + E2E | None |
+| Listener management (reconcile) | 80% | E2E | `sameListener` ignores TLS/MaxRequestHeaders changes. HTTP/2 flag compared but never wired. Race on listen error |
+| Circuit breaker | 30% | Unit (structure only) | **Bug**: `RecordFailure()` never called from handler — breaker never opens on upstream errors. Half-open allows unlimited requests. Threshold hardcoded to 5 |
+| Health checks (active HTTP) | 40% | Code review | Per-destination interval ignored (hardcoded 5s). No healthy/unhealthy threshold counters. No expected status code matching |
+| Outlier detection | 0% | Code review | **Dead code**: `RecordResponse()` never called from anywhere. Race condition on fields. Completely unwired |
+| TLS upstream | 70% | Code review | Transport built correctly with cert/key/CA/SNI/min-max version. Not e2e tested (needs certs) |
+| TLS downstream (listener) | 70% | Code review | Cert loaded in listener.go. Not e2e tested. Config changes don't trigger restart |
+| HTTP/2 upstream | 40% | Code review | `ForceAttemptHTTP2` set on transport but no ALPN config on TLS. Not tested |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Serves active snapshot on connect | 100% | ✅ | ✅ | |
-| Pushes on snapshot activate | 100% | ✅ | — | |
-| No event without active snapshot | 100% | ✅ | ✅ | |
-| Ignores non-snapshot store events | 100% | ✅ | — | |
-| Proxy reconnects on disconnect | 100% | ✅ | — | sync/client_test.go |
+## Store
 
-### Kubernetes Discovery
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| Bolt store (all CRUD + snapshots) | 100% | Unit (interface suite) | None |
+| Memory store (all CRUD + snapshots) | 100% | Unit (interface suite) | None |
+| Event subscription | 100% | Unit | Publish outside transaction (fixed) |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| EndpointSlice watching (ClusterIP) | 100% | ✅ | — | Fake client, 2 ready + 1 not-ready |
-| ExternalName Service resolution | 100% | ✅ | — | Resolves spec.externalName as endpoint |
-| Non-EDS destinations ignored | 100% | ✅ | — | No watch started |
-| Watch cleanup on destination delete | 100% | ✅ | — | Endpoints cleared |
+## Control Plane Infrastructure
 
-### Proxy Infrastructure
+| Feature | Status | Verified By | Known Issues |
+|---|---|---|---|
+| Request logger middleware | 100% | Unit | None |
+| Panic recovery middleware | 100% | Unit | None |
+| Respond helpers | 100% | Unit | None |
+| Gateway rebuild on store event | 100% | Unit | None |
+| Swagger UI / OpenAPI docs | 100% | Manual | None |
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Atomic routing table swap | 100% | ✅ | ✅ | In-flight requests unaffected |
-| Listener management (add/remove) | 100% | — | ✅ | Reconcile on config change |
-| Circuit breaker | 100% | ✅ | — | circuit_test.go |
-| Health checks (active HTTP) | 50% | — | — | health.go exists, not end-to-end verified |
-| Outlier detection | 50% | — | — | outlier.go exists, not end-to-end verified |
-| TLS upstream | 0% | — | — | Model exists, transport built in upstream.go, not tested |
-| TLS downstream (listener) | 0% | — | — | Code exists in listener.go, needs cert |
-| HTTP/2 upstream | 0% | — | — | ForceAttemptHTTP2 set, not tested |
+## Cross-cutting Issues Found
 
-### Store
+These affect multiple features:
 
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Bolt store (all CRUD + snapshots) | 100% | ✅ | ✅ | Interface test suite covers both impls |
-| Memory store (all CRUD + snapshots) | 100% | ✅ | — | Used by all handler/sync tests |
-| Event subscription (pub/sub) | 100% | ✅ | — | Publish outside transaction (bolt fix) |
+| Issue | Impact | Affected Components |
+|---|---|---|
+| Custom ResponseWriters missing `http.Flusher`/`http.Hijacker` | Breaks SSE, WebSocket, HTTP/2 push when middleware is active | headers.go, accesslog.go, extproc.go |
+| Circuit breaker `RecordFailure()` never called | Breaker never opens on upstream failures | handler.go, circuit.go |
+| Outlier detection completely unwired | Feature is dead code | outlier.go, handler.go |
+| Balancer `Build()` never called | Ring hash and maglev are non-functional | balancer.go, upstream.go |
+| Rate limiter memory leak | Bucket map grows unbounded | ratelimit.go |
+| JWT no signature verification | Critical security hole | jwt.go |
 
-### API Middleware (control plane)
-
-| Feature | Status | Unit Test | E2E Test | Notes |
-|---|---|---|---|---|
-| Request logger | 100% | ✅ | — | |
-| Panic recovery → 500 JSON | 100% | ✅ | — | |
-| Respond helpers (JSON, Error) | 100% | ✅ | — | |
-
-## Test Count Summary
+## Test Count
 
 | Suite | Tests | Passing |
 |---|---|---|
 | Store interface (bolt + memory) | 18 | 18 |
-| API handlers (CRUD + snapshots + sync) | 33 | 33 |
-| API middleware (logger + recovery) | 3 | 3 |
+| API handlers | 33 | 33 |
+| API middleware | 3 | 3 |
 | Respond helpers | 2 | 2 |
 | Gateway | 2 | 2 |
 | K8s watcher | 4 | 4 |
 | Proxy router | 8 | 8 |
 | CEL eval | 11 | 11 |
-| Proxy middlewares (CORS, headers, accesslog, extproc, ratelimit) | 28 | 28 |
+| Proxy middlewares | 28 | 28 |
 | Sync client | 2 | 2 |
 | Config | 5 | 5 |
-| **E2E (live cluster)** | **18** | **18** |
+| E2E (live) | 18 | 18 |
 | **Total** | **134** | **134** |
-
-## Features at 0% (not implemented or no tests)
-
-| Feature | Reason |
-|---|---|
-| JWT middleware | Model defined but no validation/JWKS logic implemented |
-| ExtAuthz middleware | Model defined but no real HTTP/gRPC call logic |
-| gRPC content-type matching | Model field exists, no e2e coverage |
-| TLS upstream/downstream | Code exists but needs real certs to test |
-| HTTP/2 | Transport flag set but not verified |
-| Health checks e2e | Active checker exists but not triggered in tests |
-| Outlier detection e2e | Detection logic exists but not triggered in tests |
-
-## Features at 50% (partial)
-
-| Feature | What works | What's missing |
-|---|---|---|
-| ExtProc | HTTP mode, all phases, reject, mutations, observe-only (16 tests) | gRPC mode e2e, streamed body, bufferedPartial |
-| Path rewrite regex | Code in applyRewrite | No e2e test |
-| Retry | Transport wrapper in retry.go | No e2e test with failing upstream |
-| Timeouts | Code in forwardHandler | No e2e test |
-| Mirror | mirrorRequest() goroutine | No e2e test |
