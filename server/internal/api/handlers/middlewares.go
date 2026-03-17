@@ -32,7 +32,7 @@ func (d *Dependencies) ListMiddlewares(w http.ResponseWriter, r *http.Request) {
 // CreateMiddleware creates a new mw and persists it in the database.
 //
 // @Summary     Create a middleware
-// @Description Creates a new HTTP mw entity.
+// @Description Creates a new middleware.
 // @Tags        middlewares
 // @Accept      json
 // @Produce     json
@@ -63,7 +63,7 @@ func (d *Dependencies) CreateMiddleware(w http.ResponseWriter, r *http.Request) 
 // GetMiddleware returns the mw identified by middlewareId.
 //
 // @Summary     Get a middleware
-// @Description Returns the mw with the given ID.
+// @Description Returns the middleware with the given ID.
 // @Tags        middlewares
 // @Produce     json
 // @Param       middlewareId path     string true "Filter ID"
@@ -85,7 +85,7 @@ func (d *Dependencies) GetMiddleware(w http.ResponseWriter, r *http.Request) {
 // UpdateMiddleware replaces an existing mw.
 //
 // @Summary     Update a middleware
-// @Description Replaces the mw with the given ID.
+// @Description Replaces the middleware with the given ID.
 // @Tags        middlewares
 // @Accept      json
 // @Produce     json
@@ -122,7 +122,7 @@ func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) 
 // DeleteMiddleware removes the mw identified by middlewareId.
 //
 // @Summary     Delete a middleware
-// @Description Deletes the mw with the given ID.
+// @Description Deletes the middleware with the given ID.
 // @Tags        middlewares
 // @Produce     json
 // @Param       middlewareId path     string true "Filter ID"

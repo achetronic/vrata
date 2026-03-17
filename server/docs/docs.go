@@ -2064,7 +2064,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Creates a new HTTP mw entity.",
+                "description": "Creates a new middleware.",
                 "requestBody": {
                     "content": {
                         "application/json": {
@@ -2125,7 +2125,7 @@ const docTemplate = `{
         },
         "/middlewares/{middlewareId}": {
             "delete": {
-                "description": "Deletes the mw with the given ID.",
+                "description": "Deletes the middleware with the given ID.",
                 "parameters": [
                     {
                         "description": "Filter ID",
@@ -2168,7 +2168,7 @@ const docTemplate = `{
                 ]
             },
             "get": {
-                "description": "Returns the mw with the given ID.",
+                "description": "Returns the middleware with the given ID.",
                 "parameters": [
                     {
                         "description": "Filter ID",
@@ -2218,7 +2218,7 @@ const docTemplate = `{
                 ]
             },
             "put": {
-                "description": "Replaces the mw with the given ID.",
+                "description": "Replaces the middleware with the given ID.",
                 "parameters": [
                     {
                         "description": "Filter ID",

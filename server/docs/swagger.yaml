@@ -1660,7 +1660,7 @@ paths:
       tags:
       - middlewares
     post:
-      description: Creates a new HTTP mw entity.
+      description: Creates a new middleware.
       requestBody:
         content:
           application/json:
@@ -1696,7 +1696,7 @@ paths:
       - middlewares
   /middlewares/{middlewareId}:
     delete:
-      description: Deletes the mw with the given ID.
+      description: Deletes the middleware with the given ID.
       parameters:
       - description: Filter ID
         in: path
@@ -1723,7 +1723,7 @@ paths:
       tags:
       - middlewares
     get:
-      description: Returns the mw with the given ID.
+      description: Returns the middleware with the given ID.
       parameters:
       - description: Filter ID
         in: path
@@ -1754,7 +1754,7 @@ paths:
       tags:
       - middlewares
     put:
-      description: Replaces the mw with the given ID.
+      description: Replaces the middleware with the given ID.
       parameters:
       - description: Filter ID
         in: path
