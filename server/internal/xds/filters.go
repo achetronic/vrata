@@ -230,19 +230,17 @@ func marshalExtAuthz(c *model.ExtAuthzConfig) (*anypb.Any, error) {
 				},
 			}
 		} else {
-			uri := c.URI
-			if uri == "" {
-				uri = c.DestinationID
-			}
-			ea.Services = &extauthzv3.ExtAuthz_HttpService{
-				HttpService: &extauthzv3.HttpService{
-					ServerUri: &corev3.HttpUri{
-						Uri:              uri,
-						HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: c.DestinationID},
-						Timeout:          timeout,
-					},
+			httpSvc := &extauthzv3.HttpService{
+				ServerUri: &corev3.HttpUri{
+					Uri:              c.DestinationID,
+					HttpUpstreamType: &corev3.HttpUri_Cluster{Cluster: c.DestinationID},
+					Timeout:          timeout,
 				},
 			}
+			if c.PathPrefix != "" {
+				httpSvc.PathPrefix = c.PathPrefix
+			}
+			ea.Services = &extauthzv3.ExtAuthz_HttpService{HttpService: httpSvc}
 		}
 		if c.IncludeRequestBodyInCheck {
 			ea.WithRequestBody = &extauthzv3.BufferSettings{

@@ -191,12 +191,12 @@ type ExtAuthzConfig struct {
 	// "grpc" or "http". Default: "http".
 	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
 
-	// URI is the full URL of the HTTP authorization endpoint that Envoy
-	// sends check requests to (e.g. "https://oauth2-proxy.example.com/oauth2/auth").
-	// The host portion is used for the Host header; the cluster from
-	// DestinationID handles the actual TCP connection (with TLS, etc.).
-	// Only used in HTTP mode. Ignored in gRPC mode.
-	URI string `json:"uri,omitempty" yaml:"uri,omitempty"`
+	// PathPrefix is prepended to the original request path when Envoy sends
+	// the check request to the authz service in HTTP mode. For example, if
+	// PathPrefix is "/oauth2/auth" and the client requests "/pepe", Envoy
+	// sends GET /oauth2/auth/pepe to the authz service.
+	// Ignored in gRPC mode.
+	PathPrefix string `json:"pathPrefix,omitempty" yaml:"pathPrefix,omitempty"`
 
 	// Timeout is the authorisation request deadline (e.g. "5s", "500ms").
 	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`

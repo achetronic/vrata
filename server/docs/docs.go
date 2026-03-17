@@ -245,12 +245,12 @@ const docTemplate = `{
                         "description": "Mode selects the transport protocol to the authz service.\n\"grpc\" or \"http\". Default: \"http\".",
                         "type": "string"
                     },
-                    "timeout": {
-                        "description": "Timeout is the authorisation request deadline (e.g. \"5s\", \"500ms\").",
+                    "pathPrefix": {
+                        "description": "PathPrefix is prepended to the original request path when Envoy sends\nthe check request to the authz service in HTTP mode. For example, if\nPathPrefix is \"/oauth2/auth\" and the client requests \"/pepe\", Envoy\nsends GET /oauth2/auth/pepe to the authz service.\nIgnored in gRPC mode.",
                         "type": "string"
                     },
-                    "uri": {
-                        "description": "URI is the full URL of the HTTP authorization endpoint that Envoy\nsends check requests to (e.g. \"https://oauth2-proxy.example.com/oauth2/auth\").\nThe host portion is used for the Host header; the cluster from\nDestinationID handles the actual TCP connection (with TLS, etc.).\nOnly used in HTTP mode. Ignored in gRPC mode.",
+                    "timeout": {
+                        "description": "Timeout is the authorisation request deadline (e.g. \"5s\", \"500ms\").",
                         "type": "string"
                     }
                 },
