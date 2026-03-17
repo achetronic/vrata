@@ -28,17 +28,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
+	"time"
 
 	"github.com/achetronic/rutoso/internal/api"
 	"github.com/achetronic/rutoso/internal/config"
-	"github.com/achetronic/rutoso/internal/gateway"
-	k8swatcher "github.com/achetronic/rutoso/internal/k8s"
 	"github.com/achetronic/rutoso/internal/proxy"
 	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
+	rtsync "github.com/achetronic/rutoso/internal/sync"
 )
 
 func main() {
@@ -59,13 +55,26 @@ func run() error {
 	}
 
 	logger := buildLogger(cfg)
-	logger.Info("rutoso starting",
+
+	switch cfg.Mode {
+	case config.ModeControlPlane:
+		return runControlPlane(cfg, logger, *storePath)
+	case config.ModeProxy:
+		return runProxy(cfg, logger)
+	default:
+		return fmt.Errorf("unknown mode %q", cfg.Mode)
+	}
+}
+
+// runControlPlane starts the control plane: REST API, persistent store, and
+// the SSE sync endpoint for proxy instances. No proxy, no listeners.
+func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) error {
+	logger.Info("rutoso starting in control plane mode",
 		slog.String("http", cfg.Server.Address),
-		slog.String("store", *storePath),
+		slog.String("store", storePath),
 	)
 
-	// Persistent bbolt store.
-	st, err := boltstore.New(*storePath)
+	st, err := boltstore.New(storePath)
 	if err != nil {
 		return fmt.Errorf("opening store: %w", err)
 	}
@@ -75,23 +84,6 @@ func run() error {
 		}
 	}()
 
-	// Proxy router and listener manager.
-	proxyRouter := proxy.NewRouter()
-	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
-	healthChecker := proxy.NewHealthChecker(logger)
-	outlierDetector := proxy.NewOutlierDetector(logger)
-
-	// Gateway: bridges store events → proxy config updates.
-	gw := gateway.New(gateway.Dependencies{
-		Store:           st,
-		Router:          proxyRouter,
-		ListenerManager: listenerMgr,
-		HealthChecker:   healthChecker,
-		OutlierDetector: outlierDetector,
-		Logger:          logger,
-	})
-
-	// HTTP REST API (management plane).
 	router := api.NewRouter(st, logger)
 	httpSrv := &http.Server{
 		Addr:    cfg.Server.Address,
@@ -101,34 +93,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Run components concurrently.
 	errCh := make(chan error, 2)
-
-	healthChecker.Start(ctx)
-	outlierDetector.Start(ctx)
-
-	// Kubernetes EndpointSlice watcher (optional — non-fatal if no kubeconfig).
-	k8sClient, err := buildK8sClient()
-	if err != nil {
-		logger.Warn("k8s watcher disabled: could not build k8s client",
-			slog.String("error", err.Error()),
-		)
-	}
-	var k8sWatch *k8swatcher.Watcher
-	if k8sClient != nil {
-		k8sWatch = k8swatcher.New(k8swatcher.Dependencies{
-			Store:  st,
-			Client: k8sClient,
-			Logger: logger,
-		})
-		k8sWatch.SetOnChange(gw.Rebuild)
-	}
-
-	go func() {
-		if err := gw.Run(ctx); err != nil {
-			errCh <- fmt.Errorf("gateway: %w", err)
-		}
-	}()
 
 	go func() {
 		logger.Info("http server listening", slog.String("address", cfg.Server.Address))
@@ -137,13 +102,56 @@ func run() error {
 		}
 	}()
 
-	if k8sWatch != nil {
-		go func() {
-			if err := k8sWatch.Run(ctx); err != nil {
-				errCh <- fmt.Errorf("k8s watcher: %w", err)
-			}
-		}()
+	select {
+	case <-ctx.Done():
+		logger.Info("shutdown signal received")
+		_ = httpSrv.Shutdown(context.Background())
+		return nil
+	case err := <-errCh:
+		return err
 	}
+}
+
+// runProxy starts the proxy-only mode. No local store, no REST API. Connects
+// to a remote control plane via SSE and applies configuration snapshots.
+func runProxy(cfg *config.Config, logger *slog.Logger) error {
+	logger.Info("rutoso starting in proxy mode",
+		slog.String("controlPlane", cfg.ControlPlane.Address),
+	)
+
+	reconnect, err := time.ParseDuration(cfg.ControlPlane.ReconnectInterval)
+	if err != nil {
+		return fmt.Errorf("parsing reconnectInterval: %w", err)
+	}
+
+	proxyRouter := proxy.NewRouter()
+	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
+	healthChecker := proxy.NewHealthChecker(logger)
+	outlierDetector := proxy.NewOutlierDetector(logger)
+
+	syncClient := rtsync.New(rtsync.Dependencies{
+		ControlPlaneAddr:  cfg.ControlPlane.Address,
+		ReconnectInterval: reconnect,
+		Router:            proxyRouter,
+		ListenerManager:   listenerMgr,
+		HealthChecker:     healthChecker,
+		OutlierDetector:   outlierDetector,
+		Logger:            logger,
+	})
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 2)
+
+	healthChecker.Start(ctx)
+	outlierDetector.Start(ctx)
+
+	go func() {
+		if err := syncClient.Run(ctx); err != nil {
+			errCh <- fmt.Errorf("sync client: %w", err)
+		}
+	}()
 
 	select {
 	case <-ctx.Done():
@@ -151,7 +159,6 @@ func run() error {
 		healthChecker.Stop()
 		outlierDetector.Stop()
 		listenerMgr.Shutdown()
-		_ = httpSrv.Shutdown(context.Background())
 		return nil
 	case err := <-errCh:
 		return err
@@ -184,22 +191,3 @@ func buildLogger(cfg *config.Config) *slog.Logger {
 	return slog.New(handler)
 }
 
-// buildK8sClient creates a Kubernetes client. Tries in-cluster config first,
-// then falls back to ~/.kube/config.
-func buildK8sClient() (kubernetes.Interface, error) {
-	cfg, err := rest.InClusterConfig()
-	if err != nil {
-		loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-		cfg, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			loadingRules, &clientcmd.ConfigOverrides{},
-		).ClientConfig()
-		if err != nil {
-			return nil, fmt.Errorf("building k8s client config: %w", err)
-		}
-	}
-	client, err := kubernetes.NewForConfig(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("creating k8s client: %w", err)
-	}
-	return client, nil
-}

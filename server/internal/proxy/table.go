@@ -13,7 +13,7 @@ func BuildTable(
 	groups []model.RouteGroup,
 	destinations []model.Destination,
 	middlewares []model.Middleware,
-) (*routingTable, error) {
+) (*RoutingTable, error) {
 	// Build lookup maps.
 	routeByID := make(map[string]model.Route, len(routes))
 	for _, r := range routes {
@@ -74,7 +74,7 @@ func BuildTable(
 		compiled = append(compiled, cr)
 	}
 
-	return &routingTable{
+	return &RoutingTable{
 		routes:       compiled,
 		destinations: upstreams,
 		middlewares:  mwByID,
@@ -82,7 +82,7 @@ func BuildTable(
 }
 
 // Upstreams returns the upstream map from the routing table.
-func (t *routingTable) Upstreams() map[string]*Upstream {
+func (t *RoutingTable) Upstreams() map[string]*Upstream {
 	return t.destinations
 }
 

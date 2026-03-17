@@ -15,11 +15,11 @@ import (
 // Router holds the current routing table and dispatches incoming requests
 // to the appropriate handler. The table is swapped atomically on config reload.
 type Router struct {
-	table atomic.Pointer[routingTable]
+	table atomic.Pointer[RoutingTable]
 }
 
-// routingTable is an immutable snapshot of the current proxy configuration.
-type routingTable struct {
+// RoutingTable is an immutable snapshot of the current proxy configuration.
+type RoutingTable struct {
 	routes       []compiledRoute
 	destinations map[string]*Upstream
 	middlewares  map[string]model.Middleware
@@ -43,7 +43,7 @@ type compiledRoute struct {
 // NewRouter creates a new Router with an empty routing table.
 func NewRouter() *Router {
 	r := &Router{}
-	r.table.Store(&routingTable{
+	r.table.Store(&RoutingTable{
 		destinations: make(map[string]*Upstream),
 		middlewares:  make(map[string]model.Middleware),
 	})
@@ -52,7 +52,7 @@ func NewRouter() *Router {
 
 // SwapTable atomically replaces the routing table. Active requests on the
 // old table are not affected — they complete with the old config.
-func (r *Router) SwapTable(t *routingTable) {
+func (r *Router) SwapTable(t *RoutingTable) {
 	r.table.Store(t)
 }
 
