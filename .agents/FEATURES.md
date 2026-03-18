@@ -62,7 +62,7 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Weighted destination selection (WEIGHTED_RANDOM)         | 100%   | Unit + E2E (15k req)  |
 | Destination balancing (WEIGHTED_CONSISTENT_HASH)         | 100%   | Unit (7) + E2E (26k)  |
 | Destination balancing (STICKY + Redis)                   | 100%   | Unit (5) + E2E (20k)  |
-| Endpoint balancing (RING_HASH, MAGLEV, LeastReq, etc)   | 100%   | Unit                  |
+| Endpoint balancing (RING_HASH, MAGLEV, LeastReq, etc)   | 30%    | Unit (balancers only) |
 | Path rewrite (prefix)                                   | 100%   | E2E                   |
 | Path rewrite (regex, cached)                            | 100%   | E2E                   |
 | Host rewrite                                            | 100%   | Unit                  |
@@ -168,11 +168,11 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Proxy middlewares      | 55      | 55      |
 | Raft (FSM, cluster, peers) | 14  | 14      |
 | Raft handlers          | 5       | 5       |
-| Config                 | 10      | 10      |
+| Config                 | 11      | 11      |
 | Sync client            | 2       | 2       |
-| E2E (proxy, live)      | 52      | 51      |
+| E2E (proxy, live)      | 52      | 52      |
 | E2E (cluster, kind)    | 8       | 8       |
-| **Total**              | **249** | **248** |
+| **Total**              | **250** | **250** |
 
 **Note**: `TestE2E_Proxy_GroupRegexComposition` is a pre-existing bug (regex 404), not related to balancing.
 
@@ -214,4 +214,11 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 ## Known Remaining Issues
 
-None.
+- **Endpoint balancing not functional end-to-end**: `endpointBalancing` config is accepted
+  and the balancer rings are built, but the proxy sends traffic to `Destination.Host:Port`
+  directly (the Kubernetes Service ClusterIP). The k8s EndpointSlice watcher exists and
+  has unit tests, but is not wired into the gateway or proxy. Individual pod IPs never
+  reach the proxy's upstream pool. Level-2 balancing (RING_HASH, MAGLEV, etc.) is
+  effectively a no-op until endpoints are wired. Next hito: introduce the Endpoint
+  concept as a first-class child of Destination, wire the k8s watcher, and support
+  static endpoint lists.
