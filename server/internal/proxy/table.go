@@ -34,20 +34,20 @@ func BuildTable(
 		mwByID[m.ID] = m
 	}
 
-	// Build upstreams.
-	upstreams := make(map[string]*Upstream, len(destinations))
+	// Build destination pools (one pool per destination, N endpoints each).
+	pools := make(map[string]*DestinationPool, len(destinations))
 	for _, d := range destinations {
-		u, err := NewUpstream(d)
+		pool, err := NewDestinationPool(d)
 		if err != nil {
 			return nil, err
 		}
-		upstreams[d.ID] = u
+		pools[d.ID] = pool
 	}
 
 	var compiled []compiledRoute
 
 	table := &RoutingTable{
-		destinations: upstreams,
+		pools:        pools,
 		middlewares:  mwByID,
 		sessionStore: sessStore,
 	}
@@ -64,7 +64,7 @@ func BuildTable(
 			}
 			routesInGroups[routeID] = true
 			gCopy := g
-			cr, err := compileRoute(r, &gCopy, upstreams, mwByID, table.AddCleanup, sessStore)
+			cr, err := compileRoute(r, &gCopy, pools, mwByID, table.AddCleanup, sessStore)
 			if err != nil {
 				slog.Error("proxy: skipping route with compile error",
 					slog.String("route", r.Name),
@@ -82,7 +82,7 @@ func BuildTable(
 		if routesInGroups[r.ID] {
 			continue
 		}
-		cr, err := compileRoute(r, nil, upstreams, mwByID, table.AddCleanup, sessStore)
+		cr, err := compileRoute(r, nil, pools, mwByID, table.AddCleanup, sessStore)
 		if err != nil {
 			slog.Error("proxy: skipping route with compile error",
 				slog.String("route", r.Name),
@@ -94,24 +94,14 @@ func BuildTable(
 		compiled = append(compiled, cr)
 	}
 
-	// Build balancer rings/tables for upstreams that use consistent hashing.
-	// Collect all destination refs that point to each upstream.
-	refsByDest := make(map[string][]model.DestinationRef)
-	for _, cr := range compiled {
-		if cr.model.Forward != nil {
-			for _, b := range cr.model.Forward.Destinations {
-				refsByDest[b.DestinationID] = append(refsByDest[b.DestinationID], b)
-			}
-		}
-	}
-	for destID, u := range upstreams {
-		if u.Balancer == nil {
+	// Build balancer rings/tables for destination pools with consistent hashing.
+	for _, pool := range pools {
+		if pool.Balancer == nil {
 			continue
 		}
-		if dests, ok := refsByDest[destID]; ok {
-			if builder, ok := u.Balancer.(interface{ Build([]model.DestinationRef) }); ok {
-				builder.Build(dests)
-			}
+		if builder, ok := pool.Balancer.(interface{ Build([]model.DestinationRef) }); ok {
+			refs := pool.endpointRefs(pool.Endpoints)
+			builder.Build(refs)
 		}
 	}
 
@@ -119,16 +109,16 @@ func BuildTable(
 	return table, nil
 }
 
-// Upstreams returns the upstream map from the routing table.
-func (t *RoutingTable) Upstreams() map[string]*Upstream {
-	return t.destinations
+// Pools returns the destination pool map from the routing table.
+func (t *RoutingTable) Pools() map[string]*DestinationPool {
+	return t.pools
 }
 
 // compileRoute pre-compiles a route for fast matching.
 func compileRoute(
 	r model.Route,
 	g *model.RouteGroup,
-	upstreams map[string]*Upstream,
+	pools map[string]*DestinationPool,
 	allMw map[string]model.Middleware,
 	onCleanup func(func()),
 	sessStore SessionStore,
@@ -254,7 +244,7 @@ func compileRoute(
 	}
 
 	// Build handler with middleware chain.
-	cr.handler = buildRouteHandler(r, g, upstreams, allMw, onCleanup, sessStore)
+	cr.handler = buildRouteHandler(r, g, pools, allMw, onCleanup, sessStore)
 
 	return cr, nil
 }

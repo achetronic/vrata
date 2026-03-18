@@ -31,6 +31,19 @@ const (
 	TLSModeMTLS TLSMode = "mtls" // mutual TLS — present client certificate
 )
 
+// Endpoint is a concrete network address (IP or hostname + port) that a
+// Destination resolves to. A Destination has one or more endpoints:
+//   - No Endpoints field and no Discovery → single implicit endpoint from Host:Port
+//   - Endpoints field set → static list configured via the API
+//   - Discovery configured → dynamic list resolved by the k8s watcher at runtime
+type Endpoint struct {
+	// Host is the endpoint IP address or hostname.
+	Host string `json:"host"`
+
+	// Port is the endpoint TCP port.
+	Port uint32 `json:"port"`
+}
+
 // Destination is a named upstream target that routes reference by ID.
 type Destination struct {
 	// ID is the unique identifier of this destination.
@@ -39,16 +52,34 @@ type Destination struct {
 	// Name is a human-readable label.
 	Name string `json:"name"`
 
-	// Host is the upstream FQDN or IP address.
+	// Host is the default upstream FQDN or IP address. Used as the sole
+	// endpoint when Endpoints is empty and no Discovery is configured.
 	// For Kubernetes Services use the full FQDN:
 	//   my-svc.my-namespace.svc.cluster.local
 	Host string `json:"host"`
 
-	// Port is the upstream TCP port.
+	// Port is the default upstream TCP port. Used together with Host as
+	// the sole endpoint when Endpoints is empty.
 	Port uint32 `json:"port"`
+
+	// Endpoints is an explicit list of backend addresses for this Destination.
+	// When set, Host:Port is ignored for traffic routing (Host is still used
+	// for TLS SNI and k8s discovery FQDN parsing). The endpointBalancing
+	// algorithm selects which endpoint receives each request.
+	Endpoints []Endpoint `json:"endpoints,omitempty"`
 
 	// Options contains advanced configuration. All fields are optional.
 	Options *DestinationOptions `json:"options,omitempty"`
+}
+
+// ResolvedEndpoints returns the effective endpoint list for this Destination.
+// If Endpoints is set, returns it as-is. Otherwise returns a single-element
+// list derived from Host:Port.
+func (d Destination) ResolvedEndpoints() []Endpoint {
+	if len(d.Endpoints) > 0 {
+		return d.Endpoints
+	}
+	return []Endpoint{{Host: d.Host, Port: d.Port}}
 }
 
 // DestinationOptions holds advanced configuration for a Destination.
@@ -60,11 +91,10 @@ type DestinationOptions struct {
 	// TLS controls upstream TLS / mTLS configuration.
 	TLS *TLSOptions `json:"tls,omitempty"`
 
-	// EndpointBalancing controls how Vrata selects an endpoint (pod) within
-	// this Destination when multiple endpoints are available via discovery.
-	// Only relevant when Discovery is configured (e.g. Kubernetes).
-	// When nil or when there is only one endpoint, traffic goes directly
-	// to host:port.
+	// EndpointBalancing controls how Vrata selects an endpoint within this
+	// Destination when multiple endpoints are available (via Endpoints list
+	// or Discovery). When nil, ROUND_ROBIN is used. When the Destination has
+	// only one endpoint, the algorithm is irrelevant.
 	EndpointBalancing *EndpointBalancing `json:"endpointBalancing,omitempty"`
 
 	// CircuitBreaker limits in-flight traffic to protect the upstream.

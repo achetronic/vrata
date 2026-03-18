@@ -19,21 +19,21 @@ import (
 
 // Balancer selects an upstream from a set of dests.
 type Balancer interface {
-	Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream
+	Pick(r *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint
 }
 
 // HashBalancer is implemented by consistent hash balancers that can accept
 // a pre-computed hash key for deterministic endpoint selection.
 type HashBalancer interface {
 	Balancer
-	PickByHash(h uint32, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream
+	PickByHash(h uint32, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint
 }
 
 // WeightedRandomBalancer picks by weighted random.
 type WeightedRandomBalancer struct{}
 
-func (WeightedRandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
-	return SelectDestination(dests, upstreams)
+func (WeightedRandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
+	return pickRandomEndpoint(endpoints)
 }
 
 // RoundRobinBalancer cycles through dests in order.
@@ -41,12 +41,12 @@ type RoundRobinBalancer struct {
 	counter atomic.Uint64
 }
 
-func (rr *RoundRobinBalancer) Pick(_ *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+func (rr *RoundRobinBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	if len(dests) == 0 {
 		return nil
 	}
 	idx := rr.counter.Add(1) % uint64(len(dests))
-	return upstreams[dests[idx].DestinationID]
+	return endpoints[dests[idx].DestinationID]
 }
 
 // LeastRequestBalancer picks the upstream with the fewest active requests.
@@ -59,7 +59,7 @@ func NewLeastRequestBalancer() *LeastRequestBalancer {
 	return &LeastRequestBalancer{inflight: make(map[string]int64)}
 }
 
-func (lb *LeastRequestBalancer) Pick(_ *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+func (lb *LeastRequestBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
@@ -76,7 +76,7 @@ func (lb *LeastRequestBalancer) Pick(_ *http.Request, dests []model.DestinationR
 		return nil
 	}
 	lb.inflight[best]++
-	return upstreams[best]
+	return endpoints[best]
 }
 
 func (lb *LeastRequestBalancer) Done(destID string) {
@@ -91,12 +91,12 @@ func (lb *LeastRequestBalancer) Done(destID string) {
 // RandomBalancer picks a random destination.
 type RandomBalancer struct{}
 
-func (RandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+func (RandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	if len(dests) == 0 {
 		return nil
 	}
 	idx := rand.Intn(len(dests))
-	return upstreams[dests[idx].DestinationID]
+	return endpoints[dests[idx].DestinationID]
 }
 
 // ─── Consistent hashing ─────────────────────────────────────────────────────
@@ -151,16 +151,16 @@ func (rh *RingHashBalancer) Build(dests []model.DestinationRef) {
 	})
 }
 
-func (rh *RingHashBalancer) Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
-	return rh.PickByHash(hashRequest(r), dests, upstreams)
+func (rh *RingHashBalancer) Pick(r *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
+	return rh.PickByHash(hashRequest(r), dests, endpoints)
 }
 
-func (rh *RingHashBalancer) PickByHash(h uint32, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+func (rh *RingHashBalancer) PickByHash(h uint32, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
 
 	if len(rh.ring) == 0 {
-		return SelectDestination(dests, upstreams)
+		return pickRandomEndpoint(endpoints)
 	}
 
 	idx := sort.Search(len(rh.ring), func(i int) bool {
@@ -169,7 +169,7 @@ func (rh *RingHashBalancer) PickByHash(h uint32, dests []model.DestinationRef, u
 	if idx >= len(rh.ring) {
 		idx = 0
 	}
-	return upstreams[rh.ring[idx].destID]
+	return endpoints[rh.ring[idx].destID]
 }
 
 // MaglevBalancer implements Maglev consistent hashing.
@@ -243,23 +243,23 @@ func (m *MaglevBalancer) Build(dests []model.DestinationRef) {
 	m.table = table
 }
 
-func (m *MaglevBalancer) Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
-	return m.PickByHash(hashRequest(r), dests, upstreams)
+func (m *MaglevBalancer) Pick(r *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
+	return m.PickByHash(hashRequest(r), dests, endpoints)
 }
 
-func (m *MaglevBalancer) PickByHash(h uint32, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+func (m *MaglevBalancer) PickByHash(h uint32, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if len(m.table) == 0 || len(m.dests) == 0 {
-		return SelectDestination(dests, upstreams)
+		return pickRandomEndpoint(endpoints)
 	}
 
 	idx := m.table[h%uint32(len(m.table))]
 	if idx < 0 || idx >= len(m.dests) {
-		return SelectDestination(dests, upstreams)
+		return pickRandomEndpoint(endpoints)
 	}
-	return upstreams[m.dests[idx]]
+	return endpoints[m.dests[idx]]
 }
 
 // hashRequest computes a hash from the request using the provided hash policies.
@@ -312,4 +312,17 @@ func generateEndpointSessionID() string {
 	b := make([]byte, 16)
 	cryptorand.Read(b)
 	return fmt.Sprintf("%x", b)
+}
+
+// pickRandomEndpoint picks a random endpoint from the map. Used as fallback
+// when a consistent hash ring is empty.
+func pickRandomEndpoint(endpoints map[string]*Endpoint) *Endpoint {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(endpoints))
+	for k := range endpoints {
+		keys = append(keys, k)
+	}
+	return endpoints[keys[rand.Intn(len(keys))]]
 }

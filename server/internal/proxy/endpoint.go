@@ -7,8 +7,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"sync"
 	"time"
@@ -16,53 +14,36 @@ import (
 	"github.com/achetronic/vrata/internal/model"
 )
 
-// Upstream represents a destination with its reverse proxy, TLS config,
-// health state, balancer, and circuit breaker.
-type Upstream struct {
-	Destination      model.Destination
-	Transport        *http.Transport
-	Healthy          bool
-	Balancer         Balancer
-	CircuitBreaker   *CircuitBreaker
-	OnResponse       func(destID string, statusCode int)
-	mu               sync.RWMutex
-	lastHealthAt     time.Time
+// Endpoint represents a single endpoint connection with its transport,
+// health state, and identity. One Destination may have many Upstreams
+// Endpoint is a live connection to a single resolved address. It embeds
+// model.Endpoint (Host, Port) and adds runtime state: transport, health,
+// and outlier detection callback.
+type Endpoint struct {
+	model.Endpoint
+	ID           string
+	Transport    *http.Transport
+	Healthy      bool
+	OnResponse   func(destID string, statusCode int)
+	mu           sync.RWMutex
+	lastHealthAt time.Time
 }
 
-// EndpointHashPolicies returns the hash policies configured for endpoint
-// balancing, or nil if none are configured.
-func (u *Upstream) EndpointHashPolicies() []model.HashPolicy {
-	if u.Destination.Options == nil || u.Destination.Options.EndpointBalancing == nil {
-		return nil
-	}
-	eb := u.Destination.Options.EndpointBalancing
-	switch eb.Algorithm {
-	case model.EndpointLBRingHash:
-		if eb.RingHash != nil {
-			return eb.RingHash.HashPolicy
-		}
-	case model.EndpointLBMaglev:
-		if eb.Maglev != nil {
-			return eb.Maglev.HashPolicy
-		}
-	}
-	return nil
-}
-
-func (u *Upstream) lastHealthCheck() time.Time {
+func (u *Endpoint) lastHealthCheck() time.Time {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
 	return u.lastHealthAt
 }
 
-func (u *Upstream) setLastHealthCheck(t time.Time) {
+func (u *Endpoint) setLastHealthCheck(t time.Time) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	u.lastHealthAt = t
 }
 
-// NewUpstream creates an Upstream from a Destination, configuring TLS if needed.
-func NewUpstream(d model.Destination) (*Upstream, error) {
+// NewEndpoint creates an Endpoint for a specific endpoint address, inheriting
+// TLS and transport settings from the Destination.
+func NewEndpoint(ep model.Endpoint, d model.Destination) (*Endpoint, error) {
 	connectTimeout := 5 * time.Second
 	if d.Options != nil && d.Options.ConnectTimeout != "" {
 		if dur, err := time.ParseDuration(d.Options.ConnectTimeout); err == nil {
@@ -84,7 +65,6 @@ func NewUpstream(d model.Destination) (*Upstream, error) {
 		transport.MaxConnsPerHost = int(d.Options.MaxRequestsPerConnection)
 	}
 
-	// TLS upstream.
 	if d.Options != nil && d.Options.TLS != nil &&
 		d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
 		tlsCfg, err := buildTLSConfig(d)
@@ -94,7 +74,6 @@ func NewUpstream(d model.Destination) (*Upstream, error) {
 		transport.TLSClientConfig = tlsCfg
 	}
 
-	// HTTP/2.
 	if d.Options != nil && d.Options.HTTP2 {
 		transport.ForceAttemptHTTP2 = true
 		if transport.TLSClientConfig != nil {
@@ -102,10 +81,31 @@ func NewUpstream(d model.Destination) (*Upstream, error) {
 		}
 	}
 
-	return &Upstream{
+	return &Endpoint{
+		Endpoint:  ep,
+		ID:        fmt.Sprintf("%s:%d", ep.Host, ep.Port),
+		Transport: transport,
+		Healthy:   true,
+	}, nil
+}
+
+// NewDestinationPool creates a DestinationPool from a Destination, creating
+// one Endpoint per resolved endpoint.
+func NewDestinationPool(d model.Destination) (*DestinationPool, error) {
+	endpoints := d.ResolvedEndpoints()
+
+	eps := make([]*Endpoint, 0, len(endpoints))
+	for _, ep := range endpoints {
+		u, err := NewEndpoint(ep, d)
+		if err != nil {
+			return nil, err
+		}
+		eps = append(eps, u)
+	}
+
+	return &DestinationPool{
 		Destination:    d,
-		Transport:      transport,
-		Healthy:        true,
+		Endpoints: eps,
 		Balancer:       buildBalancer(d),
 		CircuitBreaker: buildCircuitBreaker(d),
 	}, nil
@@ -114,7 +114,7 @@ func NewUpstream(d model.Destination) (*Upstream, error) {
 // buildBalancer creates the appropriate balancer for a destination.
 func buildBalancer(d model.Destination) Balancer {
 	if d.Options == nil || d.Options.EndpointBalancing == nil {
-		return nil // default weighted random handled by SelectDestination
+		return nil
 	}
 	eb := d.Options.EndpointBalancing
 	switch eb.Algorithm {
@@ -139,6 +139,8 @@ func buildBalancer(d model.Destination) Balancer {
 		return NewLeastRequestBalancer()
 	case model.EndpointLBRandom:
 		return RandomBalancer{}
+	case model.EndpointLBRoundRobin:
+		return &RoundRobinBalancer{}
 	default:
 		return nil
 	}
@@ -164,7 +166,6 @@ func buildTLSConfig(d model.Destination) (*tls.Config, error) {
 		cfg.ServerName = tlsOpts.SNI
 	}
 
-	// Min/max TLS version.
 	if v, ok := tlsVersionMap[tlsOpts.MinVersion]; ok {
 		cfg.MinVersion = v
 	}
@@ -172,7 +173,6 @@ func buildTLSConfig(d model.Destination) (*tls.Config, error) {
 		cfg.MaxVersion = v
 	}
 
-	// CA certificate.
 	caFile := tlsOpts.CAFile
 	if caFile == "" {
 		caFile = "/etc/ssl/certs/ca-certificates.crt"
@@ -184,7 +184,6 @@ func buildTLSConfig(d model.Destination) (*tls.Config, error) {
 		cfg.RootCAs = pool
 	}
 
-	// Client certificate (mTLS).
 	if tlsOpts.Mode == model.TLSModeMTLS && tlsOpts.CertFile != "" && tlsOpts.KeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(tlsOpts.CertFile, tlsOpts.KeyFile)
 		if err != nil {
@@ -203,31 +202,13 @@ var tlsVersionMap = map[string]uint16{
 	"TLSv1_3": tls.VersionTLS13,
 }
 
-// ReverseProxy creates an httputil.ReverseProxy targeting this upstream.
-func (u *Upstream) ReverseProxy() *httputil.ReverseProxy {
-	d := u.Destination
-	scheme := "http"
-	if d.Options != nil && d.Options.TLS != nil &&
-		d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
-		scheme = "https"
-	}
-	target := &url.URL{
-		Scheme: scheme,
-		Host:   fmt.Sprintf("%s:%d", d.Host, d.Port),
-	}
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Transport = u.Transport
-	return proxy
-}
-
-// SelectDestination picks a destination from weighted dests using weighted random.
-// When all weights are zero, dests are selected uniformly at random.
-func SelectDestination(dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+// SelectDestination picks a destination pool from weighted dests using weighted random.
+func SelectDestination(dests []model.DestinationRef, pools map[string]*DestinationPool) *DestinationPool {
 	if len(dests) == 0 {
 		return nil
 	}
 	if len(dests) == 1 {
-		return upstreams[dests[0].DestinationID]
+		return pools[dests[0].DestinationID]
 	}
 
 	total := uint32(0)
@@ -241,7 +222,7 @@ func SelectDestination(dests []model.DestinationRef, upstreams map[string]*Upstr
 
 	if allZero {
 		idx := rand.Intn(len(dests))
-		return upstreams[dests[idx].DestinationID]
+		return pools[dests[idx].DestinationID]
 	}
 
 	r := rand.Uint32() % total
@@ -249,8 +230,8 @@ func SelectDestination(dests []model.DestinationRef, upstreams map[string]*Upstr
 	for _, b := range dests {
 		cumulative += b.Weight
 		if r < cumulative {
-			return upstreams[b.DestinationID]
+			return pools[b.DestinationID]
 		}
 	}
-	return upstreams[dests[len(dests)-1].DestinationID]
+	return pools[dests[len(dests)-1].DestinationID]
 }

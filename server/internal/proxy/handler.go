@@ -25,7 +25,7 @@ import (
 func buildRouteHandler(
 	route model.Route,
 	group *model.RouteGroup,
-	upstreams map[string]*Upstream,
+	pools map[string]*DestinationPool,
 	allMiddlewares map[string]model.Middleware,
 	onCleanup func(func()),
 	sessStore SessionStore,
@@ -38,35 +38,30 @@ func buildRouteHandler(
 	case route.Redirect != nil:
 		handler = redirectHandler(route.Redirect)
 	case route.Forward != nil:
-		handler = forwardHandler(route.Forward, upstreams, group, route.ID, sessStore)
+		handler = forwardHandler(route.Forward, pools, group, route.ID, sessStore)
 	default:
 		handler = http.NotFoundHandler()
 	}
 
-	// Collect active middleware IDs from group + route.
 	mwIDs := collectMiddlewareIDs(route, group)
 
-	// Build middleware chain.
 	var mws []middlewares.Middleware
 	for _, mwID := range mwIDs {
 		mw, ok := allMiddlewares[mwID]
 		if !ok {
 			continue
 		}
-		// Check if route has an override that disables this middleware.
 		if ov, hasOv := route.MiddlewareOverrides[mwID]; hasOv && ov.Disabled {
 			continue
 		}
-		// Check group override too.
 		if group != nil {
 			if ov, hasOv := group.MiddlewareOverrides[mwID]; hasOv && ov.Disabled {
-				// But route can re-enable by NOT having disabled.
 				if _, routeHasOv := route.MiddlewareOverrides[mwID]; !routeHasOv {
 					continue
 				}
 			}
 		}
-		m, cleanup := buildMiddleware(mw, upstreams)
+		m, cleanup := buildMiddleware(mw, pools)
 		if m != nil {
 			mws = append(mws, m)
 			if cleanup != nil {
@@ -82,7 +77,6 @@ func buildRouteHandler(
 	return handler
 }
 
-// collectMiddlewareIDs merges group + route middleware IDs.
 func collectMiddlewareIDs(route model.Route, group *model.RouteGroup) []string {
 	seen := make(map[string]bool)
 	var ids []string
@@ -104,11 +98,8 @@ func collectMiddlewareIDs(route model.Route, group *model.RouteGroup) []string {
 	return ids
 }
 
-// buildMiddleware creates a middleware function from a model.Middleware.
-// Returns the middleware and an optional cleanup function to call when
-// the routing table is replaced.
-func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) (middlewares.Middleware, func()) {
-	services := upstreamsToServices(upstreams)
+func buildMiddleware(mw model.Middleware, pools map[string]*DestinationPool) (middlewares.Middleware, func()) {
+	services := poolsToServices(pools)
 	switch mw.Type {
 	case model.MiddlewareTypeCORS:
 		return middlewares.CORSMiddleware(mw.CORS), nil
@@ -133,25 +124,27 @@ func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) (middl
 	}
 }
 
-// upstreamsToServices converts the Upstream map to a Service map for middlewares.
-func upstreamsToServices(upstreams map[string]*Upstream) map[string]middlewares.Service {
-	services := make(map[string]middlewares.Service, len(upstreams))
-	for id, u := range upstreams {
-		d := u.Destination
+func poolsToServices(pools map[string]*DestinationPool) map[string]middlewares.Service {
+	services := make(map[string]middlewares.Service, len(pools))
+	for id, pool := range pools {
+		d := pool.Destination
 		scheme := "http"
 		if d.Options != nil && d.Options.TLS != nil &&
 			d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
 			scheme = "https"
 		}
+		var transport *http.Transport
+		if len(pool.Endpoints) > 0 {
+			transport = pool.Endpoints[0].Transport
+		}
 		services[id] = middlewares.Service{
 			BaseURL:   fmt.Sprintf("%s://%s:%d", scheme, d.Host, d.Port),
-			Transport: u.Transport,
+			Transport: transport,
 		}
 	}
 	return services
 }
 
-// directResponseHandler returns a fixed response.
 func directResponseHandler(dr *model.RouteDirectResponse) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(int(dr.Status))
@@ -161,7 +154,6 @@ func directResponseHandler(dr *model.RouteDirectResponse) http.Handler {
 	})
 }
 
-// redirectHandler returns an HTTP redirect.
 func redirectHandler(rd *model.RouteRedirect) http.Handler {
 	code := int(rd.Code)
 	if code == 0 {
@@ -191,7 +183,7 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 }
 
 // forwardHandler creates a handler that proxies to upstream destinations.
-func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, group *model.RouteGroup, routeID string, sessStore SessionStore) http.Handler {
+func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool, group *model.RouteGroup, routeID string, sessStore SessionStore) http.Handler {
 	var pinRing *destinationRing
 	if fwd.DestinationBalancing != nil &&
 		(fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash ||
@@ -200,61 +192,55 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstream := pickDestination(fwd, upstreams, r, routeID, pinRing, w, sessStore)
-		if upstream == nil {
-			http.Error(w, "no upstream available", http.StatusBadGateway)
+		// Level 1: pick destination pool.
+		pool := pickDestinationPool(fwd, pools, r, routeID, pinRing, w, sessStore)
+		if pool == nil {
+			http.Error(w, "no destination available", http.StatusBadGateway)
 			return
 		}
 
-		// Level 2: endpoint selection within the chosen destination.
-		// When the destination has a consistent hash balancer (RING_HASH/MAGLEV)
-		// with hash policies, compute the hash and set any auto-generated cookies.
-		// The actual endpoint selection will apply when k8s endpoint discovery is
-		// wired (multiple endpoints per destination). For now, with a single
-		// host:port per destination, this ensures cookies are generated and the
-		// hash is computed for future use.
-		if _, ok := upstream.Balancer.(HashBalancer); ok {
-			if policies := upstream.EndpointHashPolicies(); len(policies) > 0 {
-				hashRequestWithPolicy(r, w, policies, upstream.Destination.ID)
-			}
+		// Level 2: pick endpoint within the pool.
+		var endpoint *Endpoint
+		if policies := pool.EndpointHashPolicies(); len(policies) > 0 {
+			h := hashRequestWithPolicy(r, w, policies, pool.Destination.ID)
+			endpoint = pool.PickByHash(h, r, w)
+		} else {
+			endpoint = pool.Pick(r, w)
+		}
+		if endpoint == nil {
+			http.Error(w, "no healthy endpoint", http.StatusBadGateway)
+			return
 		}
 
-		if upstream.CircuitBreaker != nil && !upstream.CircuitBreaker.Allow() {
+		if pool.CircuitBreaker != nil && !pool.CircuitBreaker.Allow() {
 			http.Error(w, "circuit breaker open", http.StatusServiceUnavailable)
 			return
 		}
-
-		if upstream.CircuitBreaker != nil {
-			upstream.CircuitBreaker.OnRequest()
-			defer upstream.CircuitBreaker.OnComplete()
+		if pool.CircuitBreaker != nil {
+			pool.CircuitBreaker.OnRequest()
+			defer pool.CircuitBreaker.OnComplete()
+		}
+		if b, ok := pool.Balancer.(interface{ Done(string) }); ok {
+			defer b.Done(endpoint.ID)
 		}
 
-		if b, ok := upstream.Balancer.(interface{ Done(string) }); ok {
-			defer b.Done(upstream.Destination.ID)
-		}
-
-		proxy := upstream.ReverseProxy()
+		proxy := pool.ReverseProxyFor(endpoint)
 
 		if fwd.Retry != nil {
 			proxy.Transport = newRetryTransport(proxy.Transport, fwd.Retry)
 		}
-
 		if fwd.Rewrite != nil {
 			applyRewrite(r, fwd.Rewrite)
 		}
-
 		if fwd.Mirror != nil {
-			mirrorRequest(r, fwd.Mirror, upstreams)
+			mirrorRequest(r, fwd.Mirror, pools)
 		}
-
 		if group != nil && group.IncludeAttemptCount {
 			r.Header.Set("X-Request-Attempt-Count", "1")
 		}
-
 		if fwd.Retry == nil && group != nil && group.RetryDefault != nil {
 			proxy.Transport = newRetryTransport(proxy.Transport, group.RetryDefault)
 		}
-
 		if fwd.MaxGRPCTimeout != "" {
 			if maxDur, err := time.ParseDuration(fwd.MaxGRPCTimeout); err == nil {
 				if grpcTimeout := r.Header.Get("grpc-timeout"); grpcTimeout != "" {
@@ -266,7 +252,6 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 				}
 			}
 		}
-
 		if fwd.Timeouts != nil && fwd.Timeouts.Idle != "" {
 			if d, err := time.ParseDuration(fwd.Timeouts.Idle); err == nil {
 				if t, ok := unwrapHTTPTransport(proxy.Transport); ok {
@@ -288,33 +273,29 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 		if fwd.Timeouts != nil && fwd.Timeouts.Request != "" {
 			if d, err := time.ParseDuration(fwd.Timeouts.Request); err == nil {
 				http.TimeoutHandler(proxy, d, "request timeout").ServeHTTP(wrappedW, r)
-				recordUpstreamResult(upstream, capturedStatus)
+				recordEndpointResult(endpoint, pool, capturedStatus)
 				return
 			}
 		}
 
 		proxy.ServeHTTP(wrappedW, r)
-		recordUpstreamResult(upstream, capturedStatus)
+		recordEndpointResult(endpoint, pool, capturedStatus)
 	})
 }
 
-// recordUpstreamResult records success or failure on the circuit breaker
-// and notifies the outlier detector based on the upstream response status.
-func recordUpstreamResult(upstream *Upstream, status int) {
-	if upstream.CircuitBreaker != nil {
+func recordEndpointResult(ep *Endpoint, pool *DestinationPool, status int) {
+	if pool.CircuitBreaker != nil {
 		if status >= 500 {
-			upstream.CircuitBreaker.RecordFailure()
+			pool.CircuitBreaker.RecordFailure()
 		} else {
-			upstream.CircuitBreaker.RecordSuccess()
+			pool.CircuitBreaker.RecordSuccess()
 		}
 	}
-	if upstream.OnResponse != nil {
-		upstream.OnResponse(upstream.Destination.ID, status)
+	if ep.OnResponse != nil {
+		ep.OnResponse(pool.Destination.ID, status)
 	}
 }
 
-// unwrapHTTPTransport safely extracts the underlying *http.Transport from
-// a potentially wrapped transport chain (e.g. retryTransport).
 func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
 	for {
 		switch t := rt.(type) {
@@ -328,32 +309,25 @@ func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
 	}
 }
 
-// pickDestination selects a destination from the dests list.
-// Level 1: destination selection (weights or pinning).
-// Level 2 (endpoint selection within a destination) is handled by the
-// balancer inside ReverseProxy, not here.
-func pickDestination(
+// ─── Level 1: Destination selection ─────────────────────────────────────────
+
+func pickDestinationPool(
 	fwd *model.ForwardAction,
-	upstreams map[string]*Upstream,
+	pools map[string]*DestinationPool,
 	r *http.Request,
 	routeID string,
 	pinRing *destinationRing,
 	w http.ResponseWriter,
 	sessStore SessionStore,
-) *Upstream {
+) *DestinationPool {
 	if len(fwd.Destinations) == 0 {
 		return nil
 	}
 	if len(fwd.Destinations) == 1 {
-		u := upstreams[fwd.Destinations[0].DestinationID]
-		if u != nil && !isHealthy(u) {
-			return nil
-		}
-		return u
+		return pools[fwd.Destinations[0].DestinationID]
 	}
 
-	// Filter healthy dests.
-	healthy := filterHealthy(fwd.Destinations, upstreams)
+	healthy := filterHealthyPools(fwd.Destinations, pools)
 	if len(healthy) == 0 {
 		return nil
 	}
@@ -362,34 +336,30 @@ func pickDestination(
 		switch fwd.DestinationBalancing.Algorithm {
 		case model.DestinationLBWeightedConsistentHash:
 			if pinRing != nil {
-				return pickPinned(fwd, upstreams, r, w, routeID, pinRing, healthy)
+				return pickPinnedPool(fwd, pools, r, w, routeID, pinRing, healthy)
 			}
 		case model.DestinationLBSticky:
 			if sessStore != nil {
-				return pickSticky(fwd, upstreams, r, w, routeID, healthy, sessStore)
+				return pickStickyPool(fwd, pools, r, w, routeID, healthy, sessStore)
 			}
-			// Fallback to consistent hash if no session store configured.
 			if pinRing != nil {
-				return pickPinned(fwd, upstreams, r, w, routeID, pinRing, healthy)
+				return pickPinnedPool(fwd, pools, r, w, routeID, pinRing, healthy)
 			}
 		}
 	}
 
-	// Default: weighted random.
-	return SelectDestination(healthy, upstreams)
+	return SelectDestination(healthy, pools)
 }
 
-// pickPinned selects a destination using the weighted consistent hash ring
-// and a session cookie. If the client has no cookie, one is generated.
-func pickPinned(
+func pickPinnedPool(
 	fwd *model.ForwardAction,
-	upstreams map[string]*Upstream,
+	pools map[string]*DestinationPool,
 	r *http.Request,
 	w http.ResponseWriter,
 	routeID string,
 	ring *destinationRing,
 	healthy []model.DestinationRef,
-) *Upstream {
+) *DestinationPool {
 	cookieName := "_vrata_destination_pin"
 	var ttlStr string
 	if wch := fwd.DestinationBalancing.WeightedConsistentHash; wch != nil && wch.Cookie != nil {
@@ -403,46 +373,36 @@ func pickPinned(
 	if c, err := r.Cookie(cookieName); err == nil {
 		sid = c.Value
 	}
-
 	if sid == "" {
 		sid = generateSessionID()
 		ttl := parseTTL(ttlStr, time.Hour)
 		http.SetCookie(w, &http.Cookie{
-			Name:     cookieName,
-			Value:    sid,
-			Path:     "/",
-			MaxAge:   int(ttl.Seconds()),
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Name: cookieName, Value: sid, Path: "/",
+			MaxAge: int(ttl.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode,
 		})
 	}
 
 	hashKey := crc32.ChecksumIEEE([]byte(sid + ":" + routeID))
-
 	validSet := make(map[string]bool, len(healthy))
 	for _, b := range healthy {
 		validSet[b.DestinationID] = true
 	}
-
 	destID := ring.PickValid(hashKey, validSet)
 	if destID == "" {
-		return SelectDestination(healthy, upstreams)
+		return SelectDestination(healthy, pools)
 	}
-	return upstreams[destID]
+	return pools[destID]
 }
 
-// pickSticky selects a destination using an external session store for
-// zero-disruption pinning. New clients are assigned via weighted random;
-// existing clients always return to the same destination.
-func pickSticky(
+func pickStickyPool(
 	fwd *model.ForwardAction,
-	upstreams map[string]*Upstream,
+	pools map[string]*DestinationPool,
 	r *http.Request,
 	w http.ResponseWriter,
 	routeID string,
 	healthy []model.DestinationRef,
 	store SessionStore,
-) *Upstream {
+) *DestinationPool {
 	cookieName := "_vrata_destination_pin"
 	var ttlStr string
 	if fwd.DestinationBalancing.Sticky != nil && fwd.DestinationBalancing.Sticky.Cookie != nil {
@@ -456,66 +416,63 @@ func pickSticky(
 	if c, err := r.Cookie(cookieName); err == nil {
 		sid = c.Value
 	}
-
 	isNew := sid == ""
 	if isNew {
 		sid = generateSessionID()
 		ttl := parseTTL(ttlStr, time.Hour)
 		http.SetCookie(w, &http.Cookie{
-			Name:     cookieName,
-			Value:    sid,
-			Path:     "/",
-			MaxAge:   int(ttl.Seconds()),
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Name: cookieName, Value: sid, Path: "/",
+			MaxAge: int(ttl.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode,
 		})
 	}
 
-	// Build the valid set from healthy dests.
 	validSet := make(map[string]bool, len(healthy))
 	for _, b := range healthy {
 		validSet[b.DestinationID] = true
 	}
 
-	// Existing client: look up session store.
 	if !isNew {
 		if destID, err := store.Get(r.Context(), sid, routeID); err == nil && destID != "" {
 			if validSet[destID] {
-				return upstreams[destID]
+				return pools[destID]
 			}
 		}
 	}
 
-	// New client or destination gone: weighted random, then persist.
-	upstream := SelectDestination(healthy, upstreams)
-	if upstream == nil {
+	pool := SelectDestination(healthy, pools)
+	if pool == nil {
 		return nil
 	}
-
 	ttlSec := int(parseTTL(ttlStr, time.Hour).Seconds())
-	_ = store.Set(r.Context(), sid, routeID, upstream.Destination.ID, ttlSec)
-
-	return upstream
+	_ = store.Set(r.Context(), sid, routeID, pool.Destination.ID, ttlSec)
+	return pool
 }
-func filterHealthy(dests []model.DestinationRef, upstreams map[string]*Upstream) []model.DestinationRef {
+
+func filterHealthyPools(dests []model.DestinationRef, pools map[string]*DestinationPool) []model.DestinationRef {
 	var healthy []model.DestinationRef
 	for _, b := range dests {
-		u, ok := upstreams[b.DestinationID]
-		if ok && isHealthy(u) {
-			healthy = append(healthy, b)
+		pool, ok := pools[b.DestinationID]
+		if !ok {
+			continue
+		}
+		for _, ep := range pool.Endpoints {
+			if isHealthy(ep) {
+				healthy = append(healthy, b)
+				break
+			}
 		}
 	}
 	return healthy
 }
 
-// generateSessionID creates a random session identifier.
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
 func generateSessionID() string {
 	b := make([]byte, 16)
 	cryptorand.Read(b)
 	return fmt.Sprintf("%x", b)
 }
 
-// parseTTL parses a duration string with a fallback default.
 func parseTTL(s string, fallback time.Duration) time.Duration {
 	if s == "" {
 		return fallback
@@ -527,23 +484,20 @@ func parseTTL(s string, fallback time.Duration) time.Duration {
 	return d
 }
 
-func isHealthy(u *Upstream) bool {
+func isHealthy(u *Endpoint) bool {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
 	return u.Healthy
 }
 
-// mirrorRequest clones the request and sends it to the mirror destination
-// in a background goroutine. The original request is not affected.
-func mirrorRequest(original *http.Request, mirror *model.RouteMirror, upstreams map[string]*Upstream) {
+func mirrorRequest(original *http.Request, mirror *model.RouteMirror, pools map[string]*DestinationPool) {
 	if mirror.Percentage > 0 && mirror.Percentage < 100 {
 		if rand.Uint32()%100 >= mirror.Percentage {
 			return
 		}
 	}
-
-	upstream, ok := upstreams[mirror.DestinationID]
-	if !ok {
+	pool, ok := pools[mirror.DestinationID]
+	if !ok || len(pool.Endpoints) == 0 {
 		return
 	}
 
@@ -552,14 +506,13 @@ func mirrorRequest(original *http.Request, mirror *model.RouteMirror, upstreams 
 		bodyBytes, _ = io.ReadAll(original.Body)
 		original.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
-
 	clone := original.Clone(context.Background())
 	if bodyBytes != nil {
 		clone.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
-
+	ep := pool.Endpoints[0]
 	go func() {
-		proxy := upstream.ReverseProxy()
+		proxy := pool.ReverseProxyFor(ep)
 		proxy.ServeHTTP(newDiscardResponseWriter(), clone)
 	}()
 }
@@ -576,19 +529,15 @@ func (d *discardResponseWriter) Header() http.Header        { return d.header }
 func (d *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
 func (d *discardResponseWriter) WriteHeader(int)             {}
 
-// applyRewrite modifies the request URL based on RouteRewrite config.
 func applyRewrite(r *http.Request, rw *model.RouteRewrite) {
 	if rw.PathRegex != nil {
-		// Regex rewrite.
 		re, err := cachedCompile(rw.PathRegex.Pattern)
 		if err == nil {
 			r.URL.Path = re.ReplaceAllString(r.URL.Path, rw.PathRegex.Substitution)
 		}
 	} else if rw.Path != "" {
-		// Prefix rewrite: replace the path with the new prefix.
 		r.URL.Path = rw.Path
 	}
-
 	if rw.Host != "" {
 		r.Host = rw.Host
 		r.Header.Set("Host", rw.Host)
@@ -604,7 +553,6 @@ func applyRewrite(r *http.Request, rw *model.RouteRewrite) {
 	}
 }
 
-// parseGRPCTimeout parses a grpc-timeout header value.
 func parseGRPCTimeout(s string) (time.Duration, error) {
 	if len(s) < 2 {
 		return 0, fmt.Errorf("invalid grpc-timeout: %s", s)
@@ -635,8 +583,6 @@ func parseGRPCTimeout(s string) (time.Duration, error) {
 	return d, nil
 }
 
-// formatGRPCTimeout formats a duration as a grpc-timeout header value,
-// using the most precise unit that avoids truncation.
 func formatGRPCTimeout(d time.Duration) string {
 	if us := d.Microseconds(); us < 1000 {
 		return fmt.Sprintf("%du", us)
@@ -644,12 +590,8 @@ func formatGRPCTimeout(d time.Duration) string {
 	return fmt.Sprintf("%dm", d.Milliseconds())
 }
 
-// regexCache caches compiled regular expressions to avoid recompilation
-// on every request.
 var regexCache sync.Map
 
-// cachedCompile returns a compiled regex, using a cache to avoid
-// recompilation on every request.
 func cachedCompile(pattern string) (*regexp.Regexp, error) {
 	if v, ok := regexCache.Load(pattern); ok {
 		return v.(*regexp.Regexp), nil

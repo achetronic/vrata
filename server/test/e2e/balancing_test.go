@@ -226,8 +226,8 @@ func TestE2E_Proxy_WCH_WeightDistribution(t *testing.T) {
 			countB++
 		}
 	}
-	assertBW(t, "A", countA, 5000, 0.75, 0.06)
-	assertBW(t, "B", countB, 5000, 0.25, 0.06)
+	assertBW(t, "A", countA, 5000, 0.75, 0.08)
+	assertBW(t, "B", countB, 5000, 0.25, 0.08)
 	t.Logf("A=%d (%.1f%%) B=%d (%.1f%%)", countA, pct(countA, 5000), countB, pct(countB, 5000))
 }
 

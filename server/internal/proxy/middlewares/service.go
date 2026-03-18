@@ -3,7 +3,7 @@ package middlewares
 import "net/http"
 
 // Service represents an external service that a middleware can connect to.
-// This decouples middlewares from the proxy.Upstream type.
+// This decouples middlewares from the proxy.Endpoint type.
 type Service struct {
 	// BaseURL is the full scheme://host:port of the service.
 	BaseURL   string

@@ -22,7 +22,7 @@ type Router struct {
 // RoutingTable is an immutable snapshot of the current proxy configuration.
 type RoutingTable struct {
 	routes       []compiledRoute
-	destinations map[string]*Upstream
+	pools        map[string]*DestinationPool
 	middlewares  map[string]model.Middleware
 	cleanups     []func()
 	sessionStore SessionStore
@@ -67,8 +67,8 @@ type compiledQueryParamMatcher struct {
 func NewRouter() *Router {
 	r := &Router{}
 	r.table.Store(&RoutingTable{
-		destinations: make(map[string]*Upstream),
-		middlewares:  make(map[string]model.Middleware),
+		pools:       make(map[string]*DestinationPool),
+		middlewares: make(map[string]model.Middleware),
 	})
 	return r
 }

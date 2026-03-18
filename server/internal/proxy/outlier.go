@@ -10,7 +10,7 @@ import (
 	"github.com/achetronic/vrata/internal/model"
 )
 
-// OutlierDetector tracks error rates per upstream and ejects endpoints
+// OutlierDetector tracks error rates per endpoint and ejects those
 // that exceed the configured thresholds.
 type OutlierDetector struct {
 	mu       sync.Mutex
@@ -20,13 +20,13 @@ type OutlierDetector struct {
 }
 
 type outlierTracker struct {
-	consecutive5xx         atomic.Int64
-	consecutiveGateway     atomic.Int64
-	ejected                atomic.Bool
-	ejectedAt              time.Time
-	ejectionCount          int
-	cfg                    *model.OutlierDetectionOptions
-	upstream               *Upstream
+	consecutive5xx     atomic.Int64
+	consecutiveGateway atomic.Int64
+	ejected            atomic.Bool
+	ejectedAt          time.Time
+	ejectionCount      int
+	cfg                *model.OutlierDetectionOptions
+	endpoint           *Endpoint
 }
 
 // NewOutlierDetector creates an OutlierDetector.
@@ -37,24 +37,27 @@ func NewOutlierDetector(logger *slog.Logger) *OutlierDetector {
 	}
 }
 
-// Update replaces the set of upstreams to track.
-func (od *OutlierDetector) Update(upstreams map[string]*Upstream) {
+// Update replaces the set of destination pools to track.
+func (od *OutlierDetector) Update(pools map[string]*DestinationPool) {
 	od.mu.Lock()
 	defer od.mu.Unlock()
 
-	newTrackers := make(map[string]*outlierTracker, len(upstreams))
-	for id, u := range upstreams {
-		d := u.Destination
+	newTrackers := make(map[string]*outlierTracker)
+	for _, pool := range pools {
+		d := pool.Destination
 		if d.Options == nil || d.Options.OutlierDetection == nil {
 			continue
 		}
-		if existing, ok := od.trackers[id]; ok {
-			existing.upstream = u
-			newTrackers[id] = existing
-		} else {
-			newTrackers[id] = &outlierTracker{
-				cfg:      d.Options.OutlierDetection,
-				upstream: u,
+		for _, ep := range pool.Endpoints {
+			key := d.ID + "/" + ep.ID
+			if existing, ok := od.trackers[key]; ok {
+				existing.endpoint = ep
+				newTrackers[key] = existing
+			} else {
+				newTrackers[key] = &outlierTracker{
+					cfg:      d.Options.OutlierDetection,
+					endpoint: ep,
+				}
 			}
 		}
 	}
@@ -104,11 +107,12 @@ func (od *OutlierDetector) RecordResponse(destID string, statusCode int) {
 		t.ejectedAt = time.Now()
 		t.ejectionCount++
 		od.mu.Unlock()
-		t.upstream.mu.Lock()
-		t.upstream.Healthy = false
-		t.upstream.mu.Unlock()
-		od.logger.Warn("outlier detection: ejecting upstream",
+		t.endpoint.mu.Lock()
+		t.endpoint.Healthy = false
+		t.endpoint.mu.Unlock()
+		od.logger.Warn("outlier detection: ejecting endpoint",
 			slog.String("destination", destID),
+			slog.String("endpoint", t.endpoint.ID),
 		)
 	}
 }
@@ -153,11 +157,11 @@ func (od *OutlierDetector) checkEjections() {
 			t.ejected.Store(false)
 			t.consecutive5xx.Store(0)
 			t.consecutiveGateway.Store(0)
-			t.upstream.mu.Lock()
-			t.upstream.Healthy = true
-			t.upstream.mu.Unlock()
-			od.logger.Info("outlier detection: restoring upstream",
-				slog.String("destination", id),
+			t.endpoint.mu.Lock()
+			t.endpoint.Healthy = true
+			t.endpoint.mu.Unlock()
+			od.logger.Info("outlier detection: restoring endpoint",
+				slog.String("id", id),
 			)
 		}
 	}

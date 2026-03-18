@@ -116,13 +116,16 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 
 	// Update health checker with new upstreams.
 	if gw.deps.HealthChecker != nil {
-		gw.deps.HealthChecker.Update(table.Upstreams())
+		gw.deps.HealthChecker.Update(table.Pools())
 	}
 	if gw.deps.OutlierDetector != nil {
-		gw.deps.OutlierDetector.Update(table.Upstreams())
+		gw.deps.OutlierDetector.Update(table.Pools())
 		od := gw.deps.OutlierDetector
-		for _, u := range table.Upstreams() {
-			u.OnResponse = od.RecordResponse
+		for _, pool := range table.Pools() {
+			for _, ep := range pool.Endpoints {
+				ep.OnResponse = od.RecordResponse
+			}
+			pool.OnResponse = od.RecordResponse
 		}
 	}
 

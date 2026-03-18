@@ -146,10 +146,10 @@ func (c *Client) applySnapshot(data []byte) error {
 	c.deps.Router.SwapTable(table)
 
 	if c.deps.HealthChecker != nil {
-		c.deps.HealthChecker.Update(table.Upstreams())
+		c.deps.HealthChecker.Update(table.Pools())
 	}
 	if c.deps.OutlierDetector != nil {
-		c.deps.OutlierDetector.Update(table.Upstreams())
+		c.deps.OutlierDetector.Update(table.Pools())
 	}
 
 	c.deps.ListenerManager.Reconcile(snap.Listeners)
