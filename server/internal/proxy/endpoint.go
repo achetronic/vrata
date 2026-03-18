@@ -91,7 +91,7 @@ func NewEndpoint(ep model.Endpoint, d model.Destination) (*Endpoint, error) {
 
 // NewDestinationPool creates a DestinationPool from a Destination, creating
 // one Endpoint per resolved endpoint.
-func NewDestinationPool(d model.Destination) (*DestinationPool, error) {
+func NewDestinationPool(d model.Destination, sessStore SessionStore) (*DestinationPool, error) {
 	endpoints := d.ResolvedEndpoints()
 
 	eps := make([]*Endpoint, 0, len(endpoints))
@@ -105,9 +105,10 @@ func NewDestinationPool(d model.Destination) (*DestinationPool, error) {
 
 	return &DestinationPool{
 		Destination:    d,
-		Endpoints: eps,
+		Endpoints:      eps,
 		Balancer:       buildBalancer(d),
 		CircuitBreaker: buildCircuitBreaker(d),
+		SessionStore:   sessStore,
 	}, nil
 }
 

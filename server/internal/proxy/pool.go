@@ -1,12 +1,14 @@
 package proxy
 
 import (
+	cryptorand "crypto/rand"
 	"fmt"
 	"math/rand"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync/atomic"
+	"time"
 
 	"github.com/achetronic/vrata/internal/model"
 )
@@ -19,6 +21,7 @@ type DestinationPool struct {
 	Endpoints      []*Endpoint
 	Balancer       Balancer
 	CircuitBreaker *CircuitBreaker
+	SessionStore   SessionStore
 	OnResponse     func(destID string, statusCode int)
 }
 
@@ -44,6 +47,10 @@ func (dp *DestinationPool) Pick(r *http.Request, w http.ResponseWriter) *Endpoin
 	}
 	if len(healthy) == 1 {
 		return healthy[0]
+	}
+
+	if dp.isStickyEndpoint() {
+		return dp.pickStickyEndpoint(r, w, healthy)
 	}
 
 	if dp.Balancer != nil {
@@ -152,3 +159,85 @@ func (dp *DestinationPool) endpointMap(eps []*Endpoint) map[string]*Endpoint {
 // roundRobinCounter is a package-level counter for default round-robin
 // when no balancer is explicitly configured.
 var roundRobinCounter atomic.Uint64
+
+// isStickyEndpoint returns true if this pool uses STICKY endpoint balancing
+// and has a session store available.
+func (dp *DestinationPool) isStickyEndpoint() bool {
+	d := dp.Destination
+	return d.Options != nil &&
+		d.Options.EndpointBalancing != nil &&
+		d.Options.EndpointBalancing.Algorithm == model.EndpointLBSticky &&
+		dp.SessionStore != nil
+}
+
+// pickStickyEndpoint uses the session store to pin clients to endpoints.
+// New clients get a random healthy endpoint; existing clients return to
+// their pinned endpoint if it's still healthy.
+func (dp *DestinationPool) pickStickyEndpoint(r *http.Request, w http.ResponseWriter, healthy []*Endpoint) *Endpoint {
+	cfg := dp.Destination.Options.EndpointBalancing.Sticky
+	cookieName := "_vrata_endpoint_pin"
+	var ttlStr string
+	if cfg != nil && cfg.Cookie != nil {
+		if cfg.Cookie.Name != "" {
+			cookieName = cfg.Cookie.Name
+		}
+		ttlStr = cfg.Cookie.TTL
+	}
+
+	sid := ""
+	if c, err := r.Cookie(cookieName); err == nil {
+		sid = c.Value
+	}
+
+	isNew := sid == ""
+	if isNew {
+		sid = generateEPSessionID()
+		ttl := parseEPTTL(ttlStr, time.Hour)
+		http.SetCookie(w, &http.Cookie{
+			Name:     cookieName,
+			Value:    sid,
+			Path:     "/",
+			MaxAge:   int(ttl.Seconds()),
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+
+	destID := dp.Destination.ID
+	storeKey := sid + ":" + destID
+
+	healthySet := make(map[string]*Endpoint, len(healthy))
+	for _, ep := range healthy {
+		healthySet[ep.ID] = ep
+	}
+
+	if !isNew {
+		if epID, err := dp.SessionStore.Get(r.Context(), storeKey, "ep"); err == nil && epID != "" {
+			if ep, ok := healthySet[epID]; ok {
+				return ep
+			}
+		}
+	}
+
+	ep := healthy[rand.Intn(len(healthy))]
+	ttlSec := int(parseEPTTL(ttlStr, time.Hour).Seconds())
+	_ = dp.SessionStore.Set(r.Context(), storeKey, "ep", ep.ID, ttlSec)
+	return ep
+}
+
+func generateEPSessionID() string {
+	b := make([]byte, 16)
+	cryptorand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
+
+func parseEPTTL(s string, fallback time.Duration) time.Duration {
+	if s == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return fallback
+	}
+	return d
+}

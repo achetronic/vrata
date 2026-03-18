@@ -115,9 +115,19 @@ definitions:
     type: object
   model.Destination:
     properties:
+      endpoints:
+        description: |-
+          Endpoints is an explicit list of backend addresses for this Destination.
+          When set, Host:Port is ignored for traffic routing (Host is still used
+          for TLS SNI and k8s discovery FQDN parsing). The endpointBalancing
+          algorithm selects which endpoint receives each request.
+        items:
+          $ref: '#/definitions/model.Endpoint'
+        type: array
       host:
         description: |-
-          Host is the upstream FQDN or IP address.
+          Host is the default upstream FQDN or IP address. Used as the sole
+          endpoint when Endpoints is empty and no Discovery is configured.
           For Kubernetes Services use the full FQDN:
             my-svc.my-namespace.svc.cluster.local
         type: string
@@ -132,7 +142,9 @@ definitions:
         - $ref: '#/definitions/model.DestinationOptions'
         description: Options contains advanced configuration. All fields are optional.
       port:
-        description: Port is the upstream TCP port.
+        description: |-
+          Port is the default upstream TCP port. Used together with Host as
+          the sole endpoint when Endpoints is empty.
         type: integer
     type: object
   model.DestinationBalancing:
@@ -194,11 +206,10 @@ definitions:
         allOf:
         - $ref: '#/definitions/model.EndpointBalancing'
         description: |-
-          EndpointBalancing controls how Vrata selects an endpoint (pod) within
-          this Destination when multiple endpoints are available via discovery.
-          Only relevant when Discovery is configured (e.g. Kubernetes).
-          When nil or when there is only one endpoint, traffic goes directly
-          to host:port.
+          EndpointBalancing controls how Vrata selects an endpoint within this
+          Destination when multiple endpoints are available (via Endpoints list
+          or Discovery). When nil, ROUND_ROBIN is used. When the Destination has
+          only one endpoint, the algorithm is irrelevant.
       healthCheck:
         allOf:
         - $ref: '#/definitions/model.HealthCheckOptions'
@@ -250,6 +261,15 @@ definitions:
     type: string
     x-enum-varnames:
     - DiscoveryTypeKubernetes
+  model.Endpoint:
+    properties:
+      host:
+        description: Host is the endpoint IP address or hostname.
+        type: string
+      port:
+        description: Port is the endpoint TCP port.
+        type: integer
+    type: object
   model.EndpointBalancing:
     properties:
       algorithm:
@@ -275,6 +295,12 @@ definitions:
         description: |-
           RingHash holds parameters for the RING_HASH algorithm.
           Only used when Algorithm is RING_HASH.
+      sticky:
+        allOf:
+        - $ref: '#/definitions/model.EndpointStickyOptions'
+        description: |-
+          Sticky holds parameters for the STICKY algorithm.
+          Only used when Algorithm is STICKY.
     type: object
   model.EndpointLBPolicy:
     enum:
@@ -283,6 +309,7 @@ definitions:
     - RING_HASH
     - MAGLEV
     - RANDOM
+    - STICKY
     type: string
     x-enum-varnames:
     - EndpointLBRoundRobin
@@ -290,6 +317,25 @@ definitions:
     - EndpointLBRingHash
     - EndpointLBMaglev
     - EndpointLBRandom
+    - EndpointLBSticky
+  model.EndpointPinCookie:
+    properties:
+      name:
+        description: 'Name is the cookie name. Default: "_vrata_endpoint_pin".'
+        type: string
+      ttl:
+        description: |-
+          TTL is the lifetime of the session cookie. Accepts Go duration strings
+          (e.g. "1h", "24h"). Default: "1h".
+        type: string
+    type: object
+  model.EndpointStickyOptions:
+    properties:
+      cookie:
+        allOf:
+        - $ref: '#/definitions/model.EndpointPinCookie'
+        description: Cookie configures the session cookie used for client identification.
+    type: object
   model.ExtAuthzConfig:
     properties:
       destinationId:

@@ -37,7 +37,7 @@ func BuildTable(
 	// Build destination pools (one pool per destination, N endpoints each).
 	pools := make(map[string]*DestinationPool, len(destinations))
 	for _, d := range destinations {
-		pool, err := NewDestinationPool(d)
+		pool, err := NewDestinationPool(d, sessStore)
 		if err != nil {
 			return nil, err
 		}

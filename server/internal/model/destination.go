@@ -20,6 +20,13 @@ const (
 	EndpointLBRingHash     EndpointLBPolicy = "RING_HASH"
 	EndpointLBMaglev       EndpointLBPolicy = "MAGLEV"
 	EndpointLBRandom       EndpointLBPolicy = "RANDOM"
+
+	// EndpointLBSticky uses a session cookie and an external session store
+	// (e.g. Redis) to guarantee zero disruption when endpoints change.
+	// New clients are assigned via weighted random; existing clients always
+	// return to the same endpoint until the cookie expires or the endpoint
+	// is removed.
+	EndpointLBSticky EndpointLBPolicy = "STICKY"
 )
 
 // TLSMode controls how Vrata connects to the upstream.
@@ -137,6 +144,28 @@ type EndpointBalancing struct {
 	// LeastRequest holds parameters for the LEAST_REQUEST algorithm.
 	// Only used when Algorithm is LEAST_REQUEST.
 	LeastRequest *LeastRequestOptions `json:"leastRequest,omitempty"`
+
+	// Sticky holds parameters for the STICKY algorithm.
+	// Only used when Algorithm is STICKY.
+	Sticky *EndpointStickyOptions `json:"sticky,omitempty"`
+}
+
+// EndpointStickyOptions configures zero-disruption endpoint pinning backed
+// by an external session store (e.g. Redis). New clients are assigned via
+// random; existing clients always return to the same endpoint.
+type EndpointStickyOptions struct {
+	// Cookie configures the session cookie used for client identification.
+	Cookie *EndpointPinCookie `json:"cookie,omitempty" yaml:"cookie,omitempty"`
+}
+
+// EndpointPinCookie configures the session cookie for endpoint pinning.
+type EndpointPinCookie struct {
+	// Name is the cookie name. Default: "_vrata_endpoint_pin".
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+
+	// TTL is the lifetime of the session cookie. Accepts Go duration strings
+	// (e.g. "1h", "24h"). Default: "1h".
+	TTL string `json:"ttl,omitempty" yaml:"ttl,omitempty"`
 }
 
 // RingHashOptions configures the RING_HASH consistent hashing algorithm.

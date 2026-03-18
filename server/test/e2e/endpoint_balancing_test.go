@@ -442,3 +442,232 @@ func TestE2E_Endpoint_DefaultDistribution(t *testing.T) {
 		t.Errorf("expected traffic to at least 2 endpoints, only saw %d", seen)
 	}
 }
+
+// ─── STICKY endpoint ───────────────────────────────────────────────────────
+
+// TestE2E_Endpoint_Sticky_ZeroDisruption verifies that STICKY endpoint
+// balancing with Redis achieves zero disruption. Existing clients stay on
+// their original endpoint even after a snapshot rebuild.
+func TestE2E_Endpoint_Sticky_ZeroDisruption(t *testing.T) {
+	ups := startLabeledUpstreams(t, 3)
+	destID := createMultiEndpointDest(t, "ep-stk", ups, map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_ep_stk", "ttl": "1h"},
+		},
+	})
+	defer apiDelete(t, "/destinations/"+destID)
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "ep-stk",
+		"match": map[string]any{"pathPrefix": "/ep-stk"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{{"destinationId": destID, "weight": 100}},
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+	snap1 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap1)
+
+	// Pin 100 users.
+	type pinned struct {
+		jar http.CookieJar
+		ep  string
+	}
+	users := make([]pinned, 100)
+	for i := range users {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		users[i] = pinned{jar: jar, ep: clientGet(t, c, fmt.Sprintf("/ep-stk?u=%d", i))}
+	}
+
+	// Activate a new snapshot (forces routing table rebuild).
+	snap2 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap2)
+
+	// All users must stay on the same endpoint.
+	moved := 0
+	for i, u := range users {
+		c := &http.Client{Timeout: 5e9, Jar: u.jar}
+		for r := 0; r < 50; r++ {
+			got := clientGet(t, c, fmt.Sprintf("/ep-stk?u=%d&r=%d", i, r))
+			if got != u.ep {
+				moved++
+				break
+			}
+		}
+	}
+	if moved > 0 {
+		t.Errorf("STICKY endpoint zero disruption FAILED: %d/%d users moved", moved, len(users))
+	}
+	t.Logf("sticky endpoint: %d/%d users stayed (50 reqs each, total %d)", len(users)-moved, len(users), len(users)*50)
+}
+
+// TestE2E_Endpoint_Sticky_Concurrent verifies STICKY endpoints under
+// concurrent load with 5000 requests.
+func TestE2E_Endpoint_Sticky_Concurrent(t *testing.T) {
+	ups := startLabeledUpstreams(t, 3)
+	destID := createMultiEndpointDest(t, "ep-stkc", ups, map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_ep_stkc", "ttl": "1h"},
+		},
+	})
+	defer apiDelete(t, "/destinations/"+destID)
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "ep-stkc",
+		"match": map[string]any{"pathPrefix": "/ep-stkc"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{{"destinationId": destID, "weight": 100}},
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+	snap := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap)
+
+	const numUsers = 50
+	const reqsPerUser = 100
+	var wg sync.WaitGroup
+	var broken atomic.Int32
+	for u := 0; u < numUsers; u++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			jar, _ := cookiejar.New(nil)
+			c := &http.Client{Timeout: 5e9, Jar: jar}
+			first := clientGet(t, c, fmt.Sprintf("/ep-stkc?u=%d", idx))
+			for r := 1; r < reqsPerUser; r++ {
+				if clientGet(t, c, fmt.Sprintf("/ep-stkc?u=%d&r=%d", idx, r)) != first {
+					broken.Add(1)
+					return
+				}
+			}
+		}(u)
+	}
+	wg.Wait()
+	b := int(broken.Load())
+	if b > 0 {
+		t.Errorf("concurrent STICKY endpoint broken: %d/%d users", b, numUsers)
+	}
+	t.Logf("concurrent sticky endpoint: %d/%d stable (%d reqs each, total %d)", numUsers-b, numUsers, reqsPerUser, numUsers*reqsPerUser)
+}
+
+// TestE2E_Endpoint_Sticky_Distribution verifies that new clients get
+// distributed across all endpoints (not all to one).
+func TestE2E_Endpoint_Sticky_Distribution(t *testing.T) {
+	ups := startLabeledUpstreams(t, 3)
+	destID := createMultiEndpointDest(t, "ep-stkd", ups, map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_ep_stkd", "ttl": "1h"},
+		},
+	})
+	defer apiDelete(t, "/destinations/"+destID)
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "ep-stkd",
+		"match": map[string]any{"pathPrefix": "/ep-stkd"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{{"destinationId": destID, "weight": 100}},
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+	snap := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap)
+
+	counts := map[string]int{}
+	const total = 3000
+	for i := 0; i < total; i++ {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		ep := clientGet(t, c, fmt.Sprintf("/ep-stkd?u=%d", i))
+		counts[ep]++
+	}
+	seen := 0
+	for _, u := range ups {
+		if counts[u.label] > 0 {
+			seen++
+		}
+		t.Logf("%s: %d (%.1f%%)", u.label, counts[u.label], float64(counts[u.label])*100/float64(total))
+	}
+	if seen < 2 {
+		t.Errorf("expected distribution across endpoints, only saw %d", seen)
+	}
+}
+
+// TestE2E_Endpoint_CombinedL1Sticky_L2Sticky tests both levels with STICKY:
+// L1: STICKY destination (Redis)
+// L2: STICKY endpoint (Redis)
+// Zero disruption at both levels.
+func TestE2E_Endpoint_CombinedL1Sticky_L2Sticky(t *testing.T) {
+	upsA := startLabeledUpstreams(t, 2)
+	upsB := startLabeledUpstreams(t, 2)
+
+	stickyEP := map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_ep_combo2", "ttl": "1h"},
+		},
+	}
+
+	destA := createMultiEndpointDest(t, "ep-dblstk-a", upsA, stickyEP)
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createMultiEndpointDest(t, "ep-dblstk-b", upsB, stickyEP)
+	defer apiDelete(t, "/destinations/"+destB)
+
+	stickyDest := map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_dest_combo2", "ttl": "1h"},
+		},
+	}
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "ep-dblstk",
+		"match": map[string]any{"pathPrefix": "/ep-dblstk"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{
+				{"destinationId": destA, "weight": 50},
+				{"destinationId": destB, "weight": 50},
+			},
+			"destinationBalancing": stickyDest,
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+	snap1 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap1)
+
+	// Pin 50 users.
+	type userPin struct {
+		jar http.CookieJar
+		ep  string
+	}
+	users := make([]userPin, 50)
+	for i := range users {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		users[i] = userPin{jar: jar, ep: clientGet(t, c, fmt.Sprintf("/ep-dblstk?u=%d", i))}
+	}
+
+	// New snapshot.
+	snap2 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap2)
+
+	// All users must stay on same destination+endpoint.
+	moved := 0
+	for i, u := range users {
+		c := &http.Client{Timeout: 5e9, Jar: u.jar}
+		for r := 0; r < 100; r++ {
+			got := clientGet(t, c, fmt.Sprintf("/ep-dblstk?u=%d&r=%d", i, r))
+			if got != u.ep {
+				moved++
+				break
+			}
+		}
+	}
+	if moved > 0 {
+		t.Errorf("double STICKY broken: %d/%d users moved", moved, len(users))
+	}
+	t.Logf("L1(STICKY)+L2(STICKY): %d/%d users stable (100 reqs each, total %d)", len(users)-moved, len(users), len(users)*100)
+}

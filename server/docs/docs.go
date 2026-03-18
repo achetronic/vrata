@@ -1485,8 +1485,15 @@ const docTemplate = `{
         "model.Destination": {
             "type": "object",
             "properties": {
+                "endpoints": {
+                    "description": "Endpoints is an explicit list of backend addresses for this Destination.\nWhen set, Host:Port is ignored for traffic routing (Host is still used\nfor TLS SNI and k8s discovery FQDN parsing). The endpointBalancing\nalgorithm selects which endpoint receives each request.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Endpoint"
+                    }
+                },
                 "host": {
-                    "description": "Host is the upstream FQDN or IP address.\nFor Kubernetes Services use the full FQDN:\n  my-svc.my-namespace.svc.cluster.local",
+                    "description": "Host is the default upstream FQDN or IP address. Used as the sole\nendpoint when Endpoints is empty and no Discovery is configured.\nFor Kubernetes Services use the full FQDN:\n  my-svc.my-namespace.svc.cluster.local",
                     "type": "string"
                 },
                 "id": {
@@ -1506,7 +1513,7 @@ const docTemplate = `{
                     ]
                 },
                 "port": {
-                    "description": "Port is the upstream TCP port.",
+                    "description": "Port is the default upstream TCP port. Used together with Host as\nthe sole endpoint when Endpoints is empty.",
                     "type": "integer"
                 }
             }
@@ -1590,7 +1597,7 @@ const docTemplate = `{
                     ]
                 },
                 "endpointBalancing": {
-                    "description": "EndpointBalancing controls how Vrata selects an endpoint (pod) within\nthis Destination when multiple endpoints are available via discovery.\nOnly relevant when Discovery is configured (e.g. Kubernetes).\nWhen nil or when there is only one endpoint, traffic goes directly\nto host:port.",
+                    "description": "EndpointBalancing controls how Vrata selects an endpoint within this\nDestination when multiple endpoints are available (via Endpoints list\nor Discovery). When nil, ROUND_ROBIN is used. When the Destination has\nonly one endpoint, the algorithm is irrelevant.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/model.EndpointBalancing"
@@ -1666,6 +1673,19 @@ const docTemplate = `{
                 "DiscoveryTypeKubernetes"
             ]
         },
+        "model.Endpoint": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "description": "Host is the endpoint IP address or hostname.",
+                    "type": "string"
+                },
+                "port": {
+                    "description": "Port is the endpoint TCP port.",
+                    "type": "integer"
+                }
+            }
+        },
         "model.EndpointBalancing": {
             "type": "object",
             "properties": {
@@ -1700,6 +1720,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.RingHashOptions"
                         }
                     ]
+                },
+                "sticky": {
+                    "description": "Sticky holds parameters for the STICKY algorithm.\nOnly used when Algorithm is STICKY.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.EndpointStickyOptions"
+                        }
+                    ]
                 }
             }
         },
@@ -1710,15 +1738,43 @@ const docTemplate = `{
                 "LEAST_REQUEST",
                 "RING_HASH",
                 "MAGLEV",
-                "RANDOM"
+                "RANDOM",
+                "STICKY"
             ],
             "x-enum-varnames": [
                 "EndpointLBRoundRobin",
                 "EndpointLBLeastRequest",
                 "EndpointLBRingHash",
                 "EndpointLBMaglev",
-                "EndpointLBRandom"
+                "EndpointLBRandom",
+                "EndpointLBSticky"
             ]
+        },
+        "model.EndpointPinCookie": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name is the cookie name. Default: \"_vrata_endpoint_pin\".",
+                    "type": "string"
+                },
+                "ttl": {
+                    "description": "TTL is the lifetime of the session cookie. Accepts Go duration strings\n(e.g. \"1h\", \"24h\"). Default: \"1h\".",
+                    "type": "string"
+                }
+            }
+        },
+        "model.EndpointStickyOptions": {
+            "type": "object",
+            "properties": {
+                "cookie": {
+                    "description": "Cookie configures the session cookie used for client identification.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.EndpointPinCookie"
+                        }
+                    ]
+                }
+            }
         },
         "model.ExtAuthzConfig": {
             "type": "object",

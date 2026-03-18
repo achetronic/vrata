@@ -62,7 +62,7 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Weighted destination selection (WEIGHTED_RANDOM)         | 100%   | Unit + E2E (15k req)  |
 | Destination balancing (WEIGHTED_CONSISTENT_HASH)         | 100%   | Unit (7) + E2E (26k)  |
 | Destination balancing (STICKY + Redis)                   | 100%   | Unit (5) + E2E (20k)  |
-| Endpoint balancing (RING_HASH, MAGLEV, LeastReq, etc)   | 100%   | Unit + E2E (43k req)  |
+| Endpoint balancing (RR, Random, LeastReq, RingHash, Maglev, Sticky) | 100% | Unit + E2E (61k req) |
 | Path rewrite (prefix)                                   | 100%   | E2E                   |
 | Path rewrite (regex, cached)                            | 100%   | E2E                   |
 | Host rewrite                                            | 100%   | Unit                  |
@@ -170,9 +170,9 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Raft handlers          | 5       | 5       |
 | Config                 | 11      | 11      |
 | Sync client            | 2       | 2       |
-| E2E (proxy, live)      | 60      | 60      |
+| E2E (proxy, live)      | 64      | 64      |
 | E2E (cluster, kind)    | 8       | 8       |
-| **Total**              | **258** | **258** |
+| **Total**              | **262** | **262** |
 
 **Note**: `TestE2E_Proxy_GroupRegexComposition` is a pre-existing bug (regex 404), not related to balancing.
 
