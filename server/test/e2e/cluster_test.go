@@ -1,8 +1,9 @@
 //go:build kind
 
 // Package e2e contains end-to-end tests for the Raft cluster mode.
-// These tests require a running kind cluster named "rutoso-dev" with the
-// control plane StatefulSet deployed via test/k8s/cluster.yaml.
+// These tests verify that all control plane nodes are indistinguishable
+// for proxies — same data, same snapshots, same SSE stream content.
+//
 // Run with: make e2e-cluster
 package e2e
 
@@ -12,15 +13,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-// clusterNodeIP returns the kind node IP from KIND_NODE_IP env var,
-// falling back to 172.18.0.3 (kind default on Linux).
+// clusterNodeIP returns the kind node IP from KIND_NODE_IP env var.
 func clusterNodeIP() string {
 	if ip := os.Getenv("KIND_NODE_IP"); ip != "" {
 		return ip
@@ -34,12 +37,12 @@ func clusterBaseURL() string {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-func clusterPost(t *testing.T, path string, body any) (int, map[string]any) {
+func clusterPost(t *testing.T, base, path string, body any) (int, map[string]any) {
 	t.Helper()
 	b, _ := json.Marshal(body)
-	resp, err := http.Post(clusterBaseURL()+path, "application/json", bytes.NewReader(b))
+	resp, err := http.Post(base+path, "application/json", bytes.NewReader(b))
 	if err != nil {
-		t.Fatalf("POST %s: %v", path, err)
+		t.Fatalf("POST %s%s: %v", base, path, err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
@@ -48,23 +51,23 @@ func clusterPost(t *testing.T, path string, body any) (int, map[string]any) {
 	return resp.StatusCode, result
 }
 
-func clusterGet(t *testing.T, path string) (int, []byte) {
+func clusterGet(t *testing.T, base, path string) (int, []byte) {
 	t.Helper()
-	resp, err := http.Get(clusterBaseURL() + path)
+	resp, err := http.Get(base + path)
 	if err != nil {
-		t.Fatalf("GET %s: %v", path, err)
+		t.Fatalf("GET %s%s: %v", base, path, err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, data
 }
 
-func clusterDelete(t *testing.T, path string) int {
+func clusterDelete(t *testing.T, base, path string) int {
 	t.Helper()
-	req, _ := http.NewRequest("DELETE", clusterBaseURL()+path, nil)
+	req, _ := http.NewRequest("DELETE", base+path, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("DELETE %s: %v", path, err)
+		t.Fatalf("DELETE %s%s: %v", base, path, err)
 	}
 	resp.Body.Close()
 	return resp.StatusCode
@@ -75,7 +78,6 @@ func clusterID(m map[string]any) string {
 	return v
 }
 
-// waitClusterHealthy polls the cluster API until it responds or times out.
 func waitClusterHealthy(t *testing.T) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
@@ -93,54 +95,100 @@ func waitClusterHealthy(t *testing.T) {
 	t.Fatal("cluster not healthy after 30s")
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
+// portForward starts a kubectl port-forward to the given pod and returns
+// the local base URL and a cleanup function.
+func portForward(t *testing.T, pod string) (string, func()) {
+	t.Helper()
+	localPort := freeTestPort(t)
+	cmd := exec.Command("kubectl", "--context", "kind-rutoso-dev",
+		"-n", "cp-cluster-test", "port-forward", pod,
+		fmt.Sprintf("%d:8080", localPort))
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("port-forward %s: %v", pod, err)
+	}
 
-// TestCluster_BasicWrite writes a destination via the NodePort Service
-// (which may hit any pod) and reads it back to verify replication.
+	base := fmt.Sprintf("http://127.0.0.1:%d/api/v1", localPort)
+
+	// Wait for the port-forward to be ready.
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", localPort), 500*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			return base, func() { cmd.Process.Kill(); cmd.Wait() }
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	cmd.Process.Kill()
+	cmd.Wait()
+	t.Fatalf("port-forward to %s not ready after 10s", pod)
+	return "", nil
+}
+
+func freeTestPort(t *testing.T) int {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+	return port
+}
+
+func waitForReplication(t *testing.T) {
+	t.Helper()
+	time.Sleep(500 * time.Millisecond)
+}
+
+// ─── Basic Tests ────────────────────────────────────────────────────────────
+
+// TestCluster_BasicWrite writes via the NodePort (any pod) and reads back.
 func TestCluster_BasicWrite(t *testing.T) {
 	waitClusterHealthy(t)
+	base := clusterBaseURL()
 
-	code, dest := clusterPost(t, "/destinations", map[string]any{
+	code, dest := clusterPost(t, base, "/destinations", map[string]any{
 		"name": "cluster-e2e-dest", "host": "127.0.0.1", "port": 9999,
 	})
 	if code != 201 {
-		t.Fatalf("create destination: %d %v", code, dest)
+		t.Fatalf("create: %d", code)
 	}
-	defer clusterDelete(t, "/destinations/"+clusterID(dest))
+	defer clusterDelete(t, base, "/destinations/"+clusterID(dest))
+	waitForReplication(t)
 
-	time.Sleep(300 * time.Millisecond)
-
-	code, _ = clusterGet(t, "/destinations/"+clusterID(dest))
+	code, _ = clusterGet(t, base, "/destinations/"+clusterID(dest))
 	if code != 200 {
-		t.Errorf("get destination: %d", code)
+		t.Errorf("get: %d", code)
 	}
 }
 
-// TestCluster_SnapshotActivation creates and activates a snapshot,
-// verifying the cluster persists and serves it.
+// TestCluster_SnapshotActivation creates and activates a snapshot.
 func TestCluster_SnapshotActivation(t *testing.T) {
 	waitClusterHealthy(t)
+	base := clusterBaseURL()
 
-	code, snap := clusterPost(t, "/snapshots", map[string]string{"name": "cluster-e2e-snap"})
+	code, snap := clusterPost(t, base, "/snapshots", map[string]string{"name": "cluster-snap"})
 	if code != 201 {
-		t.Fatalf("create snapshot: %d %v", code, snap)
+		t.Fatalf("create: %d", code)
 	}
 	snapID := clusterID(snap)
-	defer clusterDelete(t, "/snapshots/"+snapID)
+	defer clusterDelete(t, base, "/snapshots/"+snapID)
 
-	code, activated := clusterPost(t, "/snapshots/"+snapID+"/activate", nil)
+	code, activated := clusterPost(t, base, "/snapshots/"+snapID+"/activate", nil)
 	if code != 200 {
-		t.Fatalf("activate snapshot: %d", code)
+		t.Fatalf("activate: %d", code)
 	}
 	if activated["active"] != true {
 		t.Error("expected active=true")
 	}
+	waitForReplication(t)
 
-	time.Sleep(300 * time.Millisecond)
-
-	code, body := clusterGet(t, "/snapshots")
+	code, body := clusterGet(t, base, "/snapshots")
 	if code != 200 {
-		t.Fatalf("list snapshots: %d", code)
+		t.Fatalf("list: %d", code)
 	}
 	var summaries []map[string]any
 	json.Unmarshal(body, &summaries)
@@ -151,95 +199,267 @@ func TestCluster_SnapshotActivation(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("snapshot %s not found as active in list", snapID)
+		t.Errorf("snapshot %s not active in list", snapID)
 	}
 }
 
-// TestCluster_WriteAndReadReplicated writes several routes and reads them
-// back. Each request may go to a different pod, proving replication works.
-func TestCluster_WriteAndReadReplicated(t *testing.T) {
-	waitClusterHealthy(t)
+// ─── Indistinguishable Nodes Tests ──────────────────────────────────────────
 
-	var routeIDs []string
-	for i := 0; i < 5; i++ {
-		code, route := clusterPost(t, "/routes", map[string]any{
-			"name":           fmt.Sprintf("cluster-rep-route-%d", i),
-			"match":          map[string]any{"pathPrefix": fmt.Sprintf("/rep-%d", i)},
-			"directResponse": map[string]any{"status": 200, "body": fmt.Sprintf("rep-%d", i)},
-		})
-		if code != 201 {
-			t.Fatalf("create route %d: %d", i, code)
-		}
-		routeIDs = append(routeIDs, clusterID(route))
+// TestCluster_AllNodesHaveSameData writes data via NodePort and verifies
+// it is readable from EACH individual node via port-forward.
+func TestCluster_AllNodesHaveSameData(t *testing.T) {
+	waitClusterHealthy(t)
+	base := clusterBaseURL()
+
+	code, route := clusterPost(t, base, "/routes", map[string]any{
+		"name":           "cluster-same-data",
+		"match":          map[string]any{"pathPrefix": "/same"},
+		"directResponse": map[string]any{"status": 200, "body": "same"},
+	})
+	if code != 201 {
+		t.Fatalf("create route: %d", code)
 	}
+	routeID := clusterID(route)
+	defer clusterDelete(t, base, "/routes/"+routeID)
+
+	waitForReplication(t)
+
+	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+		podBase, cleanup := portForward(t, pod)
+		defer cleanup()
+
+		code, data := clusterGet(t, podBase, "/routes/"+routeID)
+		if code != 200 {
+			t.Errorf("%s: route not found (code=%d)", pod, code)
+			continue
+		}
+		var got map[string]any
+		json.Unmarshal(data, &got)
+		if got["name"] != "cluster-same-data" {
+			t.Errorf("%s: expected name 'cluster-same-data', got %v", pod, got["name"])
+		}
+	}
+}
+
+// TestCluster_SnapshotIdenticalAcrossNodes creates a full config with
+// multiple entities, takes a snapshot, activates it, and verifies that
+// every node serves the exact same snapshot payload.
+func TestCluster_SnapshotIdenticalAcrossNodes(t *testing.T) {
+	waitClusterHealthy(t)
+	base := clusterBaseURL()
+
+	_, dest := clusterPost(t, base, "/destinations", map[string]any{
+		"name": "cluster-id-dest", "host": "10.0.0.1", "port": 80,
+	})
+	defer clusterDelete(t, base, "/destinations/"+clusterID(dest))
+
+	_, route := clusterPost(t, base, "/routes", map[string]any{
+		"name":           "cluster-id-route",
+		"match":          map[string]any{"pathPrefix": "/id-test"},
+		"directResponse": map[string]any{"status": 200, "body": "id"},
+	})
+	defer clusterDelete(t, base, "/routes/"+clusterID(route))
+
+	_, listener := clusterPost(t, base, "/listeners", map[string]any{
+		"name": "cluster-id-listener", "port": 19876,
+	})
+	defer clusterDelete(t, base, "/listeners/"+clusterID(listener))
+
+	waitForReplication(t)
+
+	_, snap := clusterPost(t, base, "/snapshots", map[string]string{"name": "cluster-id-snap"})
+	snapID := clusterID(snap)
+	defer clusterDelete(t, base, "/snapshots/"+snapID)
+	clusterPost(t, base, "/snapshots/"+snapID+"/activate", nil)
+
+	waitForReplication(t)
+
+	var snapshots []string
+	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+		podBase, cleanup := portForward(t, pod)
+		defer cleanup()
+
+		code, data := clusterGet(t, podBase, "/snapshots/"+snapID)
+		if code != 200 {
+			t.Errorf("%s: snapshot not found (code=%d)", pod, code)
+			continue
+		}
+		snapshots = append(snapshots, string(data))
+	}
+
+	if len(snapshots) < 3 {
+		t.Fatal("could not read snapshot from all 3 nodes")
+	}
+	for i := 1; i < len(snapshots); i++ {
+		if snapshots[i] != snapshots[0] {
+			t.Errorf("snapshot on node %d differs from node 0", i)
+		}
+	}
+}
+
+// TestCluster_WriteOnFollowerReplicates writes directly to a follower
+// via port-forward and verifies the data appears on all nodes.
+func TestCluster_WriteOnFollowerReplicates(t *testing.T) {
+	waitClusterHealthy(t)
+	base := clusterBaseURL()
+
+	// Port-forward to each node.
+	bases := make(map[string]string)
+	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+		podBase, cleanup := portForward(t, pod)
+		defer cleanup()
+		bases[pod] = podBase
+	}
+
+	// Write to cp-2 (likely a follower).
+	code, mw := clusterPost(t, bases["cp-2"], "/middlewares", map[string]any{
+		"name": "cluster-follower-write", "type": "headers",
+		"headers": map[string]any{
+			"requestHeadersToAdd": []map[string]any{{"key": "X-Cluster", "value": "true"}},
+		},
+	})
+	if code != 201 {
+		t.Fatalf("write on cp-2: %d", code)
+	}
+	mwID := clusterID(mw)
+	defer clusterDelete(t, base, "/middlewares/"+mwID)
+
+	waitForReplication(t)
+
+	// Verify on all nodes.
+	for pod, podBase := range bases {
+		code, _ := clusterGet(t, podBase, "/middlewares/"+mwID)
+		if code != 200 {
+			t.Errorf("%s: middleware not found after follower write (code=%d)", pod, code)
+		}
+	}
+}
+
+// TestCluster_ConcurrentWrites sends writes concurrently to different nodes
+// and verifies all data converges.
+func TestCluster_ConcurrentWrites(t *testing.T) {
+	waitClusterHealthy(t)
+	base := clusterBaseURL()
+
+	bases := make(map[string]string)
+	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+		podBase, cleanup := portForward(t, pod)
+		defer cleanup()
+		bases[pod] = podBase
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var routeIDs []string
+
+	pods := []string{"cp-0", "cp-1", "cp-2"}
+	for i := 0; i < 9; i++ {
+		pod := pods[i%3]
+		idx := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			code, route := clusterPost(t, bases[pod], "/routes", map[string]any{
+				"name":           fmt.Sprintf("concurrent-%d", idx),
+				"match":          map[string]any{"pathPrefix": fmt.Sprintf("/concurrent-%d", idx)},
+				"directResponse": map[string]any{"status": 200, "body": fmt.Sprintf("c-%d", idx)},
+			})
+			if code != 201 {
+				t.Errorf("concurrent write %d on %s: %d", idx, pod, code)
+				return
+			}
+			mu.Lock()
+			routeIDs = append(routeIDs, clusterID(route))
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
 	defer func() {
 		for _, rid := range routeIDs {
-			clusterDelete(t, "/routes/"+rid)
+			clusterDelete(t, base, "/routes/"+rid)
 		}
 	}()
 
-	time.Sleep(500 * time.Millisecond)
+	waitForReplication(t)
 
-	for _, rid := range routeIDs {
-		code, _ := clusterGet(t, "/routes/"+rid)
-		if code != 200 {
-			t.Errorf("route %s not found after replication (code=%d)", rid, code)
+	// Verify all 9 routes exist on every node.
+	for pod, podBase := range bases {
+		for _, rid := range routeIDs {
+			code, _ := clusterGet(t, podBase, "/routes/"+rid)
+			if code != 200 {
+				t.Errorf("%s: route %s missing after concurrent writes (code=%d)", pod, rid, code)
+			}
 		}
 	}
 }
 
-// TestCluster_SSEStream verifies the SSE sync stream works in cluster mode.
-func TestCluster_SSEStream(t *testing.T) {
+// TestCluster_SSEStreamServesActiveSnapshot connects to each node's SSE
+// stream and verifies they all serve the same active snapshot.
+func TestCluster_SSEStreamServesActiveSnapshot(t *testing.T) {
 	waitClusterHealthy(t)
+	base := clusterBaseURL()
 
-	code, snap := clusterPost(t, "/snapshots", map[string]string{"name": "cluster-sse-snap"})
-	if code != 201 {
-		t.Fatalf("create snapshot: %d", code)
-	}
+	_, snap := clusterPost(t, base, "/snapshots", map[string]string{"name": "cluster-sse-identical"})
 	snapID := clusterID(snap)
-	defer clusterDelete(t, "/snapshots/"+snapID)
+	defer clusterDelete(t, base, "/snapshots/"+snapID)
+	clusterPost(t, base, "/snapshots/"+snapID+"/activate", nil)
 
-	clusterPost(t, "/snapshots/"+snapID+"/activate", nil)
+	waitForReplication(t)
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	req, _ := http.NewRequest("GET", clusterBaseURL()+"/sync/stream", nil)
-	req.Header.Set("Accept", "text/event-stream")
-	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("SSE connect: %v", err)
-	}
-	defer resp.Body.Close()
+	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+		podBase, cleanup := portForward(t, pod)
+		defer cleanup()
 
-	if resp.Header.Get("Content-Type") != "text/event-stream" {
-		t.Errorf("expected text/event-stream, got %q", resp.Header.Get("Content-Type"))
-	}
-
-	scanner := bufio.NewScanner(resp.Body)
-	found := false
-	for scanner.Scan() {
-		if strings.HasPrefix(scanner.Text(), "event: snapshot") {
-			found = true
-			break
+		client := &http.Client{Timeout: 5 * time.Second}
+		req, _ := http.NewRequest("GET", podBase+"/sync/stream", nil)
+		req.Header.Set("Accept", "text/event-stream")
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Errorf("%s: SSE connect: %v", pod, err)
+			continue
 		}
-	}
-	if !found {
-		t.Error("no snapshot event received from cluster SSE")
+
+		scanner := bufio.NewScanner(resp.Body)
+		found := false
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "data: ") {
+				var vs map[string]any
+				json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &vs)
+				if vs["id"] == snapID {
+					found = true
+				}
+				break
+			}
+		}
+		resp.Body.Close()
+
+		if !found {
+			t.Errorf("%s: SSE did not serve snapshot %s", pod, snapID)
+		}
 	}
 }
 
-// TestCluster_ConfigDump verifies /debug/config works in cluster mode.
+// TestCluster_ConfigDump verifies /debug/config on each node.
 func TestCluster_ConfigDump(t *testing.T) {
 	waitClusterHealthy(t)
 
-	code, body := clusterGet(t, "/debug/config")
-	if code != 200 {
-		t.Fatalf("config dump: %d", code)
-	}
-	var dump map[string]json.RawMessage
-	json.Unmarshal(body, &dump)
-	for _, key := range []string{"listeners", "routes", "groups", "destinations", "middlewares"} {
-		if _, ok := dump[key]; !ok {
-			t.Errorf("missing %q in config dump", key)
+	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+		podBase, cleanup := portForward(t, pod)
+		defer cleanup()
+
+		code, body := clusterGet(t, podBase, "/debug/config")
+		if code != 200 {
+			t.Errorf("%s: config dump: %d", pod, code)
+			continue
+		}
+		var dump map[string]json.RawMessage
+		json.Unmarshal(body, &dump)
+		for _, key := range []string{"listeners", "routes", "groups", "destinations", "middlewares"} {
+			if _, ok := dump[key]; !ok {
+				t.Errorf("%s: missing %q in config dump", pod, key)
+			}
 		}
 	}
 }
