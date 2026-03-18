@@ -1,7 +1,7 @@
-// Package model defines the core domain types used throughout Rutoso.
+// Package model defines the core domain types used throughout Vrata.
 package model
 
-// Listener describes a network entry point where Rutoso accepts HTTP traffic.
+// Listener describes a network entry point where Vrata accepts HTTP traffic.
 type Listener struct {
 	// ID is the unique identifier of the listener.
 	ID string `json:"id" yaml:"id"`
@@ -21,7 +21,7 @@ type Listener struct {
 	TLS *ListenerTLS `json:"tls,omitempty" yaml:"tls,omitempty"`
 
 	// HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.
-	// With TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Rutoso
+	// With TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Vrata
 	// enables h2c upgrade support.
 	HTTP2 bool `json:"http2,omitempty" yaml:"http2,omitempty"`
 

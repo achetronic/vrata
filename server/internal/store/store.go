@@ -1,4 +1,4 @@
-// Package store defines the persistence interface used by Rutoso to read and
+// Package store defines the persistence interface used by Vrata to read and
 // write routes, route groups, filters, listeners, and destinations, and to
 // subscribe to state change events.
 package store
@@ -59,7 +59,7 @@ type StoreEvent struct {
 	ID string
 }
 
-// Store is the persistence interface for all Rutoso state.
+// Store is the persistence interface for all Vrata state.
 // All reads and writes must go through this interface; no component accesses
 // storage directly. Implementations must be safe for concurrent use.
 type Store interface {

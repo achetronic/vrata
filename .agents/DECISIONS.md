@@ -344,25 +344,37 @@ The derivation logic lives solely in `xds/builder.go:clusterTypeFor`.
 
 ---
 
-## hashPolicy lives on ForwardAction, not on BackendRef or Destination
+## hashPolicy lives on EndpointBalancing in Destination, not on ForwardAction
 
-**Date**: 2026-03-16
-**Status**: Implemented
+**Date**: 2026-03-18
+**Status**: Implemented (supersedes previous decision)
 
-`HashPolicy` (header/cookie/sourceIP) is a field of `ForwardAction`, not of
-`BackendRef` or `Destination`. The LB algorithm (`RING_HASH`, `MAGLEV`) that
-consumes hash policies lives on `Destination.Options.Balancing.Algorithm`.
+`HashPolicy` is a field of `EndpointBalancing` (inside `Destination.Options`),
+not of `ForwardAction`. The LB algorithm (`RING_HASH`, `MAGLEV`) and its
+`hashPolicy` both live together under `endpointBalancing.ringHash.hashPolicy`
+or `endpointBalancing.maglev.hashPolicy`.
 
-**Reasoning**: In the Envoy data model, `hash_policy` is part of `RouteAction`
-(i.e. per-route), not per-cluster. Envoy evaluates hash_policy at routing time
-using request attributes (headers, cookies, client IP) that are only available
-in the RouteAction context. A single Destination configured with RING_HASH may
-be reached by different routes that want to hash on different things. Placing
-`HashPolicy` on `ForwardAction` accurately reflects where Envoy applies it.
-`BackendRef` carries only `destinationId` and `weight`.
+**Reasoning**: There are two levels of load balancing:
+- **Level 1 (destination selection)**: configured on the Route via
+  `ForwardAction.DestinationBalancing`. Algorithms: `WEIGHTED_RANDOM` (default)
+  or `WEIGHTED_CONSISTENT_HASH` (cookie-based pinning).
+- **Level 2 (endpoint selection within a destination)**: configured on the
+  Destination via `Options.EndpointBalancing`. Algorithms: `ROUND_ROBIN`,
+  `RANDOM`, `LEAST_REQUEST`, `RING_HASH`, `MAGLEV`.
 
-**Do not**: Move `HashPolicy` to `BackendRef`, `Destination`, or `DestinationOptions`.
-Do not add hash_policy at the cluster level.
+`HashPolicy` defines what request data feeds the hash function for endpoint
+stickiness. This is an endpoint-level concern — it belongs with the algorithm
+that uses it, on the Destination. Each destination can independently choose its
+algorithm and hash policy. The naming pattern is semantic: algorithm-specific
+parameters live in a nested struct named after the algorithm (e.g.
+`ringHash: { ringSize: {...}, hashPolicy: [...] }`).
+
+All `HashPolicy` entries are objects for consistency and future extensibility:
+`header: { name: "X-User-ID" }`, `cookie: { name: "...", ttl: "..." }`,
+`sourceIP: { enabled: true }`.
+
+**Do not**: Move `HashPolicy` back to `ForwardAction` or `Route`. Do not mix
+level-1 and level-2 concerns in the same struct.
 
 ---
 
@@ -597,33 +609,43 @@ is `Destination` and `DestinationRef`.
 
 ---
 
-## Destination pinning via weighted consistent hash
+## Two-level load balancing: DestinationBalancing + EndpointBalancing
 
 **Date**: 2026-03-18
-**Status**: Implemented
+**Status**: Implemented (supersedes "Destination pinning via weighted consistent hash")
 
-`ForwardAction` carries an optional `DestinationPinning` field with
-`cookieName` and `ttl`. When enabled, destination selection uses a weighted
-consistent hash ring instead of weighted random. The hash key is
-`hash(sessionID + routeID)`, where `sessionID` comes from a cookie.
+Load balancing is split into two independent levels, each configured on the
+resource that owns it:
 
-**Reasoning**: For canary deployments, a user who lands on v2 must stay on
-v2 for all subsequent requests — including asset loads. Weighted random
-would bounce users between versions, breaking pages. The consistent hash
-is deterministic: all proxies compute the same result from the same snapshot,
-so no shared state is needed between proxy instances.
+### Level 1 — Destination selection (Route)
+`ForwardAction.DestinationBalancing` controls which Destination receives each
+request. Algorithms:
+- `WEIGHTED_RANDOM` (default) — no stickiness
+- `WEIGHTED_CONSISTENT_HASH` — cookie-based pinning to a destination
 
-Key design points:
-- One cookie (`_vrata_pin` by default) holds a UUID session ID
-- The hash includes `routeID`, so different routes pin independently
-- If a destination is removed from the snapshot, the hash redistributes
-  to remaining destinations with minimal movement
-- Weights are respected: destinations get ring space proportional to weight
-- Without `destinationPinning`, weighted random is used (no change)
+When using `WEIGHTED_CONSISTENT_HASH`, the algorithm's parameters live in
+`weightedConsistentHash: { cookie: { name, ttl } }`. Default cookie:
+`_vrata_destination_pin`. Hash: `crc32(sessionID + routeID)`.
 
-**Do not**: Store destination IDs in cookies. Do not use shared state
-(Redis, gossip) for pinning — the consistent hash is stateless. Do not
-activate pinning globally — it is per-route, opt-in.
+### Level 2 — Endpoint selection (Destination)
+`Destination.Options.EndpointBalancing` controls which endpoint (pod) within
+a Destination receives each request. Algorithms:
+- `ROUND_ROBIN` (default), `RANDOM`, `LEAST_REQUEST` — no stickiness
+- `RING_HASH`, `MAGLEV` — consistent hash with `hashPolicy`
+
+Hash policies use per-destination isolation: `crc32(value + destinationID)`.
+Default endpoint cookie: `_vrata_endpoint_pin`.
+
+### Cookie isolation
+- Level 1 cookie: user-chosen name, hash includes `routeID` → routes don't
+  interfere even with the same cookie name
+- Level 2 cookie: user-chosen name, hash includes `destinationID` → destinations
+  don't interfere
+- Using the same cookie name for both levels is safe: the hash salt differs
+
+**Do not**: Mix level-1 and level-2 configuration in the same struct. Do not
+store destination or endpoint IDs in cookies. Do not use shared state for
+pinning — both levels are stateless consistent hashes.
 
 ---
 

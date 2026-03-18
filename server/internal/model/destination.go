@@ -1,27 +1,28 @@
 package model
 
-// DiscoveryType controls how Rutoso resolves endpoints for a Destination.
+// DiscoveryType controls how Vrata resolves endpoints for a Destination.
 type DiscoveryType string
 
 const (
-	// DiscoveryTypeKubernetes makes Rutoso watch Kubernetes EndpointSlices
+	// DiscoveryTypeKubernetes makes Vrata watch Kubernetes EndpointSlices
 	// for the Service encoded in the Destination host FQDN, resolving
 	// individual pod IPs for direct load balancing.
 	DiscoveryTypeKubernetes DiscoveryType = "kubernetes"
 )
 
-// LBPolicy is the load-balancing algorithm used between endpoints.
-type LBPolicy string
+// EndpointLBPolicy is the load-balancing algorithm used between endpoints
+// within a single Destination.
+type EndpointLBPolicy string
 
 const (
-	LBPolicyRoundRobin   LBPolicy = "ROUND_ROBIN"
-	LBPolicyLeastRequest LBPolicy = "LEAST_REQUEST"
-	LBPolicyRingHash     LBPolicy = "RING_HASH"
-	LBPolicyMaglev       LBPolicy = "MAGLEV"
-	LBPolicyRandom       LBPolicy = "RANDOM"
+	EndpointLBRoundRobin   EndpointLBPolicy = "ROUND_ROBIN"
+	EndpointLBLeastRequest EndpointLBPolicy = "LEAST_REQUEST"
+	EndpointLBRingHash     EndpointLBPolicy = "RING_HASH"
+	EndpointLBMaglev       EndpointLBPolicy = "MAGLEV"
+	EndpointLBRandom       EndpointLBPolicy = "RANDOM"
 )
 
-// TLSMode controls how Rutoso connects to the upstream.
+// TLSMode controls how Vrata connects to the upstream.
 type TLSMode string
 
 const (
@@ -59,8 +60,12 @@ type DestinationOptions struct {
 	// TLS controls upstream TLS / mTLS configuration.
 	TLS *TLSOptions `json:"tls,omitempty"`
 
-	// Balancing controls the load-balancing algorithm and its parameters.
-	Balancing *BalancingOptions `json:"balancing,omitempty"`
+	// EndpointBalancing controls how Vrata selects an endpoint (pod) within
+	// this Destination when multiple endpoints are available via discovery.
+	// Only relevant when Discovery is configured (e.g. Kubernetes).
+	// When nil or when there is only one endpoint, traffic goes directly
+	// to host:port.
+	EndpointBalancing *EndpointBalancing `json:"endpointBalancing,omitempty"`
 
 	// CircuitBreaker limits in-flight traffic to protect the upstream.
 	CircuitBreaker *CircuitBreakerOptions `json:"circuitBreaker,omitempty"`
@@ -73,7 +78,7 @@ type DestinationOptions struct {
 	OutlierDetection *OutlierDetectionOptions `json:"outlierDetection,omitempty"`
 
 	// Discovery enables dynamic endpoint resolution.
-	// When nil, Rutoso connects directly to host:port.
+	// When nil, Vrata connects directly to host:port.
 	Discovery *DestinationDiscovery `json:"discovery,omitempty"`
 
 	// HTTP2 enables HTTP/2 to the upstream. Required for gRPC destinations.
@@ -82,6 +87,102 @@ type DestinationOptions struct {
 	// MaxRequestsPerConnection drains a connection after this many requests.
 	// 0 means unlimited.
 	MaxRequestsPerConnection uint32 `json:"maxRequestsPerConnection,omitempty"`
+}
+
+// EndpointBalancing controls how Vrata selects an endpoint within a Destination.
+// The algorithm field selects the strategy; algorithm-specific parameters live
+// in the corresponding nested struct (e.g. ringHash, maglev, leastRequest).
+type EndpointBalancing struct {
+	// Algorithm selects the endpoint load-balancing policy. Default: ROUND_ROBIN.
+	Algorithm EndpointLBPolicy `json:"algorithm,omitempty"`
+
+	// RingHash holds parameters for the RING_HASH algorithm.
+	// Only used when Algorithm is RING_HASH.
+	RingHash *RingHashOptions `json:"ringHash,omitempty"`
+
+	// Maglev holds parameters for the MAGLEV algorithm.
+	// Only used when Algorithm is MAGLEV.
+	Maglev *MaglevOptions `json:"maglev,omitempty"`
+
+	// LeastRequest holds parameters for the LEAST_REQUEST algorithm.
+	// Only used when Algorithm is LEAST_REQUEST.
+	LeastRequest *LeastRequestOptions `json:"leastRequest,omitempty"`
+}
+
+// RingHashOptions configures the RING_HASH consistent hashing algorithm.
+type RingHashOptions struct {
+	// RingSize tunes the consistent hash ring.
+	RingSize *RingSizeOptions `json:"ringSize,omitempty"`
+
+	// HashPolicy defines what request data feeds the hash function.
+	// Entries are evaluated in order; the first one that produces a value wins.
+	HashPolicy []HashPolicy `json:"hashPolicy,omitempty"`
+}
+
+// MaglevOptions configures the MAGLEV consistent hashing algorithm.
+type MaglevOptions struct {
+	// TableSize sets the Maglev hash table size.
+	// Must be a prime number. Default: 65537.
+	TableSize uint64 `json:"tableSize,omitempty"`
+
+	// HashPolicy defines what request data feeds the hash function.
+	// Entries are evaluated in order; the first one that produces a value wins.
+	HashPolicy []HashPolicy `json:"hashPolicy,omitempty"`
+}
+
+// LeastRequestOptions configures the LEAST_REQUEST algorithm.
+type LeastRequestOptions struct {
+	// ChoiceCount is the number of random choices to consider.
+	// The endpoint with the fewest active requests among those chosen wins.
+	// Default: 2 (power of two choices).
+	ChoiceCount uint32 `json:"choiceCount,omitempty"`
+}
+
+// RingSizeOptions tunes the consistent-hashing ring for RING_HASH.
+type RingSizeOptions struct {
+	// Min is the minimum number of virtual nodes. Default: 1024.
+	Min uint64 `json:"min,omitempty"`
+
+	// Max is the maximum number of virtual nodes. Default: 8388608.
+	Max uint64 `json:"max,omitempty"`
+}
+
+// HashPolicy defines how to compute the consistent hash key for endpoint
+// stickiness. Each entry uses exactly one of Header, Cookie, or SourceIP.
+// All fields are objects for consistency and future extensibility.
+type HashPolicy struct {
+	// Header uses the named request header as the hash key.
+	Header *HashPolicyHeader `json:"header,omitempty" yaml:"header,omitempty"`
+
+	// Cookie uses the named cookie as the hash key.
+	// If the cookie does not exist, Vrata generates it with the given TTL.
+	Cookie *HashPolicyCookie `json:"cookie,omitempty" yaml:"cookie,omitempty"`
+
+	// SourceIP uses the client IP as the hash key.
+	SourceIP *HashPolicySourceIP `json:"sourceIP,omitempty" yaml:"sourceIP,omitempty"`
+}
+
+// HashPolicyHeader hashes on a request header value.
+type HashPolicyHeader struct {
+	// Name is the header name to hash on.
+	Name string `json:"name" yaml:"name"`
+}
+
+// HashPolicyCookie hashes on a cookie value. If the cookie is not present
+// in the request, Vrata generates it and sets it on the response.
+type HashPolicyCookie struct {
+	// Name is the cookie name. Default: "_vrata_endpoint_pin".
+	Name string `json:"name" yaml:"name"`
+
+	// TTL is the lifetime of the auto-generated cookie.
+	// Accepts Go duration strings (e.g. "1h"). Default: "1h".
+	TTL string `json:"ttl,omitempty" yaml:"ttl,omitempty"`
+}
+
+// HashPolicySourceIP hashes on the client IP address.
+type HashPolicySourceIP struct {
+	// Enabled must be true to activate source IP hashing.
+	Enabled bool `json:"enabled" yaml:"enabled"`
 }
 
 // TLSOptions configures upstream TLS.
@@ -111,28 +212,6 @@ type TLSOptions struct {
 
 	// MaxVersion is the maximum TLS protocol version.
 	MaxVersion string `json:"maxVersion,omitempty"`
-}
-
-// BalancingOptions controls the load-balancing algorithm.
-type BalancingOptions struct {
-	// Algorithm selects the load-balancing policy. Default: ROUND_ROBIN.
-	Algorithm LBPolicy `json:"algorithm,omitempty"`
-
-	// RingSize tunes the consistent hash ring. Only used with RING_HASH.
-	RingSize *RingSizeOptions `json:"ringSize,omitempty"`
-
-	// MaglevTableSize sets the Maglev hash table size.
-	// Must be a prime number. Default: 65537. Only used with MAGLEV.
-	MaglevTableSize uint64 `json:"maglevTableSize,omitempty"`
-}
-
-// RingSizeOptions tunes the consistent-hashing ring for RING_HASH.
-type RingSizeOptions struct {
-	// Min is the minimum number of virtual nodes. Default: 1024.
-	Min uint64 `json:"min,omitempty"`
-
-	// Max is the maximum number of virtual nodes. Default: 8388608.
-	Max uint64 `json:"max,omitempty"`
 }
 
 // CircuitBreakerOptions limits in-flight traffic to the upstream.
@@ -200,22 +279,4 @@ type DestinationRef struct {
 	// Weight controls the proportion of traffic. Must sum to 100 across
 	// destinations when more than one is defined.
 	Weight uint32 `json:"weight"`
-}
-
-// HashPolicy defines how to compute the consistent hash key for sticky sessions.
-// Lives on ForwardAction because it uses request attributes (headers, cookies, IP).
-// The Destination defines the algorithm (RING_HASH/MAGLEV); the route defines
-// what data feeds the hash.
-type HashPolicy struct {
-	// Header uses the named request header as the hash key.
-	Header string `json:"header,omitempty" yaml:"header,omitempty"`
-
-	// Cookie uses the named cookie as the hash key.
-	Cookie string `json:"cookie,omitempty" yaml:"cookie,omitempty"`
-
-	// CookieTTL is the TTL for auto-generated sticky cookies. Accepts Go durations.
-	CookieTTL string `json:"cookieTtl,omitempty" yaml:"cookieTtl,omitempty"`
-
-	// SourceIP uses the client IP as the hash key.
-	SourceIP bool `json:"sourceIP,omitempty" yaml:"sourceIP,omitempty"`
 }

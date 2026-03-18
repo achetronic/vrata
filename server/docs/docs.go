@@ -11,7 +11,7 @@ const docTemplate = `{
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
         "contact": {
-            "name": "Rutoso project",
+            "name": "Vrata project",
             "url": "https://github.com/achetronic/vrata"
         },
         "license": {
@@ -1392,31 +1392,6 @@ const docTemplate = `{
                 }
             }
         },
-        "model.BalancingOptions": {
-            "type": "object",
-            "properties": {
-                "algorithm": {
-                    "description": "Algorithm selects the load-balancing policy. Default: ROUND_ROBIN.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.LBPolicy"
-                        }
-                    ]
-                },
-                "maglevTableSize": {
-                    "description": "MaglevTableSize sets the Maglev hash table size.\nMust be a prime number. Default: 65537. Only used with MAGLEV.",
-                    "type": "integer"
-                },
-                "ringSize": {
-                    "description": "RingSize tunes the consistent hash ring. Only used with RING_HASH.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.RingSizeOptions"
-                        }
-                    ]
-                }
-            }
-        },
         "model.BodyMode": {
             "type": "string",
             "enum": [
@@ -1536,6 +1511,27 @@ const docTemplate = `{
                 }
             }
         },
+        "model.DestinationBalancing": {
+            "type": "object",
+            "properties": {
+                "algorithm": {
+                    "description": "Algorithm selects the destination selection policy.\nDefault: WEIGHTED_RANDOM.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.DestinationLBPolicy"
+                        }
+                    ]
+                },
+                "weightedConsistentHash": {
+                    "description": "WeightedConsistentHash holds parameters for WEIGHTED_CONSISTENT_HASH.\nOnly used when Algorithm is WEIGHTED_CONSISTENT_HASH.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.WeightedConsistentHashOptions"
+                        }
+                    ]
+                }
+            }
+        },
         "model.DestinationDiscovery": {
             "type": "object",
             "properties": {
@@ -1549,17 +1545,20 @@ const docTemplate = `{
                 }
             }
         },
+        "model.DestinationLBPolicy": {
+            "type": "string",
+            "enum": [
+                "WEIGHTED_RANDOM",
+                "WEIGHTED_CONSISTENT_HASH"
+            ],
+            "x-enum-varnames": [
+                "DestinationLBWeightedRandom",
+                "DestinationLBWeightedConsistentHash"
+            ]
+        },
         "model.DestinationOptions": {
             "type": "object",
             "properties": {
-                "balancing": {
-                    "description": "Balancing controls the load-balancing algorithm and its parameters.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.BalancingOptions"
-                        }
-                    ]
-                },
                 "circuitBreaker": {
                     "description": "CircuitBreaker limits in-flight traffic to protect the upstream.",
                     "allOf": [
@@ -1573,10 +1572,18 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "discovery": {
-                    "description": "Discovery enables dynamic endpoint resolution.\nWhen nil, Rutoso connects directly to host:port.",
+                    "description": "Discovery enables dynamic endpoint resolution.\nWhen nil, Vrata connects directly to host:port.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/model.DestinationDiscovery"
+                        }
+                    ]
+                },
+                "endpointBalancing": {
+                    "description": "EndpointBalancing controls how Vrata selects an endpoint (pod) within\nthis Destination when multiple endpoints are available via discovery.\nOnly relevant when Discovery is configured (e.g. Kubernetes).\nWhen nil or when there is only one endpoint, traffic goes directly\nto host:port.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.EndpointBalancing"
                         }
                     ]
                 },
@@ -1614,15 +1621,15 @@ const docTemplate = `{
                 }
             }
         },
-        "model.DestinationPinning": {
+        "model.DestinationPinCookie": {
             "type": "object",
             "properties": {
-                "cookieName": {
-                    "description": "CookieName is the name of the session cookie that identifies the client.\nAll routes sharing the same cookie name share the same session ID.\nDefault: \"_vrata_pin\".",
+                "name": {
+                    "description": "Name is the cookie name. Default: \"_vrata_destination_pin\".",
                     "type": "string"
                 },
                 "ttl": {
-                    "description": "TTL is the lifetime of the session cookie. Accepts Go duration strings\n(e.g. \"1h\", \"24h\"). When the cookie expires, the client goes through\nweighted selection again. Default: \"1h\".",
+                    "description": "TTL is the lifetime of the session cookie. Accepts Go duration strings\n(e.g. \"1h\", \"24h\"). Default: \"1h\".",
                     "type": "string"
                 }
             }
@@ -1647,6 +1654,60 @@ const docTemplate = `{
             ],
             "x-enum-varnames": [
                 "DiscoveryTypeKubernetes"
+            ]
+        },
+        "model.EndpointBalancing": {
+            "type": "object",
+            "properties": {
+                "algorithm": {
+                    "description": "Algorithm selects the endpoint load-balancing policy. Default: ROUND_ROBIN.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.EndpointLBPolicy"
+                        }
+                    ]
+                },
+                "leastRequest": {
+                    "description": "LeastRequest holds parameters for the LEAST_REQUEST algorithm.\nOnly used when Algorithm is LEAST_REQUEST.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.LeastRequestOptions"
+                        }
+                    ]
+                },
+                "maglev": {
+                    "description": "Maglev holds parameters for the MAGLEV algorithm.\nOnly used when Algorithm is MAGLEV.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.MaglevOptions"
+                        }
+                    ]
+                },
+                "ringHash": {
+                    "description": "RingHash holds parameters for the RING_HASH algorithm.\nOnly used when Algorithm is RING_HASH.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.RingHashOptions"
+                        }
+                    ]
+                }
+            }
+        },
+        "model.EndpointLBPolicy": {
+            "type": "string",
+            "enum": [
+                "ROUND_ROBIN",
+                "LEAST_REQUEST",
+                "RING_HASH",
+                "MAGLEV",
+                "RANDOM"
+            ],
+            "x-enum-varnames": [
+                "EndpointLBRoundRobin",
+                "EndpointLBLeastRequest",
+                "EndpointLBRingHash",
+                "EndpointLBMaglev",
+                "EndpointLBRandom"
             ]
         },
         "model.ExtAuthzConfig": {
@@ -1785,7 +1846,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "observeMode": {
-                    "description": "ObserveMode enables fire-and-forget mode. When enabled, Rutoso sends\nphases to the processor but does not wait for responses. Useful for\nlogging, auditing, or analytics processors.",
+                    "description": "ObserveMode enables fire-and-forget mode. When enabled, Vrata sends\nphases to the processor but does not wait for responses. Useful for\nlogging, auditing, or analytics processors.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/model.ObserveModeConfig"
@@ -1871,11 +1932,11 @@ const docTemplate = `{
         "model.ForwardAction": {
             "type": "object",
             "properties": {
-                "destinationPinning": {
-                    "description": "DestinationPinning enables sticky destination selection for canary\ndeployments. When enabled, the first request uses weighted selection\nto pick a destination; subsequent requests from the same client are\npinned to that destination via a session cookie and a weighted\nconsistent hash. All proxies compute the same result deterministically\nfrom the snapshot — no shared state required.",
+                "destinationBalancing": {
+                    "description": "DestinationBalancing controls how Vrata selects which Destination\nreceives each request (level 1). When nil, WEIGHTED_RANDOM is used.",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/model.DestinationPinning"
+                            "$ref": "#/definitions/model.DestinationBalancing"
                         }
                     ]
                 },
@@ -1886,15 +1947,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/model.DestinationRef"
                     }
                 },
-                "hashPolicy": {
-                    "description": "HashPolicy controls how Rutoso computes the consistent-hash key for\nsticky sessions. Only relevant when the Destination uses RING_HASH or\nMAGLEV balancing (configured in Destination.Options.Balancing).\n\nThis field lives on the route — not on the Destination — because Rutoso\nevaluates hash_policy at routing time using request attributes (headers,\ncookies, client IP) that are only available in the RouteAction context.\nThe Destination defines *which algorithm* and ring parameters to use;\nthe route defines *what request data* feeds the hash function.\nBoth sides must be configured for sticky sessions to work.\n\nEntries are evaluated in order; the first one that produces a value wins.\nEvaluated at routing time before selecting an endpoint.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.HashPolicy"
-                    }
-                },
                 "maxGrpcTimeout": {
-                    "description": "MaxGRPCTimeout caps the timeout that a gRPC client can request via\nthe grpc-timeout header. If the client asks for more, Rutoso clamps\nit to this value. Accepts Go duration strings (e.g. \"30s\").",
+                    "description": "MaxGRPCTimeout caps the timeout that a gRPC client can request via\nthe grpc-timeout header. If the client asks for more, Vrata clamps\nit to this value. Accepts Go duration strings (e.g. \"30s\").",
                     "type": "string"
                 },
                 "mirror": {
@@ -1954,19 +2008,58 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "cookie": {
-                    "description": "Cookie uses the named cookie as the hash key.",
-                    "type": "string"
-                },
-                "cookieTtl": {
-                    "description": "CookieTTL is the TTL for auto-generated sticky cookies. Accepts Go durations.",
-                    "type": "string"
+                    "description": "Cookie uses the named cookie as the hash key.\nIf the cookie does not exist, Vrata generates it with the given TTL.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.HashPolicyCookie"
+                        }
+                    ]
                 },
                 "header": {
                     "description": "Header uses the named request header as the hash key.",
-                    "type": "string"
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.HashPolicyHeader"
+                        }
+                    ]
                 },
                 "sourceIP": {
                     "description": "SourceIP uses the client IP as the hash key.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.HashPolicySourceIP"
+                        }
+                    ]
+                }
+            }
+        },
+        "model.HashPolicyCookie": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name is the cookie name. Default: \"_vrata_endpoint_pin\".",
+                    "type": "string"
+                },
+                "ttl": {
+                    "description": "TTL is the lifetime of the auto-generated cookie.\nAccepts Go duration strings (e.g. \"1h\"). Default: \"1h\".",
+                    "type": "string"
+                }
+            }
+        },
+        "model.HashPolicyHeader": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "description": "Name is the header name to hash on.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.HashPolicySourceIP": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Enabled must be true to activate source IP hashing.",
                     "type": "boolean"
                 }
             }
@@ -2154,22 +2247,14 @@ const docTemplate = `{
                 }
             }
         },
-        "model.LBPolicy": {
-            "type": "string",
-            "enum": [
-                "ROUND_ROBIN",
-                "LEAST_REQUEST",
-                "RING_HASH",
-                "MAGLEV",
-                "RANDOM"
-            ],
-            "x-enum-varnames": [
-                "LBPolicyRoundRobin",
-                "LBPolicyLeastRequest",
-                "LBPolicyRingHash",
-                "LBPolicyMaglev",
-                "LBPolicyRandom"
-            ]
+        "model.LeastRequestOptions": {
+            "type": "object",
+            "properties": {
+                "choiceCount": {
+                    "description": "ChoiceCount is the number of random choices to consider.\nThe endpoint with the fewest active requests among those chosen wins.\nDefault: 2 (power of two choices).",
+                    "type": "integer"
+                }
+            }
         },
         "model.Listener": {
             "type": "object",
@@ -2179,7 +2264,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "http2": {
-                    "description": "HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.\nWith TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Rutoso\nenables h2c upgrade support.",
+                    "description": "HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.\nWith TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Vrata\nenables h2c upgrade support.",
                     "type": "boolean"
                 },
                 "id": {
@@ -2230,6 +2315,22 @@ const docTemplate = `{
                 "minVersion": {
                     "description": "MinVersion is the minimum TLS protocol version to accept.\nAccepted values: \"TLSv1_0\", \"TLSv1_1\", \"TLSv1_2\", \"TLSv1_3\".\nDefaults to \"TLSv1_2\" if empty.",
                     "type": "string"
+                }
+            }
+        },
+        "model.MaglevOptions": {
+            "type": "object",
+            "properties": {
+                "hashPolicy": {
+                    "description": "HashPolicy defines what request data feeds the hash function.\nEntries are evaluated in order; the first one that produces a value wins.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.HashPolicy"
+                    }
+                },
+                "tableSize": {
+                    "description": "TableSize sets the Maglev hash table size.\nMust be a prime number. Default: 65537.",
+                    "type": "integer"
                 }
             }
         },
@@ -2563,6 +2664,26 @@ const docTemplate = `{
                 }
             }
         },
+        "model.RingHashOptions": {
+            "type": "object",
+            "properties": {
+                "hashPolicy": {
+                    "description": "HashPolicy defines what request data feeds the hash function.\nEntries are evaluated in order; the first one that produces a value wins.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.HashPolicy"
+                    }
+                },
+                "ringSize": {
+                    "description": "RingSize tunes the consistent hash ring.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.RingSizeOptions"
+                        }
+                    ]
+                }
+            }
+        },
         "model.RingSizeOptions": {
             "type": "object",
             "properties": {
@@ -2670,7 +2791,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "includeAttemptCount": {
-                    "description": "IncludeAttemptCount makes Rutoso add the X-Request-Attempt-Count header\nto upstream requests, indicating how many times the request has been\nattempted (including the original). Maps to\nVirtualHost.include_request_attempt_count.",
+                    "description": "IncludeAttemptCount makes Vrata add the X-Request-Attempt-Count header\nto upstream requests, indicating how many times the request has been\nattempted (including the original). Maps to\nVirtualHost.include_request_attempt_count.",
                     "type": "boolean"
                 },
                 "middlewareIds": {
@@ -2830,7 +2951,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "request": {
-                    "description": "Request is the total time the entire request may take from the moment\nRutoso receives the first byte from the client until the response is\nfully sent. Accepts Go duration strings (e.g. \"30s\", \"1m\").",
+                    "description": "Request is the total time the entire request may take from the moment\nVrata receives the first byte from the client until the response is\nfully sent. Accepts Go duration strings (e.g. \"30s\", \"1m\").",
                     "type": "string"
                 }
             }
@@ -2976,6 +3097,19 @@ const docTemplate = `{
                 }
             }
         },
+        "model.WeightedConsistentHashOptions": {
+            "type": "object",
+            "properties": {
+                "cookie": {
+                    "description": "Cookie configures the session cookie used for client identification.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.DestinationPinCookie"
+                        }
+                    ]
+                }
+            }
+        },
         "respond.ErrorBody": {
             "type": "object",
             "properties": {
@@ -2995,7 +3129,7 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "localhost:8080",
 	BasePath:         "/",
 	Schemes:          []string{"http", "https"},
-	Title:            "Rutoso API",
+	Title:            "Vrata API",
 	Description:      "Programmable HTTP reverse proxy. Manage routes, destinations,\nlisteners, and middlewares via REST API. Changes apply instantly.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,

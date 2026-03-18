@@ -1,4 +1,4 @@
-// Package middleware provides HTTP middleware for the Rutoso REST API.
+// Package middleware provides HTTP middleware for the Vrata REST API.
 package middleware
 
 import (

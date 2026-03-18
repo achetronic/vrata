@@ -1,4 +1,4 @@
-// Package model defines the core domain types used throughout Rutoso.
+// Package model defines the core domain types used throughout Vrata.
 package model
 
 // MiddlewareType identifies which middleware behaviour a Middleware entity configures.
@@ -293,7 +293,7 @@ type ExtProcConfig struct {
 	// and the request continues normally.
 	DisableReject bool `json:"disableReject,omitempty" yaml:"disableReject,omitempty"`
 
-	// ObserveMode enables fire-and-forget mode. When enabled, Rutoso sends
+	// ObserveMode enables fire-and-forget mode. When enabled, Vrata sends
 	// phases to the processor but does not wait for responses. Useful for
 	// logging, auditing, or analytics processors.
 	ObserveMode *ObserveModeConfig `json:"observeMode,omitempty" yaml:"observeMode,omitempty"`
@@ -390,7 +390,7 @@ type MutationRules struct {
 	DenyHeaders []string `json:"denyHeaders,omitempty" yaml:"denyHeaders,omitempty"`
 }
 
-// ForwardRules restricts which request headers Rutoso sends to the
+// ForwardRules restricts which request headers Vrata sends to the
 // external processor. Both lists use exact header name matching (case-insensitive).
 type ForwardRules struct {
 	// AllowHeaders lists header names that are forwarded to the processor.

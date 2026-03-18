@@ -53,7 +53,21 @@ type Route struct {
 	MiddlewareOverrides map[string]MiddlewareOverride `json:"middlewareOverrides,omitempty" yaml:"middlewareOverrides,omitempty"`
 }
 
-// ForwardAction groups all configuration that controls how Rutoso forwards
+// DestinationLBPolicy is the algorithm used to select which Destination
+// receives each request (level 1 — before endpoint selection).
+type DestinationLBPolicy string
+
+const (
+	// DestinationLBWeightedRandom picks a destination by weighted random.
+	// This is the default when DestinationBalancing is nil.
+	DestinationLBWeightedRandom DestinationLBPolicy = "WEIGHTED_RANDOM"
+
+	// DestinationLBWeightedConsistentHash uses a weighted consistent hash ring
+	// with a session cookie to pin clients to the same destination.
+	DestinationLBWeightedConsistentHash DestinationLBPolicy = "WEIGHTED_CONSISTENT_HASH"
+)
+
+// ForwardAction groups all configuration that controls how Vrata forwards
 // a matched request to upstream Destinations.
 type ForwardAction struct {
 	// Destinations lists the upstream Destinations for this route.
@@ -61,6 +75,10 @@ type ForwardAction struct {
 	// Weights across all destinations must sum to 100 when more than one
 	// is defined. If only one destination is provided its weight is ignored.
 	Destinations []DestinationRef `json:"destinations" yaml:"destinations"`
+
+	// DestinationBalancing controls how Vrata selects which Destination
+	// receives each request (level 1). When nil, WEIGHTED_RANDOM is used.
+	DestinationBalancing *DestinationBalancing `json:"destinationBalancing,omitempty" yaml:"destinationBalancing,omitempty"`
 
 	// Timeouts controls how long the request is allowed to take.
 	Timeouts *RouteTimeouts `json:"timeouts,omitempty" yaml:"timeouts,omitempty"`
@@ -76,55 +94,47 @@ type ForwardAction struct {
 	// its response is discarded and never affects the client.
 	Mirror *RouteMirror `json:"mirror,omitempty" yaml:"mirror,omitempty"`
 
-	// HashPolicy controls how Rutoso computes the consistent-hash key for
-	// sticky sessions. Only relevant when the Destination uses RING_HASH or
-	// MAGLEV balancing (configured in Destination.Options.Balancing).
-	//
-	// This field lives on the route — not on the Destination — because Rutoso
-	// evaluates hash_policy at routing time using request attributes (headers,
-	// cookies, client IP) that are only available in the RouteAction context.
-	// The Destination defines *which algorithm* and ring parameters to use;
-	// the route defines *what request data* feeds the hash function.
-	// Both sides must be configured for sticky sessions to work.
-	//
-	// Entries are evaluated in order; the first one that produces a value wins.
-	// Evaluated at routing time before selecting an endpoint.
-	HashPolicy []HashPolicy `json:"hashPolicy,omitempty" yaml:"hashPolicy,omitempty"`
-
-
 	// MaxGRPCTimeout caps the timeout that a gRPC client can request via
-	// the grpc-timeout header. If the client asks for more, Rutoso clamps
+	// the grpc-timeout header. If the client asks for more, Vrata clamps
 	// it to this value. Accepts Go duration strings (e.g. "30s").
 	MaxGRPCTimeout string `json:"maxGrpcTimeout,omitempty" yaml:"maxGrpcTimeout,omitempty"`
-
-	// DestinationPinning enables sticky destination selection for canary
-	// deployments. When enabled, the first request uses weighted selection
-	// to pick a destination; subsequent requests from the same client are
-	// pinned to that destination via a session cookie and a weighted
-	// consistent hash. All proxies compute the same result deterministically
-	// from the snapshot — no shared state required.
-	DestinationPinning *DestinationPinning `json:"destinationPinning,omitempty" yaml:"destinationPinning,omitempty"`
 }
 
-// DestinationPinning configures sticky destination selection. Once a client
-// is assigned to a destination, it stays there until the cookie expires or
-// the destination is removed from the destinations list.
-type DestinationPinning struct {
-	// CookieName is the name of the session cookie that identifies the client.
-	// All routes sharing the same cookie name share the same session ID.
-	// Default: "_vrata_pin".
-	CookieName string `json:"cookieName,omitempty" yaml:"cookieName,omitempty"`
+// DestinationBalancing controls the algorithm for selecting which Destination
+// receives each request. The algorithm field selects the strategy;
+// algorithm-specific parameters live in the corresponding nested struct.
+type DestinationBalancing struct {
+	// Algorithm selects the destination selection policy.
+	// Default: WEIGHTED_RANDOM.
+	Algorithm DestinationLBPolicy `json:"algorithm" yaml:"algorithm"`
+
+	// WeightedConsistentHash holds parameters for WEIGHTED_CONSISTENT_HASH.
+	// Only used when Algorithm is WEIGHTED_CONSISTENT_HASH.
+	WeightedConsistentHash *WeightedConsistentHashOptions `json:"weightedConsistentHash,omitempty" yaml:"weightedConsistentHash,omitempty"`
+}
+
+// WeightedConsistentHashOptions configures sticky destination selection.
+// A session cookie identifies the client; the hash of
+// (sessionID + routeID) determines the destination.
+type WeightedConsistentHashOptions struct {
+	// Cookie configures the session cookie used for client identification.
+	Cookie *DestinationPinCookie `json:"cookie,omitempty" yaml:"cookie,omitempty"`
+}
+
+// DestinationPinCookie configures the session cookie for destination pinning.
+type DestinationPinCookie struct {
+	// Name is the cookie name. Default: "_vrata_destination_pin".
+	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 
 	// TTL is the lifetime of the session cookie. Accepts Go duration strings
-	// (e.g. "1h", "24h"). When the cookie expires, the client goes through
-	// weighted selection again. Default: "1h".
+	// (e.g. "1h", "24h"). Default: "1h".
 	TTL string `json:"ttl,omitempty" yaml:"ttl,omitempty"`
 }
 
 // RouteTimeouts controls how long a request is allowed to take.
 type RouteTimeouts struct {
 	// Request is the total time the entire request may take from the moment
-	// Rutoso receives the first byte from the client until the response is
+	// Vrata receives the first byte from the client until the response is
 	// fully sent. Accepts Go duration strings (e.g. "30s", "1m").
 	Request string `json:"request,omitempty" yaml:"request,omitempty"`
 

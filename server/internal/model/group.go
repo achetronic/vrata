@@ -1,4 +1,4 @@
-// Package model defines the core domain types used throughout Rutoso.
+// Package model defines the core domain types used throughout Vrata.
 // These are pure data structures with no I/O or business logic.
 package model
 
@@ -70,7 +70,7 @@ type RouteGroup struct {
 	// ForwardAction.Retry. Maps to VirtualHost.retry_policy.
 	RetryDefault *RouteRetry `json:"retryDefault,omitempty" yaml:"retryDefault,omitempty"`
 
-	// IncludeAttemptCount makes Rutoso add the X-Request-Attempt-Count header
+	// IncludeAttemptCount makes Vrata add the X-Request-Attempt-Count header
 	// to upstream requests, indicating how many times the request has been
 	// attempted (including the original). Maps to
 	// VirtualHost.include_request_attempt_count.

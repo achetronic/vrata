@@ -44,10 +44,7 @@ func TestE2E_Proxy_DestinationPinning(t *testing.T) {
 				{"destinationId": destA, "weight": 50},
 				{"destinationId": destB, "weight": 50},
 			},
-			"destinationPinning": map[string]any{
-				"cookieName": "_vrata_pin",
-				"ttl":        "1h",
-			},
+			"destinationBalancing": destBalancing("_vrata_pin", "1h"),
 		},
 	})
 	defer apiDelete(t, "/routes/"+id(route))
@@ -87,10 +84,7 @@ func TestE2E_Proxy_DestinationPinningWeightRespected(t *testing.T) {
 				{"destinationId": destA, "weight": 90},
 				{"destinationId": destB, "weight": 10},
 			},
-			"destinationPinning": map[string]any{
-				"cookieName": "_vrata_pinw",
-				"ttl":        "1h",
-			},
+			"destinationBalancing": destBalancing("_vrata_pinw", "1h"),
 		},
 	})
 	defer apiDelete(t, "/routes/"+id(route))
@@ -129,7 +123,7 @@ func TestE2E_Proxy_DestinationPinningDestinationRemoved(t *testing.T) {
 				{"destinationId": destA, "weight": 50},
 				{"destinationId": destB, "weight": 50},
 			},
-			"destinationPinning": map[string]any{"cookieName": "_vrata_pinr", "ttl": "1h"},
+			"destinationBalancing": destBalancing("_vrata_pinr", "1h"),
 		},
 	})
 	routeID := id(route)
@@ -154,7 +148,7 @@ func TestE2E_Proxy_DestinationPinningDestinationRemoved(t *testing.T) {
 			"destinations": []map[string]any{
 				{"destinationId": remaining, "weight": 100},
 			},
-			"destinationPinning": map[string]any{"cookieName": "_vrata_pinr", "ttl": "1h"},
+			"destinationBalancing": destBalancing("_vrata_pinr", "1h"),
 		},
 	})
 	snapID2 := activateSnapshot(t)
@@ -180,13 +174,13 @@ func TestE2E_Proxy_DestinationPinningMultipleRoutes(t *testing.T) {
 	destB := createDestination(t, "e2e-pinm-b", upB.host(), upB.port())
 	defer apiDelete(t, "/destinations/"+destB)
 
-	pinCfg := map[string]any{"cookieName": "_vrata_pinm", "ttl": "1h"}
+	pinCfg := destBalancing("_vrata_pinm", "1h")
 
 	_, route1 := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-pinm1", "match": map[string]any{"pathPrefix": "/e2e-pinm1"},
 		"forward": map[string]any{
 			"destinations":           []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
-			"destinationPinning": pinCfg,
+			"destinationBalancing": pinCfg,
 		},
 	})
 	defer apiDelete(t, "/routes/"+id(route1))
@@ -195,7 +189,7 @@ func TestE2E_Proxy_DestinationPinningMultipleRoutes(t *testing.T) {
 		"name": "e2e-pinm2", "match": map[string]any{"pathPrefix": "/e2e-pinm2"},
 		"forward": map[string]any{
 			"destinations":           []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
-			"destinationPinning": pinCfg,
+			"destinationBalancing": pinCfg,
 		},
 	})
 	defer apiDelete(t, "/routes/"+id(route2))

@@ -18,10 +18,11 @@ SWAG_FLAGS  := --generalInfo main.go \
 
 .PHONY: build docs docker-build docker-push run clean test e2e e2e-cluster e2e-all proto
 
-KIND_CLUSTER   := rutoso-dev
+KIND_CLUSTER   := vrata-dev
 KIND_IMAGE     := vrata:e2e-cluster
 HELM_RELEASE   := vrata-e2e
 HELM_NAMESPACE := vrata-e2e
+HELM_CHART     := charts/vrata
 HELM_NODEPORT  := 31081
 HELM_VALUES    := $(HELM_CHART)/ci/kind-values.yaml
 KIND_NODE_IP   := $(shell kubectl --context kind-$(KIND_CLUSTER) get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null)
@@ -49,7 +50,7 @@ docker-push:
 
 ## run: build and run with the default config
 ##
-##   Rutoso starts as both:
+##   Vrata starts as both:
 ##     - Management API on the configured address (default :8080)
 ##     - Proxy on whatever listeners you create via the API
 ##
@@ -74,17 +75,24 @@ test:
 ## e2e: run proxy e2e tests
 ##
 ##   Requires:
-##     - Control plane running on localhost:8080 (make run)
+##     - Control plane running on localhost:8080  (make run)
 ##     - Proxy running on localhost:3000
+##     - Podinfo accessible on localhost:9898    (make port-forward-podinfo &)
 ##
-##   Run all e2e tests except cluster (kind not required):
 e2e:
 	cd $(SERVER_DIR) && $(GO) test ./test/e2e/ -v -timeout 300s -count=1 -run 'TestE2E_'
+
+## port-forward-podinfo: forward podinfo from kind to localhost:9898 (needed for make e2e)
+port-forward-podinfo: _check-kind
+	kubectl --context kind-$(KIND_CLUSTER) -n application-01 \
+		wait --for=condition=Available deployment/application-podinfo --timeout=60s
+	kubectl --context kind-$(KIND_CLUSTER) -n application-01 \
+		port-forward svc/application-podinfo 9898:9898
 
 ## e2e-cluster: run Raft cluster e2e tests against kind
 ##
 ##   Requires: kind, kubectl, helm, docker
-##   Cluster name: rutoso-dev (must exist)
+##   Cluster name: vrata-dev (must exist)
 e2e-cluster: _check-kind build
 	@echo "→ Building cluster image..."
 	docker build -t $(KIND_IMAGE) .
@@ -100,6 +108,7 @@ e2e-cluster: _check-kind build
 		CLUSTER_NAMESPACE=$(HELM_NAMESPACE) \
 		HELM_RELEASE=$(HELM_RELEASE) \
 		CLUSTER_NODEPORT=$(HELM_NODEPORT) \
+		KUBE_CONTEXT=kind-$(KIND_CLUSTER) \
 		$(GO) test ./test/e2e/ -v -timeout 180s -count=1 -tags kind -run 'TestCluster_'
 
 ## e2e-all: run all e2e tests (proxy + cluster)

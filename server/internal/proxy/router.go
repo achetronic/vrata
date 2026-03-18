@@ -1,5 +1,5 @@
-// Package proxy implements a programmable HTTP reverse proxy for Rutoso.
-// Rutoso is a programmable reverse proxy. Configuration is applied in real
+// Package proxy implements a programmable HTTP reverse proxy for Vrata.
+// Vrata is a programmable reverse proxy. Configuration is applied in real
 // time via atomic swap of the routing table — no restarts, no file generation.
 package proxy
 

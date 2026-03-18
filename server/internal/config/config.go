@@ -1,4 +1,4 @@
-// Package config handles loading and validating the Rutoso configuration file.
+// Package config handles loading and validating the Vrata configuration file.
 package config
 
 import (
@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Mode determines how the Rutoso process operates.
+// Mode determines how the Vrata process operates.
 type Mode string
 
 const (
@@ -22,7 +22,7 @@ const (
 	ModeProxy Mode = "proxy"
 )
 
-// Config holds all runtime configuration for Rutoso.
+// Config holds all runtime configuration for Vrata.
 type Config struct {
 	// Mode selects the operating mode. Default: "controlplane".
 	Mode Mode `yaml:"mode"`
@@ -81,7 +81,7 @@ type ClusterDiscovery struct {
 	// DNS is a hostname that resolves to all cluster nodes via A or AAAA
 	// records. Typical value in Kubernetes is the headless Service FQDN:
 	// "vrata-headless.namespace.svc.cluster.local".
-	// Rutoso resolves this name periodically and uses the returned IPs
+	// Vrata resolves this name periodically and uses the returned IPs
 	// combined with BindAddress port as the peer list.
 	DNS string `yaml:"dns"`
 }

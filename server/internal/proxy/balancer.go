@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	cryptorand "crypto/rand"
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/achetronic/vrata/internal/model"
 )
@@ -18,6 +20,13 @@ import (
 // Balancer selects an upstream from a set of dests.
 type Balancer interface {
 	Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream
+}
+
+// HashBalancer is implemented by consistent hash balancers that can accept
+// a pre-computed hash key for deterministic endpoint selection.
+type HashBalancer interface {
+	Balancer
+	PickByHash(h uint32, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream
 }
 
 // WeightedRandomBalancer picks by weighted random.
@@ -143,6 +152,10 @@ func (rh *RingHashBalancer) Build(dests []model.DestinationRef) {
 }
 
 func (rh *RingHashBalancer) Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+	return rh.PickByHash(hashRequest(r), dests, upstreams)
+}
+
+func (rh *RingHashBalancer) PickByHash(h uint32, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
 
@@ -150,7 +163,6 @@ func (rh *RingHashBalancer) Pick(r *http.Request, dests []model.DestinationRef, 
 		return SelectDestination(dests, upstreams)
 	}
 
-	h := hashRequest(r)
 	idx := sort.Search(len(rh.ring), func(i int) bool {
 		return rh.ring[i].hash >= h
 	})
@@ -232,6 +244,10 @@ func (m *MaglevBalancer) Build(dests []model.DestinationRef) {
 }
 
 func (m *MaglevBalancer) Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+	return m.PickByHash(hashRequest(r), dests, upstreams)
+}
+
+func (m *MaglevBalancer) PickByHash(h uint32, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -239,7 +255,6 @@ func (m *MaglevBalancer) Pick(r *http.Request, dests []model.DestinationRef, ups
 		return SelectDestination(dests, upstreams)
 	}
 
-	h := hashRequest(r)
 	idx := m.table[h%uint32(len(m.table))]
 	if idx < 0 || idx >= len(m.dests) {
 		return SelectDestination(dests, upstreams)
@@ -257,23 +272,44 @@ func hashRequest(r *http.Request) uint32 {
 }
 
 // hashRequestWithPolicy computes a hash using explicit hash policies.
-func hashRequestWithPolicy(r *http.Request, policies []model.HashPolicy) uint32 {
+// The destID is appended to the hash input to isolate endpoint selection
+// per destination — the same cookie value produces different hashes for
+// different destinations, preventing cross-destination correlation.
+func hashRequestWithPolicy(r *http.Request, w http.ResponseWriter, policies []model.HashPolicy, destID string) uint32 {
 	for _, hp := range policies {
 		switch {
-		case hp.Header != "":
-			if val := r.Header.Get(hp.Header); val != "" {
-				return crc32.ChecksumIEEE([]byte(val))
+		case hp.Header != nil && hp.Header.Name != "":
+			if val := r.Header.Get(hp.Header.Name); val != "" {
+				return crc32.ChecksumIEEE([]byte(val + ":" + destID))
 			}
-		case hp.Cookie != "":
-			if c, err := r.Cookie(hp.Cookie); err == nil {
-				return crc32.ChecksumIEEE([]byte(c.Value))
+		case hp.Cookie != nil && hp.Cookie.Name != "":
+			cookieName := hp.Cookie.Name
+			if c, err := r.Cookie(cookieName); err == nil {
+				return crc32.ChecksumIEEE([]byte(c.Value + ":" + destID))
 			}
-		case hp.SourceIP:
+			sid := generateEndpointSessionID()
+			ttl := parseTTL(hp.Cookie.TTL, time.Hour)
+			http.SetCookie(w, &http.Cookie{
+				Name:     cookieName,
+				Value:    sid,
+				Path:     "/",
+				MaxAge:   int(ttl.Seconds()),
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+			})
+			return crc32.ChecksumIEEE([]byte(sid + ":" + destID))
+		case hp.SourceIP != nil && hp.SourceIP.Enabled:
 			host, _, _ := net.SplitHostPort(r.RemoteAddr)
-			return crc32.ChecksumIEEE([]byte(host))
+			return crc32.ChecksumIEEE([]byte(host + ":" + destID))
 		}
 	}
-	// Fallback: client IP.
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return crc32.ChecksumIEEE([]byte(host))
+	return crc32.ChecksumIEEE([]byte(host + ":" + destID))
+}
+
+// generateEndpointSessionID creates a random session identifier for endpoint pinning.
+func generateEndpointSessionID() string {
+	b := make([]byte, 16)
+	cryptorand.Read(b)
+	return fmt.Sprintf("%x", b)
 }

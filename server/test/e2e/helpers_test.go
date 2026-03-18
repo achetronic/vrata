@@ -185,3 +185,25 @@ func (u *testUpstream) host() string {
 func (u *testUpstream) port() int {
 	return u.Listener.Addr().(*net.TCPAddr).Port
 }
+
+// destBalancing builds the destinationBalancing JSON structure for the new API model.
+func destBalancing(cookieName, ttl string) map[string]any {
+	result := map[string]any{
+		"algorithm": "WEIGHTED_CONSISTENT_HASH",
+	}
+	wch := map[string]any{}
+	if cookieName != "" || ttl != "" {
+		cookie := map[string]any{}
+		if cookieName != "" {
+			cookie["name"] = cookieName
+		}
+		if ttl != "" {
+			cookie["ttl"] = ttl
+		}
+		wch["cookie"] = cookie
+	}
+	if len(wch) > 0 {
+		result["weightedConsistentHash"] = wch
+	}
+	return result
+}

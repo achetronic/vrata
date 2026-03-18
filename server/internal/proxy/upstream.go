@@ -29,6 +29,26 @@ type Upstream struct {
 	lastHealthAt     time.Time
 }
 
+// EndpointHashPolicies returns the hash policies configured for endpoint
+// balancing, or nil if none are configured.
+func (u *Upstream) EndpointHashPolicies() []model.HashPolicy {
+	if u.Destination.Options == nil || u.Destination.Options.EndpointBalancing == nil {
+		return nil
+	}
+	eb := u.Destination.Options.EndpointBalancing
+	switch eb.Algorithm {
+	case model.EndpointLBRingHash:
+		if eb.RingHash != nil {
+			return eb.RingHash.HashPolicy
+		}
+	case model.EndpointLBMaglev:
+		if eb.Maglev != nil {
+			return eb.Maglev.HashPolicy
+		}
+	}
+	return nil
+}
+
 func (u *Upstream) lastHealthCheck() time.Time {
 	u.mu.RLock()
 	defer u.mu.RUnlock()
@@ -93,30 +113,31 @@ func NewUpstream(d model.Destination) (*Upstream, error) {
 
 // buildBalancer creates the appropriate balancer for a destination.
 func buildBalancer(d model.Destination) Balancer {
-	if d.Options == nil || d.Options.Balancing == nil {
+	if d.Options == nil || d.Options.EndpointBalancing == nil {
 		return nil // default weighted random handled by SelectDestination
 	}
-	switch d.Options.Balancing.Algorithm {
-	case model.LBPolicyRingHash:
+	eb := d.Options.EndpointBalancing
+	switch eb.Algorithm {
+	case model.EndpointLBRingHash:
 		min, max := 1024, 8388608
-		if d.Options.Balancing.RingSize != nil {
-			if d.Options.Balancing.RingSize.Min > 0 {
-				min = int(d.Options.Balancing.RingSize.Min)
+		if eb.RingHash != nil && eb.RingHash.RingSize != nil {
+			if eb.RingHash.RingSize.Min > 0 {
+				min = int(eb.RingHash.RingSize.Min)
 			}
-			if d.Options.Balancing.RingSize.Max > 0 {
-				max = int(d.Options.Balancing.RingSize.Max)
+			if eb.RingHash.RingSize.Max > 0 {
+				max = int(eb.RingHash.RingSize.Max)
 			}
 		}
 		return NewRingHashBalancer(min, max)
-	case model.LBPolicyMaglev:
+	case model.EndpointLBMaglev:
 		size := 65537
-		if d.Options.Balancing.MaglevTableSize > 0 {
-			size = int(d.Options.Balancing.MaglevTableSize)
+		if eb.Maglev != nil && eb.Maglev.TableSize > 0 {
+			size = int(eb.Maglev.TableSize)
 		}
 		return NewMaglevBalancer(size)
-	case model.LBPolicyLeastRequest:
+	case model.EndpointLBLeastRequest:
 		return NewLeastRequestBalancer()
-	case model.LBPolicyRandom:
+	case model.EndpointLBRandom:
 		return RandomBalancer{}
 	default:
 		return nil

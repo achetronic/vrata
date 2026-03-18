@@ -40,22 +40,6 @@ definitions:
           type: string
         type: object
     type: object
-  model.BalancingOptions:
-    properties:
-      algorithm:
-        allOf:
-        - $ref: '#/definitions/model.LBPolicy'
-        description: 'Algorithm selects the load-balancing policy. Default: ROUND_ROBIN.'
-      maglevTableSize:
-        description: |-
-          MaglevTableSize sets the Maglev hash table size.
-          Must be a prime number. Default: 65537. Only used with MAGLEV.
-        type: integer
-      ringSize:
-        allOf:
-        - $ref: '#/definitions/model.RingSizeOptions'
-        description: RingSize tunes the consistent hash ring. Only used with RING_HASH.
-    type: object
   model.BodyMode:
     enum:
     - none
@@ -151,6 +135,21 @@ definitions:
         description: Port is the upstream TCP port.
         type: integer
     type: object
+  model.DestinationBalancing:
+    properties:
+      algorithm:
+        allOf:
+        - $ref: '#/definitions/model.DestinationLBPolicy'
+        description: |-
+          Algorithm selects the destination selection policy.
+          Default: WEIGHTED_RANDOM.
+      weightedConsistentHash:
+        allOf:
+        - $ref: '#/definitions/model.WeightedConsistentHashOptions'
+        description: |-
+          WeightedConsistentHash holds parameters for WEIGHTED_CONSISTENT_HASH.
+          Only used when Algorithm is WEIGHTED_CONSISTENT_HASH.
+    type: object
   model.DestinationDiscovery:
     properties:
       type:
@@ -158,12 +157,16 @@ definitions:
         - $ref: '#/definitions/model.DiscoveryType'
         description: Type selects the discovery mechanism. Currently only "kubernetes".
     type: object
+  model.DestinationLBPolicy:
+    enum:
+    - WEIGHTED_RANDOM
+    - WEIGHTED_CONSISTENT_HASH
+    type: string
+    x-enum-varnames:
+    - DestinationLBWeightedRandom
+    - DestinationLBWeightedConsistentHash
   model.DestinationOptions:
     properties:
-      balancing:
-        allOf:
-        - $ref: '#/definitions/model.BalancingOptions'
-        description: Balancing controls the load-balancing algorithm and its parameters.
       circuitBreaker:
         allOf:
         - $ref: '#/definitions/model.CircuitBreakerOptions'
@@ -178,7 +181,16 @@ definitions:
         - $ref: '#/definitions/model.DestinationDiscovery'
         description: |-
           Discovery enables dynamic endpoint resolution.
-          When nil, Rutoso connects directly to host:port.
+          When nil, Vrata connects directly to host:port.
+      endpointBalancing:
+        allOf:
+        - $ref: '#/definitions/model.EndpointBalancing'
+        description: |-
+          EndpointBalancing controls how Vrata selects an endpoint (pod) within
+          this Destination when multiple endpoints are available via discovery.
+          Only relevant when Discovery is configured (e.g. Kubernetes).
+          When nil or when there is only one endpoint, traffic goes directly
+          to host:port.
       healthCheck:
         allOf:
         - $ref: '#/definitions/model.HealthCheckOptions'
@@ -202,19 +214,15 @@ definitions:
         - $ref: '#/definitions/model.TLSOptions'
         description: TLS controls upstream TLS / mTLS configuration.
     type: object
-  model.DestinationPinning:
+  model.DestinationPinCookie:
     properties:
-      cookieName:
-        description: |-
-          CookieName is the name of the session cookie that identifies the client.
-          All routes sharing the same cookie name share the same session ID.
-          Default: "_vrata_pin".
+      name:
+        description: 'Name is the cookie name. Default: "_vrata_destination_pin".'
         type: string
       ttl:
         description: |-
           TTL is the lifetime of the session cookie. Accepts Go duration strings
-          (e.g. "1h", "24h"). When the cookie expires, the client goes through
-          weighted selection again. Default: "1h".
+          (e.g. "1h", "24h"). Default: "1h".
         type: string
     type: object
   model.DestinationRef:
@@ -234,6 +242,46 @@ definitions:
     type: string
     x-enum-varnames:
     - DiscoveryTypeKubernetes
+  model.EndpointBalancing:
+    properties:
+      algorithm:
+        allOf:
+        - $ref: '#/definitions/model.EndpointLBPolicy'
+        description: 'Algorithm selects the endpoint load-balancing policy. Default:
+          ROUND_ROBIN.'
+      leastRequest:
+        allOf:
+        - $ref: '#/definitions/model.LeastRequestOptions'
+        description: |-
+          LeastRequest holds parameters for the LEAST_REQUEST algorithm.
+          Only used when Algorithm is LEAST_REQUEST.
+      maglev:
+        allOf:
+        - $ref: '#/definitions/model.MaglevOptions'
+        description: |-
+          Maglev holds parameters for the MAGLEV algorithm.
+          Only used when Algorithm is MAGLEV.
+      ringHash:
+        allOf:
+        - $ref: '#/definitions/model.RingHashOptions'
+        description: |-
+          RingHash holds parameters for the RING_HASH algorithm.
+          Only used when Algorithm is RING_HASH.
+    type: object
+  model.EndpointLBPolicy:
+    enum:
+    - ROUND_ROBIN
+    - LEAST_REQUEST
+    - RING_HASH
+    - MAGLEV
+    - RANDOM
+    type: string
+    x-enum-varnames:
+    - EndpointLBRoundRobin
+    - EndpointLBLeastRequest
+    - EndpointLBRingHash
+    - EndpointLBMaglev
+    - EndpointLBRandom
   model.ExtAuthzConfig:
     properties:
       destinationId:
@@ -358,7 +406,7 @@ definitions:
         allOf:
         - $ref: '#/definitions/model.ObserveModeConfig'
         description: |-
-          ObserveMode enables fire-and-forget mode. When enabled, Rutoso sends
+          ObserveMode enables fire-and-forget mode. When enabled, Vrata sends
           phases to the processor but does not wait for responses. Useful for
           logging, auditing, or analytics processors.
       phases:
@@ -424,16 +472,12 @@ definitions:
     type: object
   model.ForwardAction:
     properties:
-      destinationPinning:
+      destinationBalancing:
         allOf:
-        - $ref: '#/definitions/model.DestinationPinning'
+        - $ref: '#/definitions/model.DestinationBalancing'
         description: |-
-          DestinationPinning enables sticky destination selection for canary
-          deployments. When enabled, the first request uses weighted selection
-          to pick a destination; subsequent requests from the same client are
-          pinned to that destination via a session cookie and a weighted
-          consistent hash. All proxies compute the same result deterministically
-          from the snapshot — no shared state required.
+          DestinationBalancing controls how Vrata selects which Destination
+          receives each request (level 1). When nil, WEIGHTED_RANDOM is used.
       destinations:
         description: |-
           Destinations lists the upstream Destinations for this route.
@@ -443,28 +487,10 @@ definitions:
         items:
           $ref: '#/definitions/model.DestinationRef'
         type: array
-      hashPolicy:
-        description: |-
-          HashPolicy controls how Rutoso computes the consistent-hash key for
-          sticky sessions. Only relevant when the Destination uses RING_HASH or
-          MAGLEV balancing (configured in Destination.Options.Balancing).
-
-          This field lives on the route — not on the Destination — because Rutoso
-          evaluates hash_policy at routing time using request attributes (headers,
-          cookies, client IP) that are only available in the RouteAction context.
-          The Destination defines *which algorithm* and ring parameters to use;
-          the route defines *what request data* feeds the hash function.
-          Both sides must be configured for sticky sessions to work.
-
-          Entries are evaluated in order; the first one that produces a value wins.
-          Evaluated at routing time before selecting an endpoint.
-        items:
-          $ref: '#/definitions/model.HashPolicy'
-        type: array
       maxGrpcTimeout:
         description: |-
           MaxGRPCTimeout caps the timeout that a gRPC client can request via
-          the grpc-timeout header. If the client asks for more, Rutoso clamps
+          the grpc-timeout header. If the client asks for more, Vrata clamps
           it to this value. Accepts Go duration strings (e.g. "30s").
         type: string
       mirror:
@@ -507,17 +533,41 @@ definitions:
   model.HashPolicy:
     properties:
       cookie:
-        description: Cookie uses the named cookie as the hash key.
-        type: string
-      cookieTtl:
-        description: CookieTTL is the TTL for auto-generated sticky cookies. Accepts
-          Go durations.
-        type: string
+        allOf:
+        - $ref: '#/definitions/model.HashPolicyCookie'
+        description: |-
+          Cookie uses the named cookie as the hash key.
+          If the cookie does not exist, Vrata generates it with the given TTL.
       header:
+        allOf:
+        - $ref: '#/definitions/model.HashPolicyHeader'
         description: Header uses the named request header as the hash key.
-        type: string
       sourceIP:
+        allOf:
+        - $ref: '#/definitions/model.HashPolicySourceIP'
         description: SourceIP uses the client IP as the hash key.
+    type: object
+  model.HashPolicyCookie:
+    properties:
+      name:
+        description: 'Name is the cookie name. Default: "_vrata_endpoint_pin".'
+        type: string
+      ttl:
+        description: |-
+          TTL is the lifetime of the auto-generated cookie.
+          Accepts Go duration strings (e.g. "1h"). Default: "1h".
+        type: string
+    type: object
+  model.HashPolicyHeader:
+    properties:
+      name:
+        description: Name is the header name to hash on.
+        type: string
+    type: object
+  model.HashPolicySourceIP:
+    properties:
+      enabled:
+        description: Enabled must be true to activate source IP hashing.
         type: boolean
     type: object
   model.HeaderMatcher:
@@ -687,20 +737,15 @@ definitions:
           type: string
         type: array
     type: object
-  model.LBPolicy:
-    enum:
-    - ROUND_ROBIN
-    - LEAST_REQUEST
-    - RING_HASH
-    - MAGLEV
-    - RANDOM
-    type: string
-    x-enum-varnames:
-    - LBPolicyRoundRobin
-    - LBPolicyLeastRequest
-    - LBPolicyRingHash
-    - LBPolicyMaglev
-    - LBPolicyRandom
+  model.LeastRequestOptions:
+    properties:
+      choiceCount:
+        description: |-
+          ChoiceCount is the number of random choices to consider.
+          The endpoint with the fewest active requests among those chosen wins.
+          Default: 2 (power of two choices).
+        type: integer
+    type: object
   model.Listener:
     properties:
       address:
@@ -711,7 +756,7 @@ definitions:
       http2:
         description: |-
           HTTP2 enables HTTP/2 on this listener. Required for gRPC clients.
-          With TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Rutoso
+          With TLS, Go enables HTTP/2 automatically. Without TLS (h2c), Vrata
           enables h2c upgrade support.
         type: boolean
       id:
@@ -760,6 +805,21 @@ definitions:
           Accepted values: "TLSv1_0", "TLSv1_1", "TLSv1_2", "TLSv1_3".
           Defaults to "TLSv1_2" if empty.
         type: string
+    type: object
+  model.MaglevOptions:
+    properties:
+      hashPolicy:
+        description: |-
+          HashPolicy defines what request data feeds the hash function.
+          Entries are evaluated in order; the first one that produces a value wins.
+        items:
+          $ref: '#/definitions/model.HashPolicy'
+        type: array
+      tableSize:
+        description: |-
+          TableSize sets the Maglev hash table size.
+          Must be a prime number. Default: 65537.
+        type: integer
     type: object
   model.MatchRule:
     properties:
@@ -1058,6 +1118,20 @@ definitions:
           can be referenced as \1, \2, etc.
         type: string
     type: object
+  model.RingHashOptions:
+    properties:
+      hashPolicy:
+        description: |-
+          HashPolicy defines what request data feeds the hash function.
+          Entries are evaluated in order; the first one that produces a value wins.
+        items:
+          $ref: '#/definitions/model.HashPolicy'
+        type: array
+      ringSize:
+        allOf:
+        - $ref: '#/definitions/model.RingSizeOptions'
+        description: RingSize tunes the consistent hash ring.
+    type: object
   model.RingSizeOptions:
     properties:
       max:
@@ -1149,7 +1223,7 @@ definitions:
         type: string
       includeAttemptCount:
         description: |-
-          IncludeAttemptCount makes Rutoso add the X-Request-Attempt-Count header
+          IncludeAttemptCount makes Vrata add the X-Request-Attempt-Count header
           to upstream requests, indicating how many times the request has been
           attempted (including the original). Maps to
           VirtualHost.include_request_attempt_count.
@@ -1309,7 +1383,7 @@ definitions:
       request:
         description: |-
           Request is the total time the entire request may take from the moment
-          Rutoso receives the first byte from the client until the response is
+          Vrata receives the first byte from the client until the response is
           fully sent. Accepts Go duration strings (e.g. "30s", "1m").
         type: string
     type: object
@@ -1424,6 +1498,13 @@ definitions:
         - $ref: '#/definitions/model.Snapshot'
         description: Snapshot holds the full configuration at the time of capture.
     type: object
+  model.WeightedConsistentHashOptions:
+    properties:
+      cookie:
+        allOf:
+        - $ref: '#/definitions/model.DestinationPinCookie'
+        description: Cookie configures the session cookie used for client identification.
+    type: object
   respond.ErrorBody:
     properties:
       error:
@@ -1434,7 +1515,7 @@ definitions:
 host: localhost:8080
 info:
   contact:
-    name: Rutoso project
+    name: Vrata project
     url: https://github.com/achetronic/vrata
   description: |-
     Programmable HTTP reverse proxy. Manage routes, destinations,
@@ -1442,7 +1523,7 @@ info:
   license:
     name: Apache 2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
-  title: Rutoso API
+  title: Vrata API
   version: "1.0"
 paths:
   /debug/config:

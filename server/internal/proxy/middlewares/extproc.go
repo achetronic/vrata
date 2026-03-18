@@ -1,4 +1,4 @@
-// Package middlewares implements HTTP middleware functions for the Rutoso proxy.
+// Package middlewares implements HTTP middleware functions for the Vrata proxy.
 // This file implements the external processor middleware, which sends HTTP
 // request and response phases to an external gRPC or HTTP service for
 // inspection, mutation, or rejection.

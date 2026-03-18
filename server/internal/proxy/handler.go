@@ -192,7 +192,7 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 // forwardHandler creates a handler that proxies to upstream destinations.
 func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, group *model.RouteGroup, routeID string) http.Handler {
 	var pinRing *destinationRing
-	if fwd.DestinationPinning != nil {
+	if fwd.DestinationBalancing != nil && fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash {
 		pinRing = buildDestinationRing(fwd.Destinations)
 	}
 
@@ -201,6 +201,19 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 		if upstream == nil {
 			http.Error(w, "no upstream available", http.StatusBadGateway)
 			return
+		}
+
+		// Level 2: endpoint selection within the chosen destination.
+		// When the destination has a consistent hash balancer (RING_HASH/MAGLEV)
+		// with hash policies, compute the hash and set any auto-generated cookies.
+		// The actual endpoint selection will apply when k8s endpoint discovery is
+		// wired (multiple endpoints per destination). For now, with a single
+		// host:port per destination, this ensures cookies are generated and the
+		// hash is computed for future use.
+		if _, ok := upstream.Balancer.(HashBalancer); ok {
+			if policies := upstream.EndpointHashPolicies(); len(policies) > 0 {
+				hashRequestWithPolicy(r, w, policies, upstream.Destination.ID)
+			}
 		}
 
 		if upstream.CircuitBreaker != nil && !upstream.CircuitBreaker.Allow() {
@@ -342,7 +355,7 @@ func pickDestination(
 	}
 
 	// Destination pinning: use weighted consistent hash with session cookie.
-	if pinRing != nil && fwd.DestinationPinning != nil {
+	if pinRing != nil && fwd.DestinationBalancing != nil && fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash {
 		return pickPinned(fwd, upstreams, r, w, routeID, pinRing, healthy)
 	}
 
@@ -361,10 +374,13 @@ func pickPinned(
 	ring *destinationRing,
 	healthy []model.DestinationRef,
 ) *Upstream {
-	cfg := fwd.DestinationPinning
-	cookieName := cfg.CookieName
-	if cookieName == "" {
-		cookieName = "_vrata_pin"
+	cookieName := "_vrata_destination_pin"
+	var ttlStr string
+	if wch := fwd.DestinationBalancing.WeightedConsistentHash; wch != nil && wch.Cookie != nil {
+		if wch.Cookie.Name != "" {
+			cookieName = wch.Cookie.Name
+		}
+		ttlStr = wch.Cookie.TTL
 	}
 
 	sid := ""
@@ -374,7 +390,7 @@ func pickPinned(
 
 	if sid == "" {
 		sid = generateSessionID()
-		ttl := parseTTL(cfg.TTL, time.Hour)
+		ttl := parseTTL(ttlStr, time.Hour)
 		http.SetCookie(w, &http.Cookie{
 			Name:     cookieName,
 			Value:    sid,

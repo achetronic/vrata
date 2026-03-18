@@ -1,6 +1,6 @@
-// Rutoso External Authorization Protocol v1
+// Vrata External Authorization Protocol v1
 //
-// This protocol defines the contract between Rutoso and an external
+// This protocol defines the contract between Vrata and an external
 // authorization service running in gRPC mode. The service receives a
 // check request with the client's request metadata and returns an
 // allow/deny decision.

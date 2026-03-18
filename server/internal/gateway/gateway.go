@@ -1,4 +1,4 @@
-// Package gateway orchestrates the bridge between the Rutoso store and the
+// Package gateway orchestrates the bridge between the Vrata store and the
 // native proxy. It subscribes to store events, rebuilds the routing table on
 // every change, and applies it to the proxy atomically.
 package gateway

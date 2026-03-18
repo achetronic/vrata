@@ -1,4 +1,4 @@
-// Package api wires together all HTTP routes and middleware for the Rutoso REST API.
+// Package api wires together all HTTP routes and middleware for the Vrata REST API.
 package api
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/achetronic/vrata/internal/store"
 )
 
-// NewRouter creates and returns the root http.Handler for the Rutoso REST API.
+// NewRouter creates and returns the root http.Handler for the Vrata REST API.
 // raftApplier is optional; pass nil when running in single-node mode.
 func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApplier) http.Handler {
 	mux := http.NewServeMux()

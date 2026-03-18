@@ -1,7 +1,7 @@
 # mode: "controlplane" (default) or "proxy"
 # - controlplane: REST API + store + gateway + proxy + SSE sync endpoint
 # - proxy: connects to a control plane via SSE, no local store or API
-mode: "${RUTOSO_MODE:-controlplane}"
+mode: "${VRATA_MODE:-controlplane}"
 
 server:
   # Address the REST API HTTP server listens on (controlplane mode only).

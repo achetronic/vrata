@@ -1,11 +1,11 @@
-// Rutoso External Processor Protocol v1
+// Vrata External Processor Protocol v1
 //
-// This protocol defines the contract between Rutoso and an external
+// This protocol defines the contract between Vrata and an external
 // processor service. The processor receives HTTP request and response
 // phases (headers, body) and can inspect, mutate, or reject them.
 //
 // Processors can be implemented in any language that supports gRPC or
-// plain HTTP. See the Rutoso documentation for implementation guides.
+// plain HTTP. See the Vrata documentation for implementation guides.
 //
 // Two transport modes are supported:
 //   - gRPC: bidirectional stream via the Processor service below.

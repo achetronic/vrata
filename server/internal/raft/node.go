@@ -1,4 +1,4 @@
-// Package raft provides Raft-based replication for the Rutoso control plane.
+// Package raft provides Raft-based replication for the Vrata control plane.
 // This file implements the cluster node: peer discovery (static or DNS),
 // Raft node lifecycle, and the TCP transport used for peer communication.
 package raft

@@ -1,11 +1,11 @@
-// Rutoso External Processor Protocol v1
+// Vrata External Processor Protocol v1
 //
-// This protocol defines the contract between Rutoso and an external
+// This protocol defines the contract between Vrata and an external
 // processor service. The processor receives HTTP request and response
 // phases (headers, body) and can inspect, mutate, or reject them.
 //
 // Processors can be implemented in any language that supports gRPC or
-// plain HTTP. See the Rutoso documentation for implementation guides.
+// plain HTTP. See the Vrata documentation for implementation guides.
 //
 // Two transport modes are supported:
 //   - gRPC: bidirectional stream via the Processor service below.
@@ -20,7 +20,7 @@ package extproc.v1;
 option go_package = "github.com/achetronic/vrata/proto/extproc/v1;extprocv1";
 
 // Processor is the gRPC service that external processors implement.
-// Rutoso opens one bidirectional stream per HTTP transaction. Each
+// Vrata opens one bidirectional stream per HTTP transaction. Each
 // stream carries the configured phases (request headers, request body,
 // response headers, response body) as sequential messages.
 service Processor {
@@ -28,10 +28,10 @@ service Processor {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Rutoso → Processor
+// Vrata → Processor
 // ─────────────────────────────────────────────────────────────────────
 
-// ProcessingRequest is sent by Rutoso to the processor for each
+// ProcessingRequest is sent by Vrata to the processor for each
 // configured phase of an HTTP transaction.
 message ProcessingRequest {
   oneof phase {
@@ -48,7 +48,7 @@ message ProcessingRequest {
     HttpBody response_body = 4;
   }
 
-  // When true, Rutoso is in observe-only mode: the processor receives
+  // When true, Vrata is in observe-only mode: the processor receives
   // data but must NOT respond. Any responses are silently ignored.
   bool observe_only = 5;
 }
@@ -79,11 +79,11 @@ message HeaderPair {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Processor → Rutoso
+// Processor → Vrata
 // ─────────────────────────────────────────────────────────────────────
 
-// ProcessingResponse is sent by the processor back to Rutoso after
-// inspecting a phase. It tells Rutoso what to do: continue (with
+// ProcessingResponse is sent by the processor back to Vrata after
+// inspecting a phase. It tells Vrata what to do: continue (with
 // optional mutations), replace the body, or reject the request.
 message ProcessingResponse {
   oneof action {
@@ -105,7 +105,7 @@ message ProcessingResponse {
   }
 }
 
-// HeadersAction tells Rutoso how to proceed after a headers phase.
+// HeadersAction tells Vrata how to proceed after a headers phase.
 message HeadersAction {
   // How to continue processing.
   ActionStatus status = 1;
@@ -121,7 +121,7 @@ message HeadersAction {
   bytes replace_body = 4;
 }
 
-// BodyAction tells Rutoso how to proceed after a body phase.
+// BodyAction tells Vrata how to proceed after a body phase.
 message BodyAction {
   // How to continue processing.
   ActionStatus status = 1;
@@ -142,7 +142,7 @@ message BodyAction {
   }
 }
 
-// RejectRequest tells Rutoso to stop processing and return a fixed
+// RejectRequest tells Vrata to stop processing and return a fixed
 // response to the client. The request never reaches the upstream.
 message RejectRequest {
   // HTTP status code to return (e.g. 403, 429).
@@ -155,7 +155,7 @@ message RejectRequest {
   bytes body = 3;
 }
 
-// ActionStatus controls how Rutoso proceeds after applying mutations.
+// ActionStatus controls how Vrata proceeds after applying mutations.
 enum ActionStatus {
   // Apply mutations and continue normal processing through remaining phases.
   CONTINUE = 0;

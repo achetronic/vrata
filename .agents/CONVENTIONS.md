@@ -1,4 +1,4 @@
-# Conventions - Rutoso
+# Conventions - Vrata
 
 ## Mandatory Patterns
 

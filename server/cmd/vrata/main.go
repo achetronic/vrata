@@ -1,16 +1,16 @@
-// Rutoso is a programmable HTTP reverse proxy with a REST API for configuration.
+// Vrata is a programmable HTTP reverse proxy with a REST API for configuration.
 // It manages routes, destinations, listeners, and middlewares — all applied in
 // real time without restarts.
 //
 // Usage:
 //
-//	vrata --config /path/to/config.yaml [--store-path /path/to/rutoso.db]
+//	vrata --config /path/to/config.yaml [--store-path /path/to/vrata.db]
 //
-//	@title			Rutoso API
+//	@title			Vrata API
 //	@version		1.0
 //	@description	Programmable HTTP reverse proxy. Manage routes, destinations,
 //	@description	listeners, and middlewares via REST API. Changes apply instantly.
-//	@contact.name	Rutoso project
+//	@contact.name	Vrata project
 //	@contact.url	https://github.com/achetronic/vrata
 //	@license.name	Apache 2.0
 //	@license.url	https://www.apache.org/licenses/LICENSE-2.0

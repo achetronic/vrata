@@ -1,4 +1,4 @@
-// Package raft provides Raft-based replication for the Rutoso control plane.
+// Package raft provides Raft-based replication for the Vrata control plane.
 // It enables multiple control plane instances to share the same configuration
 // with strong consistency — any node can accept reads and writes, and all
 // nodes converge to the same state.

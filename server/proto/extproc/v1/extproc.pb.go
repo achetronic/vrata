@@ -1,11 +1,11 @@
-// Rutoso External Processor Protocol v1
+// Vrata External Processor Protocol v1
 //
-// This protocol defines the contract between Rutoso and an external
+// This protocol defines the contract between Vrata and an external
 // processor service. The processor receives HTTP request and response
 // phases (headers, body) and can inspect, mutate, or reject them.
 //
 // Processors can be implemented in any language that supports gRPC or
-// plain HTTP. See the Rutoso documentation for implementation guides.
+// plain HTTP. See the Vrata documentation for implementation guides.
 //
 // Two transport modes are supported:
 //   - gRPC: bidirectional stream via the Processor service below.
@@ -36,7 +36,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ActionStatus controls how Rutoso proceeds after applying mutations.
+// ActionStatus controls how Vrata proceeds after applying mutations.
 type ActionStatus int32
 
 const (
@@ -87,7 +87,7 @@ func (ActionStatus) EnumDescriptor() ([]byte, []int) {
 	return file_extproc_v1_extproc_proto_rawDescGZIP(), []int{0}
 }
 
-// ProcessingRequest is sent by Rutoso to the processor for each
+// ProcessingRequest is sent by Vrata to the processor for each
 // configured phase of an HTTP transaction.
 type ProcessingRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -98,7 +98,7 @@ type ProcessingRequest struct {
 	//	*ProcessingRequest_RequestBody
 	//	*ProcessingRequest_ResponseBody
 	Phase isProcessingRequest_Phase `protobuf_oneof:"phase"`
-	// When true, Rutoso is in observe-only mode: the processor receives
+	// When true, Vrata is in observe-only mode: the processor receives
 	// data but must NOT respond. Any responses are silently ignored.
 	ObserveOnly   bool `protobuf:"varint,5,opt,name=observe_only,json=observeOnly,proto3" json:"observe_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -381,8 +381,8 @@ func (x *HeaderPair) GetValue() string {
 	return ""
 }
 
-// ProcessingResponse is sent by the processor back to Rutoso after
-// inspecting a phase. It tells Rutoso what to do: continue (with
+// ProcessingResponse is sent by the processor back to Vrata after
+// inspecting a phase. It tells Vrata what to do: continue (with
 // optional mutations), replace the body, or reject the request.
 type ProcessingResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -520,7 +520,7 @@ func (*ProcessingResponse_ResponseBody) isProcessingResponse_Action() {}
 
 func (*ProcessingResponse_Reject) isProcessingResponse_Action() {}
 
-// HeadersAction tells Rutoso how to proceed after a headers phase.
+// HeadersAction tells Vrata how to proceed after a headers phase.
 type HeadersAction struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// How to continue processing.
@@ -594,7 +594,7 @@ func (x *HeadersAction) GetReplaceBody() []byte {
 	return nil
 }
 
-// BodyAction tells Rutoso how to proceed after a body phase.
+// BodyAction tells Vrata how to proceed after a body phase.
 type BodyAction struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// How to continue processing.
@@ -708,7 +708,7 @@ func (*BodyAction_ReplaceBody) isBodyAction_BodyMutation() {}
 
 func (*BodyAction_ClearBody) isBodyAction_BodyMutation() {}
 
-// RejectRequest tells Rutoso to stop processing and return a fixed
+// RejectRequest tells Vrata to stop processing and return a fixed
 // response to the client. The request never reaches the upstream.
 type RejectRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`

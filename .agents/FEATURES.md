@@ -1,4 +1,4 @@
-# Feature Coverage Report — Rutoso
+# Feature Coverage Report — Vrata
 
 Generated: 2026-03-18 (rev 6 — all issues resolved, full audit clean)
 Method: Line-by-line source audit + unit tests + e2e tests against live cluster
@@ -60,7 +60,8 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Feature                                                 | Status | Tests                 |
 | ------------------------------------------------------- | ------ | --------------------- |
 | Weighted destination selection                          | 100%   | Unit + E2E (5000 req) |
-| Destination pinning (weighted consistent hash + cookie) | 100%   | Unit (7) + E2E (5)    |
+| Destination balancing (WEIGHTED_CONSISTENT_HASH + cookie)| 100%   | Unit (7) + E2E (5)    |
+| Endpoint balancing (RING_HASH, MAGLEV, LeastReq, etc)   | 100%   | Unit                  |
 | Path rewrite (prefix)                                   | 100%   | E2E                   |
 | Path rewrite (regex, cached)                            | 100%   | E2E                   |
 | Host rewrite                                            | 100%   | Unit                  |
@@ -184,7 +185,7 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Circuit breaker never opens                              | Critical | RecordFailure on 5xx                        |
 | Outlier detection dead code                              | Critical | Wired via Upstream.OnResponse               |
 | Idle timeout + retry = panic                             | Critical | unwrapHTTPTransport chain                   |
-| Ring hash / maglev non-functional                        | High     | Build() called from BuildTable              |
+| Ring hash / maglev Build + Pick wired                    | High     | Build() in BuildTable, PickByHash in handler |
 | Rate limiter memory leak + goroutine leak                | High     | Eviction + stop channel + cleanup on swap   |
 | JWT refresh goroutine leak                               | High     | close() channel + cleanup on swap           |
 | LeastRequest Done never called                           | High     | Wired via interface check in forwardHandler |

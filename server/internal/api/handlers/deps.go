@@ -1,4 +1,4 @@
-// Package handlers implements the HTTP handlers for the Rutoso REST API.
+// Package handlers implements the HTTP handlers for the Vrata REST API.
 // All handlers share a Dependencies struct injected at construction time.
 package handlers
 
