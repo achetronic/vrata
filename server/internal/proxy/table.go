@@ -44,6 +44,11 @@ func BuildTable(
 
 	var compiled []compiledRoute
 
+	table := &RoutingTable{
+		destinations: upstreams,
+		middlewares:  mwByID,
+	}
+
 	// Track which routes are in groups.
 	routesInGroups := make(map[string]bool)
 
@@ -56,7 +61,7 @@ func BuildTable(
 			}
 			routesInGroups[routeID] = true
 			gCopy := g
-			cr, err := compileRoute(r, &gCopy, upstreams, mwByID)
+			cr, err := compileRoute(r, &gCopy, upstreams, mwByID, table.AddCleanup)
 			if err != nil {
 				slog.Error("proxy: skipping route with compile error",
 					slog.String("route", r.Name),
@@ -74,7 +79,7 @@ func BuildTable(
 		if routesInGroups[r.ID] {
 			continue
 		}
-		cr, err := compileRoute(r, nil, upstreams, mwByID)
+		cr, err := compileRoute(r, nil, upstreams, mwByID, table.AddCleanup)
 		if err != nil {
 			slog.Error("proxy: skipping route with compile error",
 				slog.String("route", r.Name),
@@ -107,11 +112,8 @@ func BuildTable(
 		}
 	}
 
-	return &RoutingTable{
-		routes:       compiled,
-		destinations: upstreams,
-		middlewares:  mwByID,
-	}, nil
+	table.routes = compiled
+	return table, nil
 }
 
 // Upstreams returns the upstream map from the routing table.
@@ -125,6 +127,7 @@ func compileRoute(
 	g *model.RouteGroup,
 	upstreams map[string]*Upstream,
 	allMw map[string]model.Middleware,
+	onCleanup func(func()),
 ) (compiledRoute, error) {
 	cr := compiledRoute{
 		model:   r,
@@ -225,7 +228,7 @@ func compileRoute(
 	}
 
 	// Build handler with middleware chain.
-	cr.handler = buildRouteHandler(r, g, upstreams, allMw)
+	cr.handler = buildRouteHandler(r, g, upstreams, allMw, onCleanup)
 
 	return cr, nil
 }

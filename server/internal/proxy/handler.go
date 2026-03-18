@@ -20,12 +20,14 @@ import (
 )
 
 // buildRouteHandler creates the http.Handler for a route, including middleware
-// chain, forwarding, redirect, or direct response.
+// chain, forwarding, redirect, or direct response. The onCleanup function
+// registers a callback to be invoked when the routing table is replaced.
 func buildRouteHandler(
 	route model.Route,
 	group *model.RouteGroup,
 	upstreams map[string]*Upstream,
 	allMiddlewares map[string]model.Middleware,
+	onCleanup func(func()),
 ) http.Handler {
 	var handler http.Handler
 
@@ -63,8 +65,12 @@ func buildRouteHandler(
 				}
 			}
 		}
-		if m := buildMiddleware(mw, upstreams); m != nil {
+		m, cleanup := buildMiddleware(mw, upstreams)
+		if m != nil {
 			mws = append(mws, m)
+			if cleanup != nil {
+				onCleanup(cleanup)
+			}
 		}
 	}
 
@@ -98,25 +104,28 @@ func collectMiddlewareIDs(route model.Route, group *model.RouteGroup) []string {
 }
 
 // buildMiddleware creates a middleware function from a model.Middleware.
-func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) middlewares.Middleware {
+// Returns the middleware and an optional cleanup function to call when
+// the routing table is replaced.
+func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) (middlewares.Middleware, func()) {
 	services := upstreamsToServices(upstreams)
 	switch mw.Type {
 	case model.MiddlewareTypeCORS:
-		return middlewares.CORSMiddleware(mw.CORS)
+		return middlewares.CORSMiddleware(mw.CORS), nil
 	case model.MiddlewareTypeHeaders:
-		return middlewares.HeadersMiddleware(mw.Headers)
+		return middlewares.HeadersMiddleware(mw.Headers), nil
 	case model.MiddlewareTypeExtAuthz:
-		return middlewares.ExtAuthzMiddleware(mw.ExtAuthz, services)
+		return middlewares.ExtAuthzMiddleware(mw.ExtAuthz, services), nil
 	case model.MiddlewareTypeRateLimit:
-		return middlewares.RateLimitMiddleware(mw.RateLimit)
+		return middlewares.RateLimitMiddleware(mw.RateLimit), nil
 	case model.MiddlewareTypeJWT:
-		return middlewares.JWTMiddleware(mw.JWT, services)
+		m, stop := middlewares.JWTMiddlewareWithStop(mw.JWT, services)
+		return m, stop
 	case model.MiddlewareTypeAccessLog:
-		return middlewares.AccessLogMiddleware(mw.AccessLog)
+		return middlewares.AccessLogMiddleware(mw.AccessLog), nil
 	case model.MiddlewareTypeExtProc:
-		return middlewares.ExtProcMiddleware(mw.ExtProc, services)
+		return middlewares.ExtProcMiddleware(mw.ExtProc, services), nil
 	default:
-		return nil
+		return nil, nil
 	}
 }
 

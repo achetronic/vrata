@@ -25,12 +25,19 @@ import (
 	"github.com/achetronic/rutoso/internal/model"
 )
 
-// JWTMiddleware creates a middleware that validates JWT tokens by verifying
-// the signature (RSA, EC, Ed25519) against keys from JWKS (remote or inline)
-// and checking standard claims (issuer, audience, expiry).
+// JWTMiddleware creates a JWT validation middleware.
 func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware {
+	m, _ := JWTMiddlewareWithStop(cfg, services)
+	return m
+}
+
+// JWTMiddlewareWithStop creates a JWT validation middleware and returns a
+// stop function that shuts down background JWKS refresh goroutines. The
+// stop function must be called when the routing table is replaced to
+// prevent goroutine leaks.
+func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (Middleware, func()) {
 	if cfg == nil || len(cfg.Providers) == 0 {
-		return passthrough
+		return passthrough, nil
 	}
 
 	validators := make(map[string]*jwtValidator)
@@ -64,7 +71,7 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 		validators[name] = v
 	}
 
-	return func(next http.Handler) http.Handler {
+	mw := Middleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractBearerToken(r)
 			if token == "" {
@@ -137,7 +144,18 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 
 			next.ServeHTTP(w, r)
 		})
+	})
+
+	stop := func() {
+		for _, v := range validators {
+			select {
+			case v.stop <- struct{}{}:
+			default:
+			}
+		}
 	}
+
+	return mw, stop
 }
 
 type jwtHeader struct {

@@ -33,16 +33,17 @@ func AccessLogMiddleware(cfg *model.AccessLogConfig) Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestID := uuid.NewString()
 			start := time.Now()
+			originalPath := r.URL.Path
 
 			if cfg.OnRequest != nil {
-				entry := interpolateFields(cfg.OnRequest.Fields, r, 0, 0, requestID, start, 0)
+				entry := interpolateFields(cfg.OnRequest.Fields, r, originalPath, 0, 0, requestID, start, 0)
 				writeLine(writer, entry, useJSON)
 			}
 
 			m := httpsnoop.CaptureMetrics(next, w, r)
 
 			if cfg.OnResponse != nil {
-				entry := interpolateFields(cfg.OnResponse.Fields, r, m.Code, m.Written, requestID, start, m.Duration)
+				entry := interpolateFields(cfg.OnResponse.Fields, r, originalPath, m.Code, m.Written, requestID, start, m.Duration)
 				writeLine(writer, entry, useJSON)
 			}
 		})
@@ -67,6 +68,7 @@ func openLogWriter(path string) io.Writer {
 func interpolateFields(
 	fields map[string]string,
 	r *http.Request,
+	originalPath string,
 	statusCode int,
 	bytesWritten int64,
 	requestID string,
@@ -80,7 +82,7 @@ func interpolateFields(
 
 		val = strings.ReplaceAll(val, "${id}", requestID)
 		val = strings.ReplaceAll(val, "${request.method}", r.Method)
-		val = strings.ReplaceAll(val, "${request.path}", r.URL.Path)
+		val = strings.ReplaceAll(val, "${request.path}", originalPath)
 		val = strings.ReplaceAll(val, "${request.host}", reqHost(r))
 		val = strings.ReplaceAll(val, "${request.authority}", r.Host)
 		val = strings.ReplaceAll(val, "${request.clientIp}", clientIPFromRequest(r))

@@ -24,6 +24,12 @@ type RoutingTable struct {
 	routes       []compiledRoute
 	destinations map[string]*Upstream
 	middlewares  map[string]model.Middleware
+	cleanups     []func()
+}
+
+// AddCleanup registers a function to be called when this table is replaced.
+func (t *RoutingTable) AddCleanup(fn func()) {
+	t.cleanups = append(t.cleanups, fn)
 }
 
 // compiledRoute is a pre-compiled route ready for matching.
@@ -54,8 +60,14 @@ func NewRouter() *Router {
 
 // SwapTable atomically replaces the routing table. Active requests on the
 // old table are not affected — they complete with the old config.
+// Cleanup functions registered on the old table are called asynchronously.
 func (r *Router) SwapTable(t *RoutingTable) {
-	r.table.Store(t)
+	old := r.table.Swap(t)
+	if old != nil {
+		for _, fn := range old.cleanups {
+			fn()
+		}
+	}
 }
 
 // ServeHTTP dispatches the request to the matching route.
