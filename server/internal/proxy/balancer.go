@@ -55,6 +55,7 @@ type LeastRequestBalancer struct {
 	inflight map[string]int64
 }
 
+// NewLeastRequestBalancer creates a LeastRequestBalancer.
 func NewLeastRequestBalancer() *LeastRequestBalancer {
 	return &LeastRequestBalancer{inflight: make(map[string]int64)}
 }
@@ -113,6 +114,7 @@ type ringEntry struct {
 	destID string
 }
 
+// NewRingHashBalancer creates a RingHashBalancer with the given vnode range.
 func NewRingHashBalancer(minSize, maxSize int) *RingHashBalancer {
 	if minSize <= 0 {
 		minSize = 1024
@@ -180,6 +182,7 @@ type MaglevBalancer struct {
 	tableSize int
 }
 
+// NewMaglevBalancer creates a MaglevBalancer with the given table size.
 func NewMaglevBalancer(tableSize int) *MaglevBalancer {
 	if tableSize <= 0 {
 		tableSize = 65537

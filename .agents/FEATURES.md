@@ -156,25 +156,23 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 | Suite                  | Tests   | Passing |
 | ---------------------- | ------- | ------- |
-| Store (bolt + memory)  | 18      | 18      |
-| API handlers           | 33      | 33      |
+| Model                  | 3       | 3       |
+| Store (bolt + memory)  | 9       | 9       |
+| API handlers           | 34      | 34      |
 | API middleware         | 3       | 3       |
 | Respond                | 2       | 2       |
+| Config                 | 12      | 12      |
 | Gateway                | 2       | 2       |
 | K8s watcher            | 4       | 4       |
-| Session store (Redis)    | 5       | 5       |
-| Proxy router + pinning | 15      | 15      |
+| Session store (Redis)  | 5       | 5       |
+| Proxy (router+pinning+balancer+pool) | 21 | 21 |
 | CEL eval               | 11      | 11      |
-| Proxy middlewares      | 55      | 55      |
-| Raft (FSM, cluster, peers) | 14  | 14      |
-| Raft handlers          | 5       | 5       |
-| Config                 | 11      | 11      |
+| Proxy middlewares      | 60      | 60      |
+| Raft (FSM, cluster, peers) | 7   | 7       |
 | Sync client            | 2       | 2       |
-| E2E (proxy, live)      | 64      | 64      |
+| E2E (proxy, live)      | 69      | 69      |
 | E2E (cluster, kind)    | 8       | 8       |
-| **Total**              | **262** | **262** |
-
-**Note**: `TestE2E_Proxy_GroupRegexComposition` is a pre-existing bug (regex 404), not related to balancing.
+| **Total**              | **252** | **252** |
 
 ## Bugs Fixed Across All Audits
 
@@ -214,7 +212,4 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 ## Known Remaining Issues
 
-- **K8s EndpointSlice watcher not wired**: The `internal/k8s` watcher exists and has
-  unit tests but is not connected to the gateway or main.go. Static endpoint lists
-  (`destination.endpoints`) work end-to-end. Kubernetes auto-discovery requires
-  wiring the watcher's resolved endpoints into `Destination.Endpoints` at rebuild time.
+None.

@@ -31,12 +31,6 @@ import (
 	"github.com/achetronic/vrata/internal/store"
 )
 
-// Endpoint represents a single resolved address + port.
-type Endpoint struct {
-	Address string
-	Port    uint32
-}
-
 // Dependencies holds the collaborators required by the Watcher.
 type Dependencies struct {
 	Store    store.Store
@@ -50,7 +44,7 @@ type Dependencies struct {
 type Watcher struct {
 	deps      Dependencies
 	mu        sync.RWMutex
-	endpoints map[string][]Endpoint
+	endpoints map[string][]model.Endpoint
 	cancels   map[string]context.CancelFunc
 }
 
@@ -58,7 +52,7 @@ type Watcher struct {
 func New(deps Dependencies) *Watcher {
 	return &Watcher{
 		deps:      deps,
-		endpoints: make(map[string][]Endpoint),
+		endpoints: make(map[string][]model.Endpoint),
 		cancels:   make(map[string]context.CancelFunc),
 	}
 }
@@ -69,12 +63,12 @@ func (w *Watcher) SetOnChange(fn func(ctx context.Context) error) {
 }
 
 // Endpoints returns a snapshot of resolved endpoints keyed by Destination ID.
-func (w *Watcher) Endpoints() map[string][]Endpoint {
+func (w *Watcher) Endpoints() map[string][]model.Endpoint {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
-	out := make(map[string][]Endpoint, len(w.endpoints))
+	out := make(map[string][]model.Endpoint, len(w.endpoints))
 	for k, v := range w.endpoints {
-		cp := make([]Endpoint, len(v))
+		cp := make([]model.Endpoint, len(v))
 		copy(cp, v)
 		out[k] = cp
 	}
@@ -243,8 +237,8 @@ func (w *Watcher) watchEndpointSlices(ctx context.Context, destID string, destPo
 }
 
 // buildEndpoints extracts ready pod IPs from a list of EndpointSlice objects.
-func buildEndpoints(destPort uint32, objs []interface{}) []Endpoint {
-	var eps []Endpoint
+func buildEndpoints(destPort uint32, objs []interface{}) []model.Endpoint {
+	var eps []model.Endpoint
 	for _, obj := range objs {
 		slice, ok := obj.(*discoveryv1.EndpointSlice)
 		if !ok {
@@ -262,7 +256,7 @@ func buildEndpoints(destPort uint32, objs []interface{}) []Endpoint {
 				continue
 			}
 			for _, addr := range ep.Addresses {
-				eps = append(eps, Endpoint{Address: addr, Port: port})
+				eps = append(eps, model.Endpoint{Host: addr, Port: port})
 			}
 		}
 	}
@@ -311,7 +305,7 @@ func (w *Watcher) watchExternalNameService(ctx context.Context, destID string, d
 			return
 		}
 
-		eps := []Endpoint{{Address: svcObj.Spec.ExternalName, Port: destPort}}
+		eps := []model.Endpoint{{Host: svcObj.Spec.ExternalName, Port: destPort}}
 
 		w.mu.Lock()
 		w.endpoints[destID] = eps

@@ -8,19 +8,27 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/achetronic/vrata/internal/model"
 	"github.com/achetronic/vrata/internal/proxy"
 	"github.com/achetronic/vrata/internal/store"
 )
 
+// EndpointProvider supplies dynamically resolved endpoints keyed by Destination ID.
+// The k8s watcher implements this interface.
+type EndpointProvider interface {
+	Endpoints() map[string][]model.Endpoint
+}
+
 // Dependencies holds the external collaborators required by the Gateway.
 type Dependencies struct {
-	Store           store.Store
-	Router          *proxy.Router
-	ListenerManager *proxy.ListenerManager
-	HealthChecker   *proxy.HealthChecker
-	OutlierDetector *proxy.OutlierDetector
-	SessionStore    proxy.SessionStore
-	Logger          *slog.Logger
+	Store            store.Store
+	Router           *proxy.Router
+	ListenerManager  *proxy.ListenerManager
+	HealthChecker    *proxy.HealthChecker
+	OutlierDetector  *proxy.OutlierDetector
+	SessionStore     proxy.SessionStore
+	EndpointProvider EndpointProvider
+	Logger           *slog.Logger
 }
 
 // Gateway listens for store change events and keeps the proxy config up to date.
@@ -103,6 +111,16 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	destinations, err := gw.deps.Store.ListDestinations(ctx)
 	if err != nil {
 		return fmt.Errorf("listing destinations: %w", err)
+	}
+
+	// Merge dynamically discovered endpoints into destinations.
+	if gw.deps.EndpointProvider != nil {
+		discovered := gw.deps.EndpointProvider.Endpoints()
+		for i, d := range destinations {
+			if eps, ok := discovered[d.ID]; ok && len(eps) > 0 {
+				destinations[i].Endpoints = eps
+			}
+		}
 	}
 
 	// Build new routing table.

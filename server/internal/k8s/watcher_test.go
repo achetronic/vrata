@@ -132,8 +132,8 @@ func TestWatcherExternalNameService(t *testing.T) {
 	for {
 		eps := w.Endpoints()
 		if d1, ok := eps["d1"]; ok && len(d1) == 1 {
-			if d1[0].Address != "db.example.com" {
-				t.Errorf("expected address db.example.com, got %s", d1[0].Address)
+			if d1[0].Host != "db.example.com" {
+				t.Errorf("expected address db.example.com, got %s", d1[0].Host)
 			}
 			if d1[0].Port != 5432 {
 				t.Errorf("expected port 5432, got %d", d1[0].Port)

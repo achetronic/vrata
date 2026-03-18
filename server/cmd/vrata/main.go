@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/achetronic/vrata/internal/api/handlers"
 	"github.com/achetronic/vrata/internal/config"
 	"github.com/achetronic/vrata/internal/gateway"
+	"github.com/achetronic/vrata/internal/k8s"
 	"github.com/achetronic/vrata/internal/proxy"
 	raftnode "github.com/achetronic/vrata/internal/raft"
 	sessionredis "github.com/achetronic/vrata/internal/session/redis"
@@ -42,6 +44,11 @@ import (
 	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 	"github.com/achetronic/vrata/internal/store/raftstore"
 	rtsync "github.com/achetronic/vrata/internal/sync"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/homedir"
 )
 
 func main() {
@@ -139,15 +146,39 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) 
 			slog.String("error", err.Error()))
 	}
 
+	// Kubernetes endpoint discovery (non-fatal if no kubeconfig available).
+	var epProvider gateway.EndpointProvider
+	if k8sClient, err := buildK8sClient(logger); err == nil && k8sClient != nil {
+		watcher := k8s.New(k8s.Dependencies{
+			Store:  activeStore,
+			Client: k8sClient,
+			Logger: logger,
+		})
+		epProvider = watcher
+
+		go func() {
+			if err := watcher.Run(ctx); err != nil {
+				logger.Error("k8s watcher failed", slog.String("error", err.Error()))
+			}
+		}()
+	}
+
 	gw := gateway.New(gateway.Dependencies{
-		Store:           activeStore,
-		Router:          proxyRouter,
-		ListenerManager: listenerMgr,
-		HealthChecker:   healthChecker,
-		OutlierDetector: outlierDetector,
-		SessionStore:    sessStore,
-		Logger:          logger,
+		Store:            activeStore,
+		Router:           proxyRouter,
+		ListenerManager:  listenerMgr,
+		HealthChecker:    healthChecker,
+		OutlierDetector:  outlierDetector,
+		SessionStore:     sessStore,
+		EndpointProvider: epProvider,
+		Logger:           logger,
 	})
+
+	if epProvider != nil {
+		if watcher, ok := epProvider.(*k8s.Watcher); ok {
+			watcher.SetOnChange(gw.Rebuild)
+		}
+	}
 
 	errCh := make(chan error, 4)
 
@@ -293,5 +324,41 @@ func buildSessionStore(cfg *config.Config, logger *slog.Logger) (proxy.SessionSt
 	default:
 		return nil, fmt.Errorf("unknown sessionStore.type %q", cfg.SessionStore.Type)
 	}
+}
+
+// buildK8sClient creates a Kubernetes client from in-cluster config or
+// kubeconfig. Returns nil, nil if neither is available (non-fatal).
+func buildK8sClient(logger *slog.Logger) (kubernetes.Interface, error) {
+	cfg, err := rest.InClusterConfig()
+	if err == nil {
+		client, err := kubernetes.NewForConfig(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("creating in-cluster k8s client: %w", err)
+		}
+		logger.Info("k8s client created from in-cluster config")
+		return client, nil
+	}
+
+	kubeconfig := ""
+	if home := homedir.HomeDir(); home != "" {
+		kubeconfig = filepath.Join(home, ".kube", "config")
+	}
+	if kubeconfig == "" {
+		logger.Info("k8s client not available (no in-cluster config, no kubeconfig)")
+		return nil, nil
+	}
+
+	cfg, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		logger.Info("k8s client not available", slog.String("error", err.Error()))
+		return nil, nil
+	}
+
+	client, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating k8s client from kubeconfig: %w", err)
+	}
+	logger.Info("k8s client created from kubeconfig", slog.String("path", kubeconfig))
+	return client, nil
 }
 
