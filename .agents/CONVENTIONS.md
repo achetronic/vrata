@@ -45,6 +45,12 @@
   httpsnoop preserves all optional interfaces automatically.
 - **No external router libraries** (Gin, Echo, Chi, etc.) unless there is a concrete,
   documented, justified reason. `net/http` is the baseline.
+- **No leaked goroutines** — any middleware or component that launches a background
+  goroutine (JWKS refresh, rate limiter eviction, etc.) must return a stop function.
+  The stop function is registered as a cleanup callback on the `RoutingTable` via the
+  `onCleanup func(func())` parameter. When the table is swapped, all cleanup functions
+  from the old table are called. Middlewares must never be aware of `RoutingTable` —
+  the only contract is `func(func())`.
 - **No global state** — no package-level variables that hold mutable runtime state.
 - **No silent error swallowing** — `if err != nil { return }` without propagating the error
   is forbidden. Always wrap with context: `fmt.Errorf("doing X: %w", err)`.

@@ -577,3 +577,75 @@ attempt wire-level compatibility with `envoy.service.ext_proc.v3`. Do not
 use Envoy field names (`failure_mode_allow`, `processing_mode`, etc.).
 
 ---
+
+## BackendRef renamed to DestinationRef, Backends to Destinations
+
+**Date**: 2026-03-18
+**Status**: Implemented
+
+The `BackendRef` type was renamed to `DestinationRef` and the `Backends`
+field on `ForwardAction` was renamed to `Destinations` (JSON tag changed
+from `"backends"` to `"destinations"`). The function `SelectBackend` was
+renamed to `SelectDestination`.
+
+**Reasoning**: Rutoso uses the term "Destination" for upstream targets.
+"Backend" was a leftover from early development. Using consistent
+terminology across the model, API, and documentation prevents confusion.
+
+**Do not**: Re-introduce `Backend` or `BackendRef` anywhere. The term
+is `Destination` and `DestinationRef`.
+
+---
+
+## Destination pinning via weighted consistent hash
+
+**Date**: 2026-03-18
+**Status**: Implemented
+
+`ForwardAction` carries an optional `DestinationPinning` field with
+`cookieName` and `ttl`. When enabled, destination selection uses a weighted
+consistent hash ring instead of weighted random. The hash key is
+`hash(sessionID + routeID)`, where `sessionID` comes from a cookie.
+
+**Reasoning**: For canary deployments, a user who lands on v2 must stay on
+v2 for all subsequent requests — including asset loads. Weighted random
+would bounce users between versions, breaking pages. The consistent hash
+is deterministic: all proxies compute the same result from the same snapshot,
+so no shared state is needed between proxy instances.
+
+Key design points:
+- One cookie (`_rutoso_pin` by default) holds a UUID session ID
+- The hash includes `routeID`, so different routes pin independently
+- If a destination is removed from the snapshot, the hash redistributes
+  to remaining destinations with minimal movement
+- Weights are respected: destinations get ring space proportional to weight
+- Without `destinationPinning`, weighted random is used (no change)
+
+**Do not**: Store destination IDs in cookies. Do not use shared state
+(Redis, gossip) for pinning — the consistent hash is stateless. Do not
+activate pinning globally — it is per-route, opt-in.
+
+---
+
+## Routing table cleanup callbacks on swap
+
+**Date**: 2026-03-18
+**Status**: Implemented
+
+`RoutingTable` carries a `cleanups []func()` slice. When `SwapTable`
+replaces the table, it calls all cleanup functions from the old table.
+Middlewares that launch background goroutines (JWT refresh, rate limiter
+eviction) register their stop functions as cleanups.
+
+**Reasoning**: Background goroutines launched by middlewares (JWKS refresh
+every 5 minutes, bucket eviction every 60 seconds) must be stopped when
+the routing table is replaced, or they leak. The cleanup callback pattern
+keeps the middleware package decoupled from the router — middlewares return
+a `func()` stop function, and `buildMiddleware` registers it via a generic
+`func(func())` callback. No middleware imports `RoutingTable`.
+
+**Do not**: Stop goroutines by any other mechanism. Do not make middlewares
+aware of the router or routing table. The cleanup callback is the only
+contract.
+
+---
