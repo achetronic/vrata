@@ -649,3 +649,60 @@ aware of the router or routing table. The cleanup callback is the only
 contract.
 
 ---
+
+## HA control plane: Raft consensus with transparent write-forwarding
+
+**Date**: 2026-03-18
+**Status**: Decided — not yet implemented
+
+Multiple control plane replicas share the same configuration via embedded
+Raft consensus (hashicorp/raft). Any node accepts reads and writes. The
+proxy connects to a Kubernetes Service that load-balances across replicas
+— it does not need to know which node is the Raft leader.
+
+Architecture:
+- Every control plane node runs an embedded Raft participant.
+- One node is the leader (elected automatically). Only the leader commits
+  writes to the replicated log.
+- A follower that receives a write request forwards it transparently to the
+  leader. The leader replicates to quorum and responds. The follower relays
+  the response to the caller. From the proxy's perspective, every node
+  accepts writes.
+- Reads (GET, SSE stream) go directly to the local bbolt — no Raft
+  round-trip. Every node has a full copy of the data.
+- When the leader dies, Raft elects a new leader automatically. Proxies
+  that were connected to the dead node reconnect (via the k8s Service) to
+  another node and receive the active snapshot.
+- The bbolt database is the Raft FSM (Finite State Machine). Every committed
+  log entry is a store operation (SaveRoute, ActivateSnapshot, etc.) applied
+  to the local bbolt.
+
+Scaling:
+- 3 nodes is the recommended production setup (tolerates 1 failure).
+- 5 nodes is the maximum practical size (tolerates 2 failures).
+- Beyond 5, write latency increases without meaningful benefit — each write
+  needs quorum (majority), so more voters means more acks per write.
+- Reads scale linearly with nodes — each serves from local bbolt.
+
+Future: read replicas (non-voting learners)
+- If more than 5 nodes are needed (unlikely for a config control plane),
+  Raft supports non-voting learners that receive the replicated log but
+  do not participate in quorum. They can serve reads and SSE streams
+  without affecting write latency.
+- This is a separate phase. The initial implementation targets 3–5 voting
+  nodes.
+
+**Reasoning**: The configuration changes rarely (an operator, not
+thousands of writes per second). Raft's write latency (<10ms in the
+same network) is irrelevant for this workload. What matters is that the
+active snapshot is identical on every node — if a proxy reconnects to a
+different control plane, it must receive the same config. Raft guarantees
+this. Eventual consistency (gossip/CRDT) does not, and a proxy receiving
+a stale or different snapshot would cause routing inconsistencies.
+
+**Do not**: Use eventual consistency for config replication. Do not
+require the proxy to know which node is the Raft leader. Do not run more
+than 5 voting nodes. Do not bypass Raft for writes — all mutations must
+go through the replicated log.
+
+---
