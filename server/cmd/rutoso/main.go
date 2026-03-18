@@ -24,6 +24,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -93,6 +94,8 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	httpSrv.BaseContext = func(_ net.Listener) context.Context { return ctx }
+
 	errCh := make(chan error, 2)
 
 	go func() {
@@ -105,7 +108,9 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) 
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
-		_ = httpSrv.Shutdown(context.Background())
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = httpSrv.Shutdown(shutdownCtx)
 		return nil
 	case err := <-errCh:
 		return err

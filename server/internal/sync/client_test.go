@@ -16,29 +16,33 @@ import (
 )
 
 func TestClientAppliesSnapshot(t *testing.T) {
-	snap := model.Snapshot{
-		Listeners: []model.Listener{
-			{ID: "l1", Name: "test-listener", Address: "0.0.0.0", Port: 9090},
-		},
-		Routes: []model.Route{
-			{
-				ID:   "r1",
-				Name: "test-route",
-				Match: model.MatchRule{
-					PathPrefix: "/test",
-				},
-				DirectResponse: &model.RouteDirectResponse{
-					Status: 200,
-					Body:   "ok",
+	vs := model.VersionedSnapshot{
+		ID:   "snap-1",
+		Name: "test-snap",
+		Snapshot: model.Snapshot{
+			Listeners: []model.Listener{
+				{ID: "l1", Name: "test-listener", Address: "0.0.0.0", Port: 9090},
+			},
+			Routes: []model.Route{
+				{
+					ID:   "r1",
+					Name: "test-route",
+					Match: model.MatchRule{
+						PathPrefix: "/test",
+					},
+					DirectResponse: &model.RouteDirectResponse{
+						Status: 200,
+						Body:   "ok",
+					},
 				},
 			},
+			Groups:       []model.RouteGroup{},
+			Destinations: []model.Destination{},
+			Middlewares:  []model.Middleware{},
 		},
-		Groups:       []model.RouteGroup{},
-		Destinations: []model.Destination{},
-		Middlewares:  []model.Middleware{},
 	}
 
-	data, err := json.Marshal(snap)
+	data, err := json.Marshal(vs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,15 +111,19 @@ func TestClientAppliesSnapshot(t *testing.T) {
 }
 
 func TestClientReconnectsOnDisconnect(t *testing.T) {
-	snap := model.Snapshot{
-		Listeners:    []model.Listener{},
-		Routes:       []model.Route{},
-		Groups:       []model.RouteGroup{},
-		Destinations: []model.Destination{},
-		Middlewares:  []model.Middleware{},
+	vs := model.VersionedSnapshot{
+		ID:   "snap-r",
+		Name: "reconnect",
+		Snapshot: model.Snapshot{
+			Listeners:    []model.Listener{},
+			Routes:       []model.Route{},
+			Groups:       []model.RouteGroup{},
+			Destinations: []model.Destination{},
+			Middlewares:  []model.Middleware{},
+		},
 	}
 
-	data, _ := json.Marshal(snap)
+	data, _ := json.Marshal(vs)
 	connectCount := make(chan struct{}, 10)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

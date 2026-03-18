@@ -95,7 +95,7 @@ func sendActiveSnapshot(ctx context.Context, w http.ResponseWriter, flusher http
 		return err
 	}
 
-	data, err := json.Marshal(vs.Snapshot)
+	data, err := json.Marshal(vs)
 	if err != nil {
 		return err
 	}

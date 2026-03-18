@@ -130,10 +130,12 @@ func (c *Client) stream(ctx context.Context) error {
 
 // applySnapshot deserialises a snapshot and swaps the proxy config atomically.
 func (c *Client) applySnapshot(data []byte) error {
-	var snap model.Snapshot
-	if err := json.Unmarshal(data, &snap); err != nil {
+	var vs model.VersionedSnapshot
+	if err := json.Unmarshal(data, &vs); err != nil {
 		return fmt.Errorf("decoding snapshot: %w", err)
 	}
+
+	snap := vs.Snapshot
 
 	table, err := proxy.BuildTable(snap.Routes, snap.Groups, snap.Destinations, snap.Middlewares)
 	if err != nil {
@@ -152,6 +154,8 @@ func (c *Client) applySnapshot(data []byte) error {
 	c.deps.ListenerManager.Reconcile(snap.Listeners)
 
 	c.deps.Logger.Info("sync: snapshot applied",
+		slog.String("id", vs.ID),
+		slog.String("name", vs.Name),
 		slog.Int("listeners", len(snap.Listeners)),
 		slog.Int("routes", len(snap.Routes)),
 		slog.Int("groups", len(snap.Groups)),

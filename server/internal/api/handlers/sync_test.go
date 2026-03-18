@@ -78,15 +78,15 @@ func TestSyncStreamSendsActiveSnapshot(t *testing.T) {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "data: ") {
 			data := strings.TrimPrefix(line, "data: ")
-			var snap model.Snapshot
-			if err := json.Unmarshal([]byte(data), &snap); err != nil {
+			var vs model.VersionedSnapshot
+			if err := json.Unmarshal([]byte(data), &vs); err != nil {
 				t.Fatalf("invalid snapshot JSON: %v", err)
 			}
-			if len(snap.Listeners) != 1 {
-				t.Errorf("expected 1 listener, got %d", len(snap.Listeners))
+			if len(vs.Snapshot.Listeners) != 1 {
+				t.Errorf("expected 1 listener, got %d", len(vs.Snapshot.Listeners))
 			}
-			if len(snap.Routes) != 1 {
-				t.Errorf("expected 1 route, got %d", len(snap.Routes))
+			if len(vs.Snapshot.Routes) != 1 {
+				t.Errorf("expected 1 route, got %d", len(vs.Snapshot.Routes))
 			}
 			return
 		}

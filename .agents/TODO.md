@@ -24,6 +24,21 @@ Tasks:
 - [ ] Add authentication to the REST API
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
 
+### Rename: Rutoso → Vrata
+Full project rename. Vrata means "door" / "gate" in Slavic languages.
+
+Scope:
+- Go module path: `github.com/achetronic/rutoso` → `github.com/achetronic/vrata`
+- All import paths across every `.go` file
+- Proto package: `rutoso.extproc.v1` → `vrata.extproc.v1`, `rutoso.extauthz.v1` → `vrata.extauthz.v1`
+- Proto `go_package` option
+- Binary name: `rutoso` → `vrata`
+- Config references: `_rutoso_pin` cookie → `_vrata_pin`
+- Makefile, Dockerfile, README, `.agents/` docs
+- bbolt bucket names stay (internal, no user impact)
+- API paths stay (`/api/v1/...` — no "rutoso" in them)
+- Regenerate protos and swagger docs after rename
+
 ## Done
 
 - [x] **Destination pinning** — weighted consistent hash for canary-safe sticky sessions
