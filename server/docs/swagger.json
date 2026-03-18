@@ -1743,9 +1743,13 @@
                     "description": "Mode selects the transport protocol: \"grpc\" (bidirectional stream)\nor \"http\" (one POST per phase). Default: \"grpc\".",
                     "type": "string"
                 },
-                "observeOnly": {
-                    "description": "ObserveOnly enables fire-and-forget mode. Rutoso sends phases to\nthe processor but does not wait for responses. Useful for logging,\nauditing, or analytics processors.",
-                    "type": "boolean"
+                "observeMode": {
+                    "description": "ObserveMode enables fire-and-forget mode. When enabled, Rutoso sends\nphases to the processor but does not wait for responses. Useful for\nlogging, auditing, or analytics processors.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ObserveModeConfig"
+                        }
+                    ]
                 },
                 "phases": {
                     "description": "Phases controls which parts of the HTTP transaction are sent to the\nprocessor. If nil, only request and response headers are sent.",
@@ -2384,6 +2388,23 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "model.ObserveModeConfig": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "description": "Enabled activates observe mode. When false (default), the processor\nresponse is awaited synchronously.",
+                    "type": "boolean"
+                },
+                "queueSize": {
+                    "description": "QueueSize is the maximum number of pending requests. When full,\nnew requests are dropped with a warning log. Default: 4096.",
+                    "type": "integer"
+                },
+                "workers": {
+                    "description": "Workers is the number of background workers that drain the queue.\nDefault: 64.",
+                    "type": "integer"
                 }
             }
         },

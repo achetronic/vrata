@@ -27,6 +27,7 @@ type managedServer struct {
 	listener model.Listener
 	server   *http.Server
 	cancel   context.CancelFunc
+	done     chan struct{}
 }
 
 // NewListenerManager creates a ListenerManager.
@@ -58,6 +59,7 @@ func (lm *ListenerManager) Reconcile(listeners []model.Listener) {
 				slog.String("name", ms.listener.Name),
 			)
 			ms.cancel()
+			<-ms.done
 			delete(lm.servers, id)
 		}
 	}
@@ -69,13 +71,14 @@ func (lm *ListenerManager) Reconcile(listeners []model.Listener) {
 			continue
 		}
 
-		// Stop old if updating.
+		// Stop old if updating. Wait for it to fully release the port.
 		if ok {
 			lm.logger.Info("proxy: restarting listener",
 				slog.String("id", id),
 				slog.String("name", l.Name),
 			)
 			existing.cancel()
+			<-existing.done
 			delete(lm.servers, id)
 		}
 
@@ -147,13 +150,18 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 	}
 
 
+	done := make(chan struct{})
+
 	lm.servers[l.ID] = &managedServer{
 		listener: l,
 		server:   srv,
 		cancel:   cancel,
+		done:     done,
 	}
 
 	go func() {
+		defer close(done)
+
 		ln, err := net.Listen("tcp", bindAddr)
 		if err != nil {
 			lm.logger.Error("proxy: failed to listen",
@@ -191,6 +199,7 @@ func (lm *ListenerManager) Shutdown() {
 
 	for id, ms := range lm.servers {
 		ms.cancel()
+		<-ms.done
 		delete(lm.servers, id)
 	}
 }

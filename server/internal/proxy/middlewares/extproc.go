@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/achetronic/rutoso/internal/model"
@@ -54,15 +55,18 @@ func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Ser
 
 	phases := resolvePhases(cfg.Phases)
 
+	queueSize := observeQueueSize(cfg)
+
 	ep := &extProc{
 		cfg:           cfg,
 		svc:           svc,
 		timeout:       timeout,
 		statusOnError: statusOnError,
 		phases:        phases,
+		asyncQueue:    make(chan *extprocv1.ProcessingRequest, queueSize),
 	}
 
-	var cleanup func()
+	var cleanups []func()
 
 	if cfg.Mode != "http" {
 		target := strings.TrimPrefix(strings.TrimPrefix(svc.BaseURL, "http://"), "https://")
@@ -71,8 +75,13 @@ func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Ser
 			slog.Error("extproc: failed to create gRPC connection", slog.String("error", err.Error()))
 		} else {
 			ep.grpcConn = conn
-			cleanup = func() { conn.Close() }
+			cleanups = append(cleanups, func() { conn.Close() })
 		}
+	}
+
+	if cfg.ObserveMode != nil && cfg.ObserveMode.Enabled {
+		stopWorkers := ep.startAsyncWorkers()
+		cleanups = append(cleanups, stopWorkers)
 	}
 
 	mw := Middleware(func(next http.Handler) http.Handler {
@@ -80,6 +89,12 @@ func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Ser
 			ep.handle(next, w, r)
 		})
 	})
+
+	cleanup := func() {
+		for _, fn := range cleanups {
+			fn()
+		}
+	}
 
 	return mw, cleanup
 }
@@ -98,6 +113,33 @@ type extProc struct {
 	statusOnError int
 	phases        resolvedPhases
 	grpcConn      *grpc.ClientConn
+	asyncQueue    chan *extprocv1.ProcessingRequest
+}
+
+const (
+	defaultAsyncWorkers  = 64
+	defaultAsyncQueueCap = 4096
+)
+
+// observeEnabled returns true when observe mode is active.
+func (ep *extProc) observeEnabled() bool {
+	return ep.cfg.ObserveMode != nil && ep.cfg.ObserveMode.Enabled
+}
+
+// observeWorkerCount returns the configured worker count or the default.
+func (ep *extProc) observeWorkerCount() int {
+	if ep.cfg.ObserveMode != nil && ep.cfg.ObserveMode.Workers > 0 {
+		return ep.cfg.ObserveMode.Workers
+	}
+	return defaultAsyncWorkers
+}
+
+// observeQueueSize returns the configured queue size from a config.
+func observeQueueSize(cfg *model.ExtProcConfig) int {
+	if cfg.ObserveMode != nil && cfg.ObserveMode.QueueSize > 0 {
+		return cfg.ObserveMode.QueueSize
+	}
+	return defaultAsyncQueueCap
 }
 
 // resolvedPhases holds the resolved phase configuration with defaults applied.
@@ -238,7 +280,7 @@ func (ep *extProc) processRequestHeaders(r *http.Request) (*extprocv1.Processing
 				EndOfStream: r.ContentLength == 0,
 			},
 		},
-		ObserveOnly: ep.cfg.ObserveOnly,
+		ObserveOnly: ep.observeEnabled(),
 	}
 
 	return ep.send(req)
@@ -262,7 +304,7 @@ func (ep *extProc) processRequestBody(r *http.Request) (*extprocv1.ProcessingRes
 				Phase: &extprocv1.ProcessingRequest_RequestBody{
 					RequestBody: &extprocv1.HttpBody{Body: chunk, EndOfStream: eos},
 				},
-				ObserveOnly: ep.cfg.ObserveOnly,
+				ObserveOnly: ep.observeEnabled(),
 			}
 		})
 	}
@@ -271,7 +313,7 @@ func (ep *extProc) processRequestBody(r *http.Request) (*extprocv1.ProcessingRes
 		Phase: &extprocv1.ProcessingRequest_RequestBody{
 			RequestBody: &extprocv1.HttpBody{Body: body, EndOfStream: true},
 		},
-		ObserveOnly: ep.cfg.ObserveOnly,
+		ObserveOnly: ep.observeEnabled(),
 	}
 	return ep.send(req)
 }
@@ -291,7 +333,7 @@ func (ep *extProc) processResponseHeaders(irw *interceptResponseWriter) (*extpro
 				EndOfStream: len(irw.body) == 0,
 			},
 		},
-		ObserveOnly: ep.cfg.ObserveOnly,
+		ObserveOnly: ep.observeEnabled(),
 	}
 
 	return ep.send(req)
@@ -312,7 +354,7 @@ func (ep *extProc) processResponseBody(body []byte) (*extprocv1.ProcessingRespon
 				Phase: &extprocv1.ProcessingRequest_ResponseBody{
 					ResponseBody: &extprocv1.HttpBody{Body: chunk, EndOfStream: eos},
 				},
-				ObserveOnly: ep.cfg.ObserveOnly,
+				ObserveOnly: ep.observeEnabled(),
 			}
 		})
 	}
@@ -321,7 +363,7 @@ func (ep *extProc) processResponseBody(body []byte) (*extprocv1.ProcessingRespon
 		Phase: &extprocv1.ProcessingRequest_ResponseBody{
 			ResponseBody: &extprocv1.HttpBody{Body: body, EndOfStream: true},
 		},
-		ObserveOnly: ep.cfg.ObserveOnly,
+		ObserveOnly: ep.observeEnabled(),
 	}
 	return ep.send(req)
 }
@@ -332,8 +374,12 @@ func (ep *extProc) processResponseBody(body []byte) (*extprocv1.ProcessingRespon
 
 // send dispatches a ProcessingRequest to the processor via gRPC or HTTP.
 func (ep *extProc) send(req *extprocv1.ProcessingRequest) (*extprocv1.ProcessingResponse, error) {
-	if ep.cfg.ObserveOnly {
-		go ep.sendAsync(req)
+	if ep.observeEnabled() {
+		select {
+		case ep.asyncQueue <- req:
+		default:
+			slog.Warn("extproc: observe-only queue full, dropping request")
+		}
 		return nil, nil
 	}
 
@@ -341,6 +387,38 @@ func (ep *extProc) send(req *extprocv1.ProcessingRequest) (*extprocv1.Processing
 		return ep.sendHTTP(req)
 	}
 	return ep.sendGRPC(req)
+}
+
+// startAsyncWorkers launches a pool of workers that drain the async queue.
+// Returns a stop function that shuts down all workers.
+func (ep *extProc) startAsyncWorkers() func() {
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+
+	numWorkers := ep.observeWorkerCount()
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case req, ok := <-ep.asyncQueue:
+					if !ok {
+						return
+					}
+					ep.sendAsync(req)
+				case <-stop:
+					return
+				}
+			}
+		}()
+	}
+
+	return func() {
+		close(stop)
+		wg.Wait()
+	}
 }
 
 // sendAsync sends a request without waiting for a response (observe-only).

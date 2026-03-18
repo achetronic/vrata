@@ -293,15 +293,32 @@ type ExtProcConfig struct {
 	// and the request continues normally.
 	DisableReject bool `json:"disableReject,omitempty" yaml:"disableReject,omitempty"`
 
-	// ObserveOnly enables fire-and-forget mode. Rutoso sends phases to
-	// the processor but does not wait for responses. Useful for logging,
-	// auditing, or analytics processors.
-	ObserveOnly bool `json:"observeOnly,omitempty" yaml:"observeOnly,omitempty"`
+	// ObserveMode enables fire-and-forget mode. When enabled, Rutoso sends
+	// phases to the processor but does not wait for responses. Useful for
+	// logging, auditing, or analytics processors.
+	ObserveMode *ObserveModeConfig `json:"observeMode,omitempty" yaml:"observeMode,omitempty"`
 
 	// MetricsPrefix is an optional prefix for metrics emitted by this
 	// middleware instance. Allows distinguishing between multiple
 	// external processors in the same proxy.
 	MetricsPrefix string `json:"metricsPrefix,omitempty" yaml:"metricsPrefix,omitempty"`
+}
+
+// ObserveModeConfig configures fire-and-forget processing. Requests are
+// queued and processed by a background worker pool without blocking the
+// client request.
+type ObserveModeConfig struct {
+	// Enabled activates observe mode. When false (default), the processor
+	// response is awaited synchronously.
+	Enabled bool `json:"enabled" yaml:"enabled"`
+
+	// Workers is the number of background workers that drain the queue.
+	// Default: 64.
+	Workers int `json:"workers,omitempty" yaml:"workers,omitempty"`
+
+	// QueueSize is the maximum number of pending requests. When full,
+	// new requests are dropped with a warning log. Default: 4096.
+	QueueSize int `json:"queueSize,omitempty" yaml:"queueSize,omitempty"`
 }
 
 // ExtProcPhases controls which phases of an HTTP transaction are sent

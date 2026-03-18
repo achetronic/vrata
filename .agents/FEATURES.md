@@ -188,7 +188,4 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 ## Known Remaining Issues
 
-| Issue                                     | Severity | Notes                                           |
-| ----------------------------------------- | -------- | ----------------------------------------------- |
-| ExtProc observe-only goroutines untracked | Low      | Fire-and-forget with no backpressure            |
-| Listener port conflict on fast restart    | Low      | Old listener shutting down while new one starts |
+None.

@@ -354,12 +354,13 @@ definitions:
           Mode selects the transport protocol: "grpc" (bidirectional stream)
           or "http" (one POST per phase). Default: "grpc".
         type: string
-      observeOnly:
+      observeMode:
+        allOf:
+        - $ref: '#/definitions/model.ObserveModeConfig'
         description: |-
-          ObserveOnly enables fire-and-forget mode. Rutoso sends phases to
-          the processor but does not wait for responses. Useful for logging,
-          auditing, or analytics processors.
-        type: boolean
+          ObserveMode enables fire-and-forget mode. When enabled, Rutoso sends
+          phases to the processor but does not wait for responses. Useful for
+          logging, auditing, or analytics processors.
       phases:
         allOf:
         - $ref: '#/definitions/model.ExtProcPhases'
@@ -937,6 +938,24 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  model.ObserveModeConfig:
+    properties:
+      enabled:
+        description: |-
+          Enabled activates observe mode. When false (default), the processor
+          response is awaited synchronously.
+        type: boolean
+      queueSize:
+        description: |-
+          QueueSize is the maximum number of pending requests. When full,
+          new requests are dropped with a warning log. Default: 4096.
+        type: integer
+      workers:
+        description: |-
+          Workers is the number of background workers that drain the queue.
+          Default: 64.
+        type: integer
     type: object
   model.OutlierDetectionOptions:
     properties:

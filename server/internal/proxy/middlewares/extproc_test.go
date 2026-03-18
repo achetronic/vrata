@@ -463,7 +463,7 @@ func TestExtProcObserveOnly(t *testing.T) {
 	defer proc.Close()
 
 	cfg := newExtProcCfg(proc.URL)
-	cfg.ObserveOnly = true
+	cfg.ObserveMode = &model.ObserveModeConfig{Enabled: true}
 	mw := ExtProcMiddleware(cfg, newServices(proc.URL))
 	handler := mw(upstream())
 

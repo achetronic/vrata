@@ -23,8 +23,6 @@ Tasks:
 ### Housekeeping
 - [ ] Add authentication to the REST API
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
-- [ ] ExtProc observe-only goroutine backpressure/tracking
-- [ ] Listener graceful restart (wait for old to close before binding new)
 
 ## Done
 
