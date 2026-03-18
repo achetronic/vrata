@@ -28,6 +28,7 @@ func buildRouteHandler(
 	upstreams map[string]*Upstream,
 	allMiddlewares map[string]model.Middleware,
 	onCleanup func(func()),
+	sessStore SessionStore,
 ) http.Handler {
 	var handler http.Handler
 
@@ -37,7 +38,7 @@ func buildRouteHandler(
 	case route.Redirect != nil:
 		handler = redirectHandler(route.Redirect)
 	case route.Forward != nil:
-		handler = forwardHandler(route.Forward, upstreams, group, route.ID)
+		handler = forwardHandler(route.Forward, upstreams, group, route.ID, sessStore)
 	default:
 		handler = http.NotFoundHandler()
 	}
@@ -190,14 +191,16 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 }
 
 // forwardHandler creates a handler that proxies to upstream destinations.
-func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, group *model.RouteGroup, routeID string) http.Handler {
+func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, group *model.RouteGroup, routeID string, sessStore SessionStore) http.Handler {
 	var pinRing *destinationRing
-	if fwd.DestinationBalancing != nil && fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash {
+	if fwd.DestinationBalancing != nil &&
+		(fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash ||
+			fwd.DestinationBalancing.Algorithm == model.DestinationLBSticky) {
 		pinRing = buildDestinationRing(fwd.Destinations)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstream := pickDestination(fwd, upstreams, r, routeID, pinRing, w)
+		upstream := pickDestination(fwd, upstreams, r, routeID, pinRing, w, sessStore)
 		if upstream == nil {
 			http.Error(w, "no upstream available", http.StatusBadGateway)
 			return
@@ -336,6 +339,7 @@ func pickDestination(
 	routeID string,
 	pinRing *destinationRing,
 	w http.ResponseWriter,
+	sessStore SessionStore,
 ) *Upstream {
 	if len(fwd.Destinations) == 0 {
 		return nil
@@ -354,9 +358,21 @@ func pickDestination(
 		return nil
 	}
 
-	// Destination pinning: use weighted consistent hash with session cookie.
-	if pinRing != nil && fwd.DestinationBalancing != nil && fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash {
-		return pickPinned(fwd, upstreams, r, w, routeID, pinRing, healthy)
+	if fwd.DestinationBalancing != nil {
+		switch fwd.DestinationBalancing.Algorithm {
+		case model.DestinationLBWeightedConsistentHash:
+			if pinRing != nil {
+				return pickPinned(fwd, upstreams, r, w, routeID, pinRing, healthy)
+			}
+		case model.DestinationLBSticky:
+			if sessStore != nil {
+				return pickSticky(fwd, upstreams, r, w, routeID, healthy, sessStore)
+			}
+			// Fallback to consistent hash if no session store configured.
+			if pinRing != nil {
+				return pickPinned(fwd, upstreams, r, w, routeID, pinRing, healthy)
+			}
+		}
 	}
 
 	// Default: weighted random.
@@ -415,7 +431,72 @@ func pickPinned(
 	return upstreams[destID]
 }
 
-// filterHealthy returns only dests whose upstream is healthy.
+// pickSticky selects a destination using an external session store for
+// zero-disruption pinning. New clients are assigned via weighted random;
+// existing clients always return to the same destination.
+func pickSticky(
+	fwd *model.ForwardAction,
+	upstreams map[string]*Upstream,
+	r *http.Request,
+	w http.ResponseWriter,
+	routeID string,
+	healthy []model.DestinationRef,
+	store SessionStore,
+) *Upstream {
+	cookieName := "_vrata_destination_pin"
+	var ttlStr string
+	if fwd.DestinationBalancing.Sticky != nil && fwd.DestinationBalancing.Sticky.Cookie != nil {
+		if fwd.DestinationBalancing.Sticky.Cookie.Name != "" {
+			cookieName = fwd.DestinationBalancing.Sticky.Cookie.Name
+		}
+		ttlStr = fwd.DestinationBalancing.Sticky.Cookie.TTL
+	}
+
+	sid := ""
+	if c, err := r.Cookie(cookieName); err == nil {
+		sid = c.Value
+	}
+
+	isNew := sid == ""
+	if isNew {
+		sid = generateSessionID()
+		ttl := parseTTL(ttlStr, time.Hour)
+		http.SetCookie(w, &http.Cookie{
+			Name:     cookieName,
+			Value:    sid,
+			Path:     "/",
+			MaxAge:   int(ttl.Seconds()),
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+
+	// Build the valid set from healthy dests.
+	validSet := make(map[string]bool, len(healthy))
+	for _, b := range healthy {
+		validSet[b.DestinationID] = true
+	}
+
+	// Existing client: look up session store.
+	if !isNew {
+		if destID, err := store.Get(r.Context(), sid, routeID); err == nil && destID != "" {
+			if validSet[destID] {
+				return upstreams[destID]
+			}
+		}
+	}
+
+	// New client or destination gone: weighted random, then persist.
+	upstream := SelectDestination(healthy, upstreams)
+	if upstream == nil {
+		return nil
+	}
+
+	ttlSec := int(parseTTL(ttlStr, time.Hour).Seconds())
+	_ = store.Set(r.Context(), sid, routeID, upstream.Destination.ID, ttlSec)
+
+	return upstream
+}
 func filterHealthy(dests []model.DestinationRef, upstreams map[string]*Upstream) []model.DestinationRef {
 	var healthy []model.DestinationRef
 	for _, b := range dests {

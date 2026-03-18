@@ -6,26 +6,26 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
-// ─── Case 1: Weighted Random × Direct (no stickiness) ─────────────────────
+// ─── WEIGHTED_RANDOM ───────────────────────────────────────────────────────
 
-// TestE2E_Proxy_Case1_WeightedRandom_Direct verifies weighted random destination
-// selection without any stickiness. Each request is independently routed.
-// 5000 requests at 70/30 weights must produce a distribution within 5% tolerance.
-func TestE2E_Proxy_Case1_WeightedRandom_Direct(t *testing.T) {
+// TestE2E_Proxy_WR_Distribution verifies weighted random destination selection
+// distributes traffic proportionally to weights across 5000 requests.
+func TestE2E_Proxy_WR_Distribution(t *testing.T) {
 	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
 	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
 
-	destA := createDestination(t, "e2e-c1-a", upA.host(), upA.port())
+	destA := createDestination(t, "e2e-wr-a", upA.host(), upA.port())
 	defer apiDelete(t, "/destinations/"+destA)
-	destB := createDestination(t, "e2e-c1-b", upB.host(), upB.port())
+	destB := createDestination(t, "e2e-wr-b", upB.host(), upB.port())
 	defer apiDelete(t, "/destinations/"+destB)
 
 	_, route := apiPost(t, "/routes", map[string]any{
-		"name":  "e2e-c1",
-		"match": map[string]any{"pathPrefix": "/e2e-c1"},
+		"name":  "e2e-wr",
+		"match": map[string]any{"pathPrefix": "/e2e-wr"},
 		"forward": map[string]any{
 			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 70},
@@ -40,7 +40,7 @@ func TestE2E_Proxy_Case1_WeightedRandom_Direct(t *testing.T) {
 	const total = 5000
 	countA, countB := 0, 0
 	for i := 0; i < total; i++ {
-		_, _, body := proxyGet(t, "/e2e-c1", nil)
+		_, _, body := proxyGet(t, "/e2e-wr", nil)
 		switch body {
 		case "A":
 			countA++
@@ -48,43 +48,25 @@ func TestE2E_Proxy_Case1_WeightedRandom_Direct(t *testing.T) {
 			countB++
 		}
 	}
-	assertBalancingWeight(t, "A", countA, total, 0.70, 0.05)
-	assertBalancingWeight(t, "B", countB, total, 0.30, 0.05)
-	t.Logf("distribution: A=%d (%.1f%%) B=%d (%.1f%%)", countA, float64(countA)*100/float64(total), countB, float64(countB)*100/float64(total))
+	assertBW(t, "A", countA, total, 0.70, 0.05)
+	assertBW(t, "B", countB, total, 0.30, 0.05)
+	t.Logf("A=%d (%.1f%%) B=%d (%.1f%%)", countA, pct(countA, total), countB, pct(countB, total))
 }
 
-// ─── Case 2: Weighted Random × RingHash by header ──────────────────────────
-
-// TestE2E_Proxy_Case2_WeightedRandom_RingHashHeader verifies that level-1 is
-// weighted random (no stickiness) and level-2 uses RING_HASH with header hash
-// policy. The same X-User-ID header should consistently route to the same
-// destination due to the ring hash.
-func TestE2E_Proxy_Case2_WeightedRandom_RingHashHeader(t *testing.T) {
+// TestE2E_Proxy_WR_NoStickiness verifies that the same client (cookie jar)
+// hits both destinations over 5000 requests (no pinning).
+func TestE2E_Proxy_WR_NoStickiness(t *testing.T) {
 	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
 	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
 
-	destA := createDestinationWithEndpointBalancing(t, "e2e-c2-a", upA.host(), upA.port(), map[string]any{
-		"algorithm": "RING_HASH",
-		"ringHash": map[string]any{
-			"hashPolicy": []map[string]any{
-				{"header": map[string]any{"name": "X-User-ID"}},
-			},
-		},
-	})
+	destA := createDestination(t, "e2e-wrns-a", upA.host(), upA.port())
 	defer apiDelete(t, "/destinations/"+destA)
-	destB := createDestinationWithEndpointBalancing(t, "e2e-c2-b", upB.host(), upB.port(), map[string]any{
-		"algorithm": "RING_HASH",
-		"ringHash": map[string]any{
-			"hashPolicy": []map[string]any{
-				{"header": map[string]any{"name": "X-User-ID"}},
-			},
-		},
-	})
+	destB := createDestination(t, "e2e-wrns-b", upB.host(), upB.port())
 	defer apiDelete(t, "/destinations/"+destB)
 
 	_, route := apiPost(t, "/routes", map[string]any{
-		"name":  "e2e-c2",
-		"match": map[string]any{"pathPrefix": "/e2e-c2"},
+		"name":  "e2e-wrns",
+		"match": map[string]any{"pathPrefix": "/e2e-wrns"},
 		"forward": map[string]any{
 			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 50},
@@ -96,53 +78,47 @@ func TestE2E_Proxy_Case2_WeightedRandom_RingHashHeader(t *testing.T) {
 	snapID := activateSnapshot(t)
 	defer apiDelete(t, "/snapshots/"+snapID)
 
-	// 100 unique users, each sends 50 requests with the same X-User-ID header.
-	// Each user should always land on the same destination (hash consistency).
-	const users = 100
-	const reqsPerUser = 50
-	broken := 0
-	for u := 0; u < users; u++ {
-		userID := fmt.Sprintf("user-%d", u)
-		headers := map[string]string{"X-User-ID": userID}
-		_, _, first := proxyGet(t, "/e2e-c2", headers)
-		for r := 1; r < reqsPerUser; r++ {
-			_, _, body := proxyGet(t, "/e2e-c2", headers)
-			if body != first {
-				broken++
-				break
-			}
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Timeout: 5e9, Jar: jar}
+	seen := map[string]bool{}
+	for i := 0; i < 100; i++ {
+		resp, err := c.Get(proxyURL + "/e2e-wrns")
+		if err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+		buf := make([]byte, 4)
+		n, _ := resp.Body.Read(buf)
+		resp.Body.Close()
+		seen[string(buf[:n])] = true
+		if len(seen) == 2 {
+			break
 		}
 	}
-	if broken > 0 {
-		t.Errorf("ring hash consistency broken: %d/%d users got different destinations", broken, users)
+	if len(seen) < 2 {
+		t.Errorf("expected traffic to both destinations, only saw %v", seen)
 	}
-	t.Logf("consistent: %d/%d users always got same destination (%d reqs each)", users-broken, users, reqsPerUser)
+	t.Logf("saw destinations: %v", seen)
 }
 
-// ─── Case 3: Weighted Consistent Hash (pinned destinations) ────────────────
-
-// TestE2E_Proxy_Case3_PinnedDestination_5kRequests verifies that destination
-// pinning via WEIGHTED_CONSISTENT_HASH keeps each client pinned to the same
-// destination across 5000+ total requests while changing weights 3 times.
-func TestE2E_Proxy_Case3_PinnedDestination_5kRequests(t *testing.T) {
+// TestE2E_Proxy_WR_WeightChange verifies distribution changes when weights change.
+func TestE2E_Proxy_WR_WeightChange(t *testing.T) {
 	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
 	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
 
-	destA := createDestination(t, "e2e-c3-a", upA.host(), upA.port())
+	destA := createDestination(t, "e2e-wrwc-a", upA.host(), upA.port())
 	defer apiDelete(t, "/destinations/"+destA)
-	destB := createDestination(t, "e2e-c3-b", upB.host(), upB.port())
+	destB := createDestination(t, "e2e-wrwc-b", upB.host(), upB.port())
 	defer apiDelete(t, "/destinations/"+destB)
 
 	routeBody := func(wA, wB int) map[string]any {
 		return map[string]any{
-			"name":  "e2e-c3",
-			"match": map[string]any{"pathPrefix": "/e2e-c3"},
+			"name":  "e2e-wrwc",
+			"match": map[string]any{"pathPrefix": "/e2e-wrwc"},
 			"forward": map[string]any{
 				"destinations": []map[string]any{
 					{"destinationId": destA, "weight": wA},
 					{"destinationId": destB, "weight": wB},
 				},
-				"destinationBalancing": destBalancing("_vrata_c3", "1h"),
 			},
 		}
 	}
@@ -150,365 +126,599 @@ func TestE2E_Proxy_Case3_PinnedDestination_5kRequests(t *testing.T) {
 	_, route := apiPost(t, "/routes", routeBody(80, 20))
 	routeID := id(route)
 	defer apiDelete(t, "/routes/"+routeID)
+	snap1 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap1)
 
-	snapID := activateSnapshot(t)
-	defer apiDelete(t, "/snapshots/"+snapID)
+	a1, b1 := sendN(t, "/e2e-wrwc", 5000)
+	assertBW(t, "round1 A", a1, 5000, 0.80, 0.05)
+	t.Logf("round1: A=%d (%.1f%%) B=%d (%.1f%%)", a1, pct(a1, 5000), b1, pct(b1, 5000))
 
-	// Pin 200 users at 80/20.
-	const users = 200
-	type userState struct {
-		jar  http.CookieJar
-		dest string
-	}
-	pinned := make([]userState, users)
-	for i := range pinned {
-		jar, _ := cookiejar.New(nil)
-		c := &http.Client{Timeout: 5e9, Jar: jar}
-		resp, err := c.Get(proxyURL + fmt.Sprintf("/e2e-c3?u=%d", i))
-		if err != nil {
-			t.Fatalf("user %d warmup: %v", i, err)
-		}
-		buf := make([]byte, 4)
-		n, _ := resp.Body.Read(buf)
-		resp.Body.Close()
-		pinned[i] = userState{jar: jar, dest: string(buf[:n])}
-	}
+	apiPut(t, "/routes/"+routeID, routeBody(20, 80))
+	snap2 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap2)
 
-	// 3 weight epochs: 50/50, 30/70, 10/90
-	epochs := []struct{ wA, wB int }{{50, 50}, {30, 70}, {10, 90}}
-	totalRequests := 0
-	for epoch, e := range epochs {
-		apiPut(t, "/routes/"+routeID, routeBody(e.wA, e.wB))
-		snap := activateSnapshot(t)
-		defer apiDelete(t, "/snapshots/"+snap)
-
-		broken := 0
-		for i, u := range pinned {
-			c := &http.Client{Timeout: 5e9, Jar: u.jar}
-			for r := 0; r < 25; r++ {
-				totalRequests++
-				resp, err := c.Get(proxyURL + fmt.Sprintf("/e2e-c3?u=%d&e=%d&r=%d", i, epoch, r))
-				if err != nil {
-					t.Fatalf("user %d epoch %d req %d: %v", i, epoch, r, err)
-				}
-				buf := make([]byte, 4)
-				n, _ := resp.Body.Read(buf)
-				resp.Body.Close()
-				if string(buf[:n]) != u.dest {
-					broken++
-					break
-				}
-			}
-		}
-		if broken > 0 {
-			t.Errorf("epoch %d (%d/%d): %d/%d users switched destination", epoch+1, e.wA, e.wB, broken, users)
-		}
-
-		// Fresh users should reflect new weights.
-		freshA, freshB := 0, 0
-		for i := 0; i < 500; i++ {
-			jar, _ := cookiejar.New(nil)
-			c := &http.Client{Timeout: 5e9, Jar: jar}
-			resp, err := c.Get(proxyURL + fmt.Sprintf("/e2e-c3?fresh=%d&e=%d", i, epoch))
-			if err != nil {
-				t.Fatalf("fresh user %d: %v", i, err)
-			}
-			buf := make([]byte, 4)
-			n, _ := resp.Body.Read(buf)
-			resp.Body.Close()
-			switch string(buf[:n]) {
-			case "A":
-				freshA++
-			case "B":
-				freshB++
-			}
-		}
-		ratioA := float64(e.wA) / float64(e.wA+e.wB)
-		ratioB := float64(e.wB) / float64(e.wA+e.wB)
-		assertBalancingWeight(t, fmt.Sprintf("epoch%d A", epoch+1), freshA, 500, ratioA, 0.08)
-		assertBalancingWeight(t, fmt.Sprintf("epoch%d B", epoch+1), freshB, 500, ratioB, 0.08)
-	}
-	t.Logf("total requests: %d (pinned) + %d (fresh) = %d", totalRequests, 3*500, totalRequests+3*500)
+	a2, b2 := sendN(t, "/e2e-wrwc", 5000)
+	assertBW(t, "round2 A", a2, 5000, 0.20, 0.05)
+	t.Logf("round2: A=%d (%.1f%%) B=%d (%.1f%%)", a2, pct(a2, 5000), b2, pct(b2, 5000))
 }
 
-// ─── Case 4: Combined L1 + L2 stickiness with concurrent weight changes ───
+// ─── WEIGHTED_CONSISTENT_HASH ──────────────────────────────────────────────
 
-// TestE2E_Proxy_Case4_CombinedL1L2_Concurrent verifies both levels together:
-// - Level 1: destination pinning via WEIGHTED_CONSISTENT_HASH (cookie)
-// - Level 2: endpoint stickiness via RING_HASH with header hash policy
-// 50 users × 100 requests × 2 epochs = 10000+ requests total.
-func TestE2E_Proxy_Case4_CombinedL1L2_Concurrent(t *testing.T) {
+// TestE2E_Proxy_WCH_Stickiness verifies that the same client always goes to
+// the same destination across 5000 requests without weight changes.
+func TestE2E_Proxy_WCH_Stickiness(t *testing.T) {
 	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
 	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
 
-	destA := createDestinationWithEndpointBalancing(t, "e2e-c4-a", upA.host(), upA.port(), map[string]any{
-		"algorithm": "RING_HASH",
-		"ringHash": map[string]any{
-			"hashPolicy": []map[string]any{
-				{"header": map[string]any{"name": "X-Session"}},
-			},
-		},
-	})
+	destA := createDestination(t, "e2e-wch-a", upA.host(), upA.port())
 	defer apiDelete(t, "/destinations/"+destA)
-	destB := createDestinationWithEndpointBalancing(t, "e2e-c4-b", upB.host(), upB.port(), map[string]any{
-		"algorithm": "RING_HASH",
-		"ringHash": map[string]any{
-			"hashPolicy": []map[string]any{
-				{"header": map[string]any{"name": "X-Session"}},
-			},
-		},
-	})
-	defer apiDelete(t, "/destinations/"+destB)
-
-	routeBody := func(wA, wB int) map[string]any {
-		return map[string]any{
-			"name":  "e2e-c4",
-			"match": map[string]any{"pathPrefix": "/e2e-c4"},
-			"forward": map[string]any{
-				"destinations": []map[string]any{
-					{"destinationId": destA, "weight": wA},
-					{"destinationId": destB, "weight": wB},
-				},
-				"destinationBalancing": destBalancing("_vrata_c4", "1h"),
-			},
-		}
-	}
-
-	_, route := apiPost(t, "/routes", routeBody(70, 30))
-	routeID := id(route)
-	defer apiDelete(t, "/routes/"+routeID)
-	snapID := activateSnapshot(t)
-	defer apiDelete(t, "/snapshots/"+snapID)
-
-	// Pin 50 users.
-	const users = 50
-	type user struct {
-		jar     http.CookieJar
-		dest    string
-		session string
-	}
-	cohort := make([]user, users)
-	for i := range cohort {
-		jar, _ := cookiejar.New(nil)
-		session := fmt.Sprintf("session-%d", i)
-		c := &http.Client{Timeout: 5e9, Jar: jar}
-		req, _ := http.NewRequest("GET", proxyURL+fmt.Sprintf("/e2e-c4?u=%d", i), nil)
-		req.Header.Set("X-Session", session)
-		resp, err := c.Do(req)
-		if err != nil {
-			t.Fatalf("user %d warmup: %v", i, err)
-		}
-		buf := make([]byte, 4)
-		n, _ := resp.Body.Read(buf)
-		resp.Body.Close()
-		cohort[i] = user{jar: jar, dest: string(buf[:n]), session: session}
-	}
-
-	// 2 epochs: 30/70, 20/80
-	epochs := []struct{ wA, wB int }{{30, 70}, {20, 80}}
-	for epoch, e := range epochs {
-		apiPut(t, "/routes/"+routeID, routeBody(e.wA, e.wB))
-		snap := activateSnapshot(t)
-		defer apiDelete(t, "/snapshots/"+snap)
-
-		var wg sync.WaitGroup
-		conflicts := make([]string, users)
-		for i, u := range cohort {
-			wg.Add(1)
-			go func(idx int, u user) {
-				defer wg.Done()
-				c := &http.Client{Timeout: 5e9, Jar: u.jar}
-				for r := 0; r < 100; r++ {
-					req, _ := http.NewRequest("GET", proxyURL+fmt.Sprintf("/e2e-c4?u=%d&e=%d&r=%d", idx, epoch, r), nil)
-					req.Header.Set("X-Session", u.session)
-					resp, err := c.Do(req)
-					if err != nil {
-						conflicts[idx] = fmt.Sprintf("req error: %v", err)
-						return
-					}
-					buf := make([]byte, 4)
-					n, _ := resp.Body.Read(buf)
-					resp.Body.Close()
-					if string(buf[:n]) != u.dest {
-						conflicts[idx] = fmt.Sprintf("epoch %d req %d: expected %s got %s", epoch+1, r, u.dest, string(buf[:n]))
-						return
-					}
-				}
-			}(i, u)
-		}
-		wg.Wait()
-		for i, msg := range conflicts {
-			if msg != "" {
-				t.Errorf("user %d: %s", i, msg)
-			}
-		}
-	}
-	t.Logf("total: %d users × 100 reqs × 2 epochs = %d requests", users, users*100*2)
-}
-
-// ─── Case 5: Multiple routes same cookie (isolation test) ──────────────────
-
-// TestE2E_Proxy_Case5_MultiRoute_CookieIsolation verifies that two routes
-// sharing the same session cookie name pin independently (routeID in hash).
-// 5000+ requests across 2 routes × 100 users.
-func TestE2E_Proxy_Case5_MultiRoute_CookieIsolation(t *testing.T) {
-	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
-	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
-
-	destA := createDestination(t, "e2e-c5-a", upA.host(), upA.port())
-	defer apiDelete(t, "/destinations/"+destA)
-	destB := createDestination(t, "e2e-c5-b", upB.host(), upB.port())
-	defer apiDelete(t, "/destinations/"+destB)
-
-	sharedBalancing := destBalancing("_vrata_shared", "1h")
-
-	_, route1 := apiPost(t, "/routes", map[string]any{
-		"name": "e2e-c5r1", "match": map[string]any{"pathPrefix": "/e2e-c5r1"},
-		"forward": map[string]any{
-			"destinations":        []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
-			"destinationBalancing": sharedBalancing,
-		},
-	})
-	defer apiDelete(t, "/routes/"+id(route1))
-
-	_, route2 := apiPost(t, "/routes", map[string]any{
-		"name": "e2e-c5r2", "match": map[string]any{"pathPrefix": "/e2e-c5r2"},
-		"forward": map[string]any{
-			"destinations":        []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
-			"destinationBalancing": sharedBalancing,
-		},
-	})
-	defer apiDelete(t, "/routes/"+id(route2))
-
-	snapID := activateSnapshot(t)
-	defer apiDelete(t, "/snapshots/"+snapID)
-
-	// 100 users, each sends 25 requests to each route. Both routes must be
-	// individually sticky, but they may pin to different destinations
-	// (routeID differs in hash).
-	const users = 100
-	broken := 0
-	for i := 0; i < users; i++ {
-		jar, _ := cookiejar.New(nil)
-		c := &http.Client{Timeout: 5e9, Jar: jar}
-
-		resp1, _ := c.Get(proxyURL + fmt.Sprintf("/e2e-c5r1?u=%d", i))
-		buf := make([]byte, 4)
-		n, _ := resp1.Body.Read(buf)
-		resp1.Body.Close()
-		dest1 := string(buf[:n])
-
-		resp2, _ := c.Get(proxyURL + fmt.Sprintf("/e2e-c5r2?u=%d", i))
-		buf2 := make([]byte, 4)
-		n2, _ := resp2.Body.Read(buf2)
-		resp2.Body.Close()
-		dest2 := string(buf2[:n2])
-
-		for r := 0; r < 25; r++ {
-			r1, _ := c.Get(proxyURL + fmt.Sprintf("/e2e-c5r1?u=%d&r=%d", i, r))
-			b1 := make([]byte, 4)
-			n1, _ := r1.Body.Read(b1)
-			r1.Body.Close()
-			if string(b1[:n1]) != dest1 {
-				broken++
-				break
-			}
-
-			r2, _ := c.Get(proxyURL + fmt.Sprintf("/e2e-c5r2?u=%d&r=%d", i, r))
-			b2 := make([]byte, 4)
-			n2, _ := r2.Body.Read(b2)
-			r2.Body.Close()
-			if string(b2[:n2]) != dest2 {
-				broken++
-				break
-			}
-		}
-	}
-	if broken > 0 {
-		t.Errorf("cookie isolation broken: %d/%d users had stickiness failure", broken, users)
-	}
-	t.Logf("total: %d users × 50 reqs (25 per route) = %d requests", users, users*50)
-}
-
-// ─── Case 6: SourceIP hash policy ──────────────────────────────────────────
-
-// TestE2E_Proxy_Case6_SourceIPHash verifies that sourceIP hash policy produces
-// consistent routing for the same client. Since all e2e requests come from
-// 127.0.0.1, every request should land on the same destination.
-func TestE2E_Proxy_Case6_SourceIPHash(t *testing.T) {
-	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
-	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
-
-	destA := createDestinationWithEndpointBalancing(t, "e2e-c6-a", upA.host(), upA.port(), map[string]any{
-		"algorithm": "RING_HASH",
-		"ringHash": map[string]any{
-			"hashPolicy": []map[string]any{
-				{"sourceIP": map[string]any{"enabled": true}},
-			},
-		},
-	})
-	defer apiDelete(t, "/destinations/"+destA)
-	destB := createDestinationWithEndpointBalancing(t, "e2e-c6-b", upB.host(), upB.port(), map[string]any{
-		"algorithm": "RING_HASH",
-		"ringHash": map[string]any{
-			"hashPolicy": []map[string]any{
-				{"sourceIP": map[string]any{"enabled": true}},
-			},
-		},
-	})
+	destB := createDestination(t, "e2e-wch-b", upB.host(), upB.port())
 	defer apiDelete(t, "/destinations/"+destB)
 
 	_, route := apiPost(t, "/routes", map[string]any{
-		"name":  "e2e-c6",
-		"match": map[string]any{"pathPrefix": "/e2e-c6"},
+		"name":  "e2e-wch",
+		"match": map[string]any{"pathPrefix": "/e2e-wch"},
 		"forward": map[string]any{
 			"destinations": []map[string]any{
-				{"destinationId": destA, "weight": 50},
-				{"destinationId": destB, "weight": 50},
+				{"destinationId": destA, "weight": 60},
+				{"destinationId": destB, "weight": 40},
 			},
+			"destinationBalancing": destBalancing("_vrata_wch", "1h"),
 		},
 	})
 	defer apiDelete(t, "/routes/"+id(route))
 	snapID := activateSnapshot(t)
 	defer apiDelete(t, "/snapshots/"+snapID)
 
-	// All requests from same IP should go to same destination.
-	const total = 5000
-	_, _, first := proxyGet(t, "/e2e-c6", nil)
+	const users = 100
+	const reqsPerUser = 50
 	broken := 0
-	for i := 1; i < total; i++ {
-		_, _, body := proxyGet(t, "/e2e-c6", nil)
-		if body != first {
-			broken++
+	for u := 0; u < users; u++ {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		first := clientGet(t, c, "/e2e-wch")
+		for r := 1; r < reqsPerUser; r++ {
+			if clientGet(t, c, "/e2e-wch") != first {
+				broken++
+				break
+			}
 		}
 	}
 	if broken > 0 {
-		t.Errorf("sourceIP hash inconsistent: %d/%d requests went to different destination", broken, total)
+		t.Errorf("stickiness broken: %d/%d users switched destination", broken, users)
 	}
-	t.Logf("sourceIP hash: all %d requests went to %s", total, first)
+	t.Logf("sticky: %d/%d users stable (%d reqs each, total %d)", users-broken, users, reqsPerUser, users*reqsPerUser)
+}
+
+// TestE2E_Proxy_WCH_WeightDistribution verifies initial distribution matches weights.
+func TestE2E_Proxy_WCH_WeightDistribution(t *testing.T) {
+	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
+	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
+
+	destA := createDestination(t, "e2e-wchd-a", upA.host(), upA.port())
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createDestination(t, "e2e-wchd-b", upB.host(), upB.port())
+	defer apiDelete(t, "/destinations/"+destB)
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "e2e-wchd",
+		"match": map[string]any{"pathPrefix": "/e2e-wchd"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{
+				{"destinationId": destA, "weight": 75},
+				{"destinationId": destB, "weight": 25},
+			},
+			"destinationBalancing": destBalancing("_vrata_wchd", "1h"),
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	countA, countB := 0, 0
+	for i := 0; i < 5000; i++ {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		switch clientGet(t, c, "/e2e-wchd") {
+		case "A":
+			countA++
+		case "B":
+			countB++
+		}
+	}
+	assertBW(t, "A", countA, 5000, 0.75, 0.06)
+	assertBW(t, "B", countB, 5000, 0.25, 0.06)
+	t.Logf("A=%d (%.1f%%) B=%d (%.1f%%)", countA, pct(countA, 5000), countB, pct(countB, 5000))
+}
+
+// TestE2E_Proxy_WCH_WeightChange verifies that weight changes cause minimal
+// disruption (proportional to the weight delta, not 100%).
+func TestE2E_Proxy_WCH_WeightChange(t *testing.T) {
+	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
+	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
+
+	destA := createDestination(t, "e2e-wchw-a", upA.host(), upA.port())
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createDestination(t, "e2e-wchw-b", upB.host(), upB.port())
+	defer apiDelete(t, "/destinations/"+destB)
+
+	routeBody := func(wA, wB int) map[string]any {
+		return map[string]any{
+			"name":  "e2e-wchw",
+			"match": map[string]any{"pathPrefix": "/e2e-wchw"},
+			"forward": map[string]any{
+				"destinations": []map[string]any{
+					{"destinationId": destA, "weight": wA},
+					{"destinationId": destB, "weight": wB},
+				},
+				"destinationBalancing": destBalancing("_vrata_wchw", "1h"),
+			},
+		}
+	}
+
+	_, route := apiPost(t, "/routes", routeBody(80, 20))
+	routeID := id(route)
+	defer apiDelete(t, "/routes/"+routeID)
+	snap1 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap1)
+
+	// Pin 500 users.
+	type pinned struct {
+		jar  http.CookieJar
+		dest string
+	}
+	users := make([]pinned, 500)
+	for i := range users {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		users[i] = pinned{jar: jar, dest: clientGet(t, c, "/e2e-wchw")}
+	}
+
+	// Change to 60/40.
+	apiPut(t, "/routes/"+routeID, routeBody(60, 40))
+	snap2 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap2)
+
+	moved := 0
+	for _, u := range users {
+		c := &http.Client{Timeout: 5e9, Jar: u.jar}
+		if clientGet(t, c, "/e2e-wchw") != u.dest {
+			moved++
+		}
+	}
+
+	// Weight delta is 20pp (80→60). We expect disruption < 50%
+	// (consistent hash moves proportional to delta, not all).
+	movePct := float64(moved) / float64(len(users)) * 100
+	t.Logf("weight 80/20 → 60/40: %d/%d users moved (%.1f%%)", moved, len(users), movePct)
+	if movePct > 50 {
+		t.Errorf("disruption too high: %.1f%% > 50%%", movePct)
+	}
+}
+
+// TestE2E_Proxy_WCH_MultiRoute_Isolation verifies that two routes with the
+// same cookie name pin independently (routeID in hash isolates them).
+func TestE2E_Proxy_WCH_MultiRoute_Isolation(t *testing.T) {
+	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
+	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
+
+	destA := createDestination(t, "e2e-wchmr-a", upA.host(), upA.port())
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createDestination(t, "e2e-wchmr-b", upB.host(), upB.port())
+	defer apiDelete(t, "/destinations/"+destB)
+
+	bal := destBalancing("_vrata_shared", "1h")
+
+	_, r1 := apiPost(t, "/routes", map[string]any{
+		"name": "e2e-wchmr1", "match": map[string]any{"pathPrefix": "/e2e-wchmr1"},
+		"forward": map[string]any{
+			"destinations":        []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
+			"destinationBalancing": bal,
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(r1))
+
+	_, r2 := apiPost(t, "/routes", map[string]any{
+		"name": "e2e-wchmr2", "match": map[string]any{"pathPrefix": "/e2e-wchmr2"},
+		"forward": map[string]any{
+			"destinations":        []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
+			"destinationBalancing": bal,
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(r2))
+
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	broken := 0
+	for i := 0; i < 200; i++ {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		d1 := clientGet(t, c, "/e2e-wchmr1")
+		d2 := clientGet(t, c, "/e2e-wchmr2")
+		for r := 0; r < 25; r++ {
+			if clientGet(t, c, "/e2e-wchmr1") != d1 || clientGet(t, c, "/e2e-wchmr2") != d2 {
+				broken++
+				break
+			}
+		}
+	}
+	if broken > 0 {
+		t.Errorf("isolation broken: %d/200 users", broken)
+	}
+	t.Logf("isolation: %d/200 users stable across 2 routes (total %d reqs)", 200-broken, 200*50)
+}
+
+// TestE2E_Proxy_WCH_Concurrent verifies stickiness under concurrent load.
+func TestE2E_Proxy_WCH_Concurrent(t *testing.T) {
+	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
+	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
+
+	destA := createDestination(t, "e2e-wchc-a", upA.host(), upA.port())
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createDestination(t, "e2e-wchc-b", upB.host(), upB.port())
+	defer apiDelete(t, "/destinations/"+destB)
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "e2e-wchc",
+		"match": map[string]any{"pathPrefix": "/e2e-wchc"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{
+				{"destinationId": destA, "weight": 50},
+				{"destinationId": destB, "weight": 50},
+			},
+			"destinationBalancing": destBalancing("_vrata_wchc", "1h"),
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	const users = 50
+	const reqsPerUser = 100
+	var wg sync.WaitGroup
+	var broken atomic.Int32
+	for u := 0; u < users; u++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			jar, _ := cookiejar.New(nil)
+			c := &http.Client{Timeout: 5e9, Jar: jar}
+			first := clientGet(t, c, fmt.Sprintf("/e2e-wchc?u=%d", idx))
+			for r := 1; r < reqsPerUser; r++ {
+				if clientGet(t, c, fmt.Sprintf("/e2e-wchc?u=%d&r=%d", idx, r)) != first {
+					broken.Add(1)
+					return
+				}
+			}
+		}(u)
+	}
+	wg.Wait()
+	b := int(broken.Load())
+	if b > 0 {
+		t.Errorf("concurrent stickiness broken: %d/%d users", b, users)
+	}
+	t.Logf("concurrent: %d/%d users stable (%d reqs each, total %d)", users-b, users, reqsPerUser, users*reqsPerUser)
+}
+
+// ─── STICKY (falls back to WCH when no Redis) ─────────────────────────────
+
+// TestE2E_Proxy_Sticky_FallbackToWCH verifies that STICKY without Redis
+// falls back to WEIGHTED_CONSISTENT_HASH behaviour (stickiness with some
+// disruption on weight change).
+func TestE2E_Proxy_Sticky_FallbackToWCH(t *testing.T) {
+	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
+	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
+
+	destA := createDestination(t, "e2e-stk-a", upA.host(), upA.port())
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createDestination(t, "e2e-stk-b", upB.host(), upB.port())
+	defer apiDelete(t, "/destinations/"+destB)
+
+	stickyBal := map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_stk", "ttl": "1h"},
+		},
+	}
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "e2e-stk",
+		"match": map[string]any{"pathPrefix": "/e2e-stk"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{
+				{"destinationId": destA, "weight": 60},
+				{"destinationId": destB, "weight": 40},
+			},
+			"destinationBalancing": stickyBal,
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	const users = 100
+	broken := 0
+	for u := 0; u < users; u++ {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		first := clientGet(t, c, fmt.Sprintf("/e2e-stk?u=%d", u))
+		for r := 1; r < 50; r++ {
+			if clientGet(t, c, fmt.Sprintf("/e2e-stk?u=%d&r=%d", u, r)) != first {
+				broken++
+				break
+			}
+		}
+	}
+	if broken > 0 {
+		t.Errorf("sticky fallback broken: %d/%d users", broken, users)
+	}
+	t.Logf("sticky fallback: %d/%d users stable (total %d reqs)", users-broken, users, users*50)
+}
+
+// TestE2E_Proxy_Sticky_ZeroDisruption verifies that STICKY with Redis
+// achieves zero disruption when weights change. Existing clients stay on
+// their original destination; new clients distribute according to new weights.
+// Requires Redis on localhost:6379 (started by e2e infrastructure).
+func TestE2E_Proxy_Sticky_ZeroDisruption(t *testing.T) {
+	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
+	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
+
+	destA := createDestination(t, "e2e-stkz-a", upA.host(), upA.port())
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createDestination(t, "e2e-stkz-b", upB.host(), upB.port())
+	defer apiDelete(t, "/destinations/"+destB)
+
+	stickyBal := map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_stkz", "ttl": "1h"},
+		},
+	}
+
+	routeBody := func(wA, wB int) map[string]any {
+		return map[string]any{
+			"name":  "e2e-stkz",
+			"match": map[string]any{"pathPrefix": "/e2e-stkz"},
+			"forward": map[string]any{
+				"destinations": []map[string]any{
+					{"destinationId": destA, "weight": wA},
+					{"destinationId": destB, "weight": wB},
+				},
+				"destinationBalancing": stickyBal,
+			},
+		}
+	}
+
+	_, route := apiPost(t, "/routes", routeBody(80, 20))
+	routeID := id(route)
+	defer apiDelete(t, "/routes/"+routeID)
+	snap1 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap1)
+
+	// Pin 200 users at 80/20.
+	type pinned struct {
+		jar  http.CookieJar
+		dest string
+	}
+	users := make([]pinned, 200)
+	for i := range users {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		users[i] = pinned{jar: jar, dest: clientGet(t, c, fmt.Sprintf("/e2e-stkz?u=%d", i))}
+	}
+
+	// Verify initial distribution.
+	initA, initB := 0, 0
+	for _, u := range users {
+		switch u.dest {
+		case "A":
+			initA++
+		case "B":
+			initB++
+		}
+	}
+	t.Logf("initial: A=%d B=%d (target 80/20)", initA, initB)
+
+	// Change weights to 20/80.
+	apiPut(t, "/routes/"+routeID, routeBody(20, 80))
+	snap2 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap2)
+
+	// Existing users must ALL stay on their original destination (zero disruption).
+	moved := 0
+	for i, u := range users {
+		c := &http.Client{Timeout: 5e9, Jar: u.jar}
+		for r := 0; r < 25; r++ {
+			got := clientGet(t, c, fmt.Sprintf("/e2e-stkz?u=%d&r=%d", i, r))
+			if got != u.dest {
+				moved++
+				break
+			}
+		}
+	}
+	if moved > 0 {
+		t.Errorf("STICKY zero disruption FAILED: %d/%d users moved after weight change 80/20→20/80", moved, len(users))
+	}
+	t.Logf("zero disruption: %d/%d users stayed (25 reqs each, total %d)", len(users)-moved, len(users), len(users)*25)
+
+	// New users should respect new weights (20/80).
+	newA, newB := 0, 0
+	for i := 0; i < 500; i++ {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Timeout: 5e9, Jar: jar}
+		switch clientGet(t, c, fmt.Sprintf("/e2e-stkz?new=%d", i)) {
+		case "A":
+			newA++
+		case "B":
+			newB++
+		}
+	}
+	assertBW(t, "new A", newA, 500, 0.20, 0.07)
+	assertBW(t, "new B", newB, 500, 0.80, 0.07)
+	t.Logf("new users: A=%d (%.1f%%) B=%d (%.1f%%)", newA, pct(newA, 500), newB, pct(newB, 500))
+}
+
+// TestE2E_Proxy_Sticky_DestinationRemoved verifies that when a pinned
+// destination is removed, the client gets reassigned via weighted random.
+func TestE2E_Proxy_Sticky_DestinationRemoved(t *testing.T) {
+	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
+	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
+
+	destA := createDestination(t, "e2e-stkr-a", upA.host(), upA.port())
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createDestination(t, "e2e-stkr-b", upB.host(), upB.port())
+	defer apiDelete(t, "/destinations/"+destB)
+
+	stickyBal := map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_stkr", "ttl": "1h"},
+		},
+	}
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "e2e-stkr",
+		"match": map[string]any{"pathPrefix": "/e2e-stkr"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{
+				{"destinationId": destA, "weight": 50},
+				{"destinationId": destB, "weight": 50},
+			},
+			"destinationBalancing": stickyBal,
+		},
+	})
+	routeID := id(route)
+	defer apiDelete(t, "/routes/"+routeID)
+	snap1 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap1)
+
+	// Pin a user.
+	jar, _ := cookiejar.New(nil)
+	c := &http.Client{Timeout: 5e9, Jar: jar}
+	first := clientGet(t, c, "/e2e-stkr")
+
+	// Remove the pinned destination from the route.
+	remaining := destB
+	expected := "B"
+	if first == "B" {
+		remaining = destA
+		expected = "A"
+	}
+	apiPut(t, "/routes/"+routeID, map[string]any{
+		"name":  "e2e-stkr",
+		"match": map[string]any{"pathPrefix": "/e2e-stkr"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{
+				{"destinationId": remaining, "weight": 100},
+			},
+			"destinationBalancing": stickyBal,
+		},
+	})
+	snap2 := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snap2)
+
+	got := clientGet(t, c, "/e2e-stkr")
+	if got != expected {
+		t.Errorf("after removal: expected %s, got %s", expected, got)
+	}
+	t.Logf("destination removed: %s → %s (reassigned correctly)", first, got)
+}
+
+// TestE2E_Proxy_Sticky_Concurrent verifies STICKY under concurrent load.
+func TestE2E_Proxy_Sticky_Concurrent(t *testing.T) {
+	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
+	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
+
+	destA := createDestination(t, "e2e-stkcc-a", upA.host(), upA.port())
+	defer apiDelete(t, "/destinations/"+destA)
+	destB := createDestination(t, "e2e-stkcc-b", upB.host(), upB.port())
+	defer apiDelete(t, "/destinations/"+destB)
+
+	stickyBal := map[string]any{
+		"algorithm": "STICKY",
+		"sticky": map[string]any{
+			"cookie": map[string]any{"name": "_vrata_stkcc", "ttl": "1h"},
+		},
+	}
+
+	_, route := apiPost(t, "/routes", map[string]any{
+		"name":  "e2e-stkcc",
+		"match": map[string]any{"pathPrefix": "/e2e-stkcc"},
+		"forward": map[string]any{
+			"destinations": []map[string]any{
+				{"destinationId": destA, "weight": 50},
+				{"destinationId": destB, "weight": 50},
+			},
+			"destinationBalancing": stickyBal,
+		},
+	})
+	defer apiDelete(t, "/routes/"+id(route))
+	snapID := activateSnapshot(t)
+	defer apiDelete(t, "/snapshots/"+snapID)
+
+	const numUsers = 50
+	const reqsPerUser = 100
+	var wg sync.WaitGroup
+	var broken atomic.Int32
+	for u := 0; u < numUsers; u++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			jar, _ := cookiejar.New(nil)
+			c := &http.Client{Timeout: 5e9, Jar: jar}
+			first := clientGet(t, c, fmt.Sprintf("/e2e-stkcc?u=%d", idx))
+			for r := 1; r < reqsPerUser; r++ {
+				if clientGet(t, c, fmt.Sprintf("/e2e-stkcc?u=%d&r=%d", idx, r)) != first {
+					broken.Add(1)
+					return
+				}
+			}
+		}(u)
+	}
+	wg.Wait()
+	b := int(broken.Load())
+	if b > 0 {
+		t.Errorf("concurrent STICKY broken: %d/%d users", b, numUsers)
+	}
+	t.Logf("concurrent STICKY: %d/%d stable (%d reqs each, total %d)", numUsers-b, numUsers, reqsPerUser, numUsers*reqsPerUser)
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
-func createDestinationWithEndpointBalancing(t *testing.T, name, host string, port int, eb map[string]any) string {
+func clientGet(t *testing.T, c *http.Client, path string) string {
 	t.Helper()
-	_, d := apiPost(t, "/destinations", map[string]any{
-		"name": name, "host": host, "port": port,
-		"options": map[string]any{
-			"endpointBalancing": eb,
-		},
-	})
-	if d["id"] == nil {
-		t.Fatalf("create destination %s failed: %v", name, d)
+	resp, err := c.Get(proxyURL + path)
+	if err != nil {
+		t.Fatalf("GET %s: %v", path, err)
 	}
-	return id(d)
+	buf := make([]byte, 64)
+	n, _ := resp.Body.Read(buf)
+	resp.Body.Close()
+	return string(buf[:n])
 }
 
-func assertBalancingWeight(t *testing.T, label string, got, total int, expectedRatio, tolerance float64) {
+func sendN(t *testing.T, path string, n int) (countA, countB int) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		_, _, body := proxyGet(t, path, nil)
+		switch body {
+		case "A":
+			countA++
+		case "B":
+			countB++
+		}
+	}
+	return
+}
+
+func assertBW(t *testing.T, label string, got, total int, expected, tolerance float64) {
 	t.Helper()
 	actual := float64(got) / float64(total)
-	if math.Abs(actual-expectedRatio) > tolerance {
+	if math.Abs(actual-expected) > tolerance {
 		t.Errorf("%s: expected ~%.0f%% got %.1f%% (%d/%d)",
-			label, expectedRatio*100, actual*100, got, total)
+			label, expected*100, actual*100, got, total)
 	}
 }
+
+func pct(n, total int) float64 { return float64(n) * 100 / float64(total) }

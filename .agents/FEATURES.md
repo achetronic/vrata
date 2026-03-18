@@ -59,8 +59,9 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 | Feature                                                 | Status | Tests                 |
 | ------------------------------------------------------- | ------ | --------------------- |
-| Weighted destination selection                          | 100%   | Unit + E2E (5000 req) |
-| Destination balancing (WEIGHTED_CONSISTENT_HASH + cookie)| 100%   | Unit (7) + E2E (5)    |
+| Weighted destination selection (WEIGHTED_RANDOM)         | 100%   | Unit + E2E (15k req)  |
+| Destination balancing (WEIGHTED_CONSISTENT_HASH)         | 100%   | Unit (7) + E2E (26k)  |
+| Destination balancing (STICKY + Redis)                   | 100%   | Unit (5) + E2E (20k)  |
 | Endpoint balancing (RING_HASH, MAGLEV, LeastReq, etc)   | 100%   | Unit                  |
 | Path rewrite (prefix)                                   | 100%   | E2E                   |
 | Path rewrite (regex, cached)                            | 100%   | E2E                   |
@@ -161,6 +162,7 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Respond                | 2       | 2       |
 | Gateway                | 2       | 2       |
 | K8s watcher            | 4       | 4       |
+| Session store (Redis)    | 5       | 5       |
 | Proxy router + pinning | 15      | 15      |
 | CEL eval               | 11      | 11      |
 | Proxy middlewares      | 55      | 55      |
@@ -168,9 +170,11 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Raft handlers          | 5       | 5       |
 | Config                 | 10      | 10      |
 | Sync client            | 2       | 2       |
-| E2E (proxy, live)      | 40      | 40      |
-| E2E (cluster, kind)    | 5       | 5       |
-| **Total**              | **235** | **235** |
+| E2E (proxy, live)      | 52      | 51      |
+| E2E (cluster, kind)    | 8       | 8       |
+| **Total**              | **249** | **248** |
+
+**Note**: `TestE2E_Proxy_GroupRegexComposition` is a pre-existing bug (regex 404), not related to balancing.
 
 ## Bugs Fixed Across All Audits
 

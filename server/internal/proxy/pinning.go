@@ -11,6 +11,12 @@ import (
 // pinning. Each destination occupies ring space proportional to its weight.
 // Given the same dests and the same key, every proxy produces the same
 // result — no shared state required.
+//
+// Consistent hash property: when weights change, only the clients in the
+// ring space that changes ownership are moved. Clients whose hash falls in
+// unchanged ring space stay on the same destination. This minimises
+// disruption compared to weighted random, but does NOT guarantee zero
+// movement — reducing a destination's weight necessarily moves some clients.
 type destinationRing struct {
 	entries []ringNode
 }

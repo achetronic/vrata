@@ -34,8 +34,10 @@ import (
 	"github.com/achetronic/vrata/internal/api"
 	"github.com/achetronic/vrata/internal/api/handlers"
 	"github.com/achetronic/vrata/internal/config"
+	"github.com/achetronic/vrata/internal/gateway"
 	"github.com/achetronic/vrata/internal/proxy"
 	raftnode "github.com/achetronic/vrata/internal/raft"
+	"github.com/achetronic/vrata/internal/session"
 	"github.com/achetronic/vrata/internal/store"
 	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 	"github.com/achetronic/vrata/internal/store/raftstore"
@@ -125,7 +127,38 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) 
 
 	httpSrv.BaseContext = func(_ net.Listener) context.Context { return ctx }
 
-	errCh := make(chan error, 2)
+	// Proxy gateway: watches store events, rebuilds routing table, manages listeners.
+	proxyRouter := proxy.NewRouter()
+	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
+	healthChecker := proxy.NewHealthChecker(logger)
+	outlierDetector := proxy.NewOutlierDetector(logger)
+
+	sessStore, err := buildSessionStore(cfg, logger)
+	if err != nil {
+		logger.Warn("session store unavailable, STICKY will fall back to WEIGHTED_CONSISTENT_HASH",
+			slog.String("error", err.Error()))
+	}
+
+	gw := gateway.New(gateway.Dependencies{
+		Store:           activeStore,
+		Router:          proxyRouter,
+		ListenerManager: listenerMgr,
+		HealthChecker:   healthChecker,
+		OutlierDetector: outlierDetector,
+		SessionStore:    sessStore,
+		Logger:          logger,
+	})
+
+	errCh := make(chan error, 4)
+
+	healthChecker.Start(ctx)
+	outlierDetector.Start(ctx)
+
+	go func() {
+		if err := gw.Run(ctx); err != nil {
+			errCh <- fmt.Errorf("gateway: %w", err)
+		}
+	}()
 
 	go func() {
 		logger.Info("http server listening", slog.String("address", cfg.Server.Address))
@@ -137,6 +170,9 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) 
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
+		healthChecker.Stop()
+		outlierDetector.Stop()
+		listenerMgr.Shutdown()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 		_ = httpSrv.Shutdown(shutdownCtx)
@@ -163,6 +199,12 @@ func runProxy(cfg *config.Config, logger *slog.Logger) error {
 	healthChecker := proxy.NewHealthChecker(logger)
 	outlierDetector := proxy.NewOutlierDetector(logger)
 
+	sessStore, err := buildSessionStore(cfg, logger)
+	if err != nil {
+		logger.Warn("session store unavailable, STICKY will fall back to WEIGHTED_CONSISTENT_HASH",
+			slog.String("error", err.Error()))
+	}
+
 	syncClient := rtsync.New(rtsync.Dependencies{
 		ControlPlaneAddr:  cfg.ControlPlane.Address,
 		ReconnectInterval: reconnect,
@@ -170,6 +212,7 @@ func runProxy(cfg *config.Config, logger *slog.Logger) error {
 		ListenerManager:   listenerMgr,
 		HealthChecker:     healthChecker,
 		OutlierDetector:   outlierDetector,
+		SessionStore:      sessStore,
 		Logger:            logger,
 	})
 
@@ -223,5 +266,32 @@ func buildLogger(cfg *config.Config) *slog.Logger {
 	}
 
 	return slog.New(handler)
+}
+
+// buildSessionStore creates a session store from the config.
+// Returns nil (not an error) if no session store is configured.
+func buildSessionStore(cfg *config.Config, logger *slog.Logger) (proxy.SessionStore, error) {
+	if cfg.SessionStore == nil || cfg.SessionStore.Type == "" {
+		return nil, nil
+	}
+	switch cfg.SessionStore.Type {
+	case config.SessionStoreRedis:
+		if cfg.SessionStore.Redis == nil {
+			return nil, fmt.Errorf("sessionStore.redis config is required when type is %q", config.SessionStoreRedis)
+		}
+		rc := cfg.SessionStore.Redis
+		addr := rc.Address
+		if addr == "" {
+			addr = "localhost:6379"
+		}
+		store, err := session.NewRedisStore(addr, rc.Password, rc.DB)
+		if err != nil {
+			return nil, fmt.Errorf("connecting to Redis at %s: %w", addr, err)
+		}
+		logger.Info("session store connected", slog.String("type", "redis"), slog.String("address", addr))
+		return store, nil
+	default:
+		return nil, fmt.Errorf("unknown sessionStore.type %q", cfg.SessionStore.Type)
+	}
 }
 

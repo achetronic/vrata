@@ -25,6 +25,7 @@ type RoutingTable struct {
 	destinations map[string]*Upstream
 	middlewares  map[string]model.Middleware
 	cleanups     []func()
+	sessionStore SessionStore
 }
 
 // AddCleanup registers a function to be called when this table is replaced.

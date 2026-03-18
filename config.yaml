@@ -19,3 +19,12 @@ log:
   format: "${LOG_FORMAT:-console}"
   # level: "debug", "info", "warn", or "error"
   level: "${LOG_LEVEL:-info}"
+
+# Session store for STICKY destination balancing.
+# Credentials via environment variables.
+sessionStore:
+  type: "${SESSION_STORE_TYPE}"
+  redis:
+    address: "${REDIS_ADDRESS}"
+    password: "${REDIS_PASSWORD}"
+    db: 0

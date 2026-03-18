@@ -19,6 +19,7 @@ type Dependencies struct {
 	ListenerManager *proxy.ListenerManager
 	HealthChecker   *proxy.HealthChecker
 	OutlierDetector *proxy.OutlierDetector
+	SessionStore    proxy.SessionStore
 	Logger          *slog.Logger
 }
 
@@ -105,7 +106,7 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	}
 
 	// Build new routing table.
-	table, err := proxy.BuildTable(routes, groups, destinations, middlewares)
+	table, err := proxy.BuildTable(routes, groups, destinations, middlewares, gw.deps.SessionStore)
 	if err != nil {
 		return fmt.Errorf("building routing table: %w", err)
 	}

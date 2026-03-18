@@ -42,6 +42,11 @@ type Config struct {
 
 	// Log controls the logging behaviour.
 	Log LogConfig `yaml:"log"`
+
+	// SessionStore configures the external session backend used by the
+	// STICKY destination balancing algorithm. When absent, STICKY falls
+	// back to WEIGHTED_CONSISTENT_HASH with a warning.
+	SessionStore *SessionStoreConfig `yaml:"sessionStore,omitempty"`
 }
 
 // ClusterConfig enables multi-node HA for the control plane via embedded
@@ -113,6 +118,36 @@ type LogConfig struct {
 	// Level is the minimum log level: "debug", "info", "warn", or "error".
 	// Default: "info"
 	Level string `yaml:"level"`
+}
+
+// SessionStoreType identifies the session store backend.
+type SessionStoreType string
+
+const (
+	// SessionStoreRedis uses Redis as the session store backend.
+	SessionStoreRedis SessionStoreType = "redis"
+)
+
+// SessionStoreConfig configures the external session store for STICKY sessions.
+type SessionStoreConfig struct {
+	// Type selects the backend. Currently only "redis".
+	Type SessionStoreType `yaml:"type"`
+
+	// Redis holds Redis-specific connection settings.
+	// Only used when Type is "redis".
+	Redis *RedisConfig `yaml:"redis,omitempty"`
+}
+
+// RedisConfig holds connection parameters for a Redis session store.
+type RedisConfig struct {
+	// Address is the Redis host:port. Default: "localhost:6379".
+	Address string `yaml:"address"`
+
+	// Password is the Redis AUTH password. Use ${REDIS_PASSWORD} for secrets.
+	Password string `yaml:"password"`
+
+	// DB is the Redis database number. Default: 0.
+	DB int `yaml:"db"`
 }
 
 // Load reads the YAML file at path, expands environment variables in its

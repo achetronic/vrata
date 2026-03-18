@@ -20,12 +20,13 @@ import (
 
 // Dependencies holds the external collaborators required by the sync client.
 type Dependencies struct {
-	ControlPlaneAddr string
+	ControlPlaneAddr  string
 	ReconnectInterval time.Duration
 	Router            *proxy.Router
 	ListenerManager   *proxy.ListenerManager
 	HealthChecker     *proxy.HealthChecker
 	OutlierDetector   *proxy.OutlierDetector
+	SessionStore      proxy.SessionStore
 	Logger            *slog.Logger
 }
 
@@ -137,7 +138,7 @@ func (c *Client) applySnapshot(data []byte) error {
 
 	snap := vs.Snapshot
 
-	table, err := proxy.BuildTable(snap.Routes, snap.Groups, snap.Destinations, snap.Middlewares)
+	table, err := proxy.BuildTable(snap.Routes, snap.Groups, snap.Destinations, snap.Middlewares, c.deps.SessionStore)
 	if err != nil {
 		return fmt.Errorf("building routing table: %w", err)
 	}

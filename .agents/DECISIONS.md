@@ -621,11 +621,18 @@ resource that owns it:
 `ForwardAction.DestinationBalancing` controls which Destination receives each
 request. Algorithms:
 - `WEIGHTED_RANDOM` (default) — no stickiness
-- `WEIGHTED_CONSISTENT_HASH` — cookie-based pinning to a destination
+- `WEIGHTED_CONSISTENT_HASH` — cookie-based pinning via consistent hash ring.
+  Disruption proportional to weight changes (not zero).
+- `STICKY` — zero-disruption pinning via external session store (Redis).
+  New clients: weighted random. Existing clients: always same destination.
+  Falls back to `WEIGHTED_CONSISTENT_HASH` when no session store is configured.
 
-When using `WEIGHTED_CONSISTENT_HASH`, the algorithm's parameters live in
-`weightedConsistentHash: { cookie: { name, ttl } }`. Default cookie:
-`_vrata_destination_pin`. Hash: `crc32(sessionID + routeID)`.
+Algorithm-specific parameters live in a nested struct named after the algorithm:
+- `weightedConsistentHash: { cookie: { name, ttl } }`
+- `sticky: { cookie: { name, ttl } }`
+
+Default cookie: `_vrata_destination_pin`. Hash (WCH): `crc32(sessionID + routeID)`.
+Session store key (STICKY): `vrata:sticky:{sid}:{routeID}`.
 
 ### Level 2 — Endpoint selection (Destination)
 `Destination.Options.EndpointBalancing` controls which endpoint (pod) within
@@ -644,8 +651,10 @@ Default endpoint cookie: `_vrata_endpoint_pin`.
 - Using the same cookie name for both levels is safe: the hash salt differs
 
 **Do not**: Mix level-1 and level-2 configuration in the same struct. Do not
-store destination or endpoint IDs in cookies. Do not use shared state for
-pinning — both levels are stateless consistent hashes.
+store destination or endpoint IDs in cookies — cookies carry only an opaque
+session ID. Do not use shared state for WCH — it is stateless. STICKY
+requires an external session store (Redis) configured in config.yaml with
+credentials via environment variables.
 
 ---
 

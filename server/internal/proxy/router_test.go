@@ -19,7 +19,7 @@ func TestRouterMatchesPath(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +54,7 @@ func TestRouterMatchesMethods(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 201},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	router.SwapTable(table)
 
@@ -93,7 +93,7 @@ func TestRouterGroupComposition(t *testing.T) {
 				RouteIDs:  []string{"r1"},
 			},
 		},
-		nil, nil,
+		nil, nil, nil,
 	)
 	router.SwapTable(table)
 
@@ -125,7 +125,7 @@ func TestRouterStandaloneRoute(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "healthy"},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	router.SwapTable(table)
 
@@ -157,7 +157,7 @@ func TestRouterAtomicSwap(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	router.SwapTable(table)
 
@@ -182,7 +182,7 @@ func TestRouterCELOnlyMatch(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "cel-ok"},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +231,7 @@ func TestRouterCELWithStaticMatchers(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "debug-on"},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -289,7 +289,7 @@ func TestRouterCELInvalidExpressionSkipsRoute(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("BuildTable should not fail, got: %v", err)

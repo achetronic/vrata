@@ -64,7 +64,15 @@ const (
 
 	// DestinationLBWeightedConsistentHash uses a weighted consistent hash ring
 	// with a session cookie to pin clients to the same destination.
+	// Disruption is minimal and proportional to weight changes.
 	DestinationLBWeightedConsistentHash DestinationLBPolicy = "WEIGHTED_CONSISTENT_HASH"
+
+	// DestinationLBSticky uses a session cookie and an external session store
+	// (e.g. Redis) to guarantee zero disruption when weights change.
+	// New clients are assigned via weighted random; existing clients always
+	// return to the same destination until the cookie expires or the
+	// destination is removed.
+	DestinationLBSticky DestinationLBPolicy = "STICKY"
 )
 
 // ForwardAction groups all configuration that controls how Vrata forwards
@@ -111,6 +119,10 @@ type DestinationBalancing struct {
 	// WeightedConsistentHash holds parameters for WEIGHTED_CONSISTENT_HASH.
 	// Only used when Algorithm is WEIGHTED_CONSISTENT_HASH.
 	WeightedConsistentHash *WeightedConsistentHashOptions `json:"weightedConsistentHash,omitempty" yaml:"weightedConsistentHash,omitempty"`
+
+	// Sticky holds parameters for STICKY.
+	// Only used when Algorithm is STICKY.
+	Sticky *StickyOptions `json:"sticky,omitempty" yaml:"sticky,omitempty"`
 }
 
 // WeightedConsistentHashOptions configures sticky destination selection.
@@ -129,6 +141,14 @@ type DestinationPinCookie struct {
 	// TTL is the lifetime of the session cookie. Accepts Go duration strings
 	// (e.g. "1h", "24h"). Default: "1h".
 	TTL string `json:"ttl,omitempty" yaml:"ttl,omitempty"`
+}
+
+// StickyOptions configures zero-disruption destination pinning backed by
+// an external session store (e.g. Redis). New clients are assigned via
+// weighted random; existing clients always return to the same destination.
+type StickyOptions struct {
+	// Cookie configures the session cookie used for client identification.
+	Cookie *DestinationPinCookie `json:"cookie,omitempty" yaml:"cookie,omitempty"`
 }
 
 // RouteTimeouts controls how long a request is allowed to take.
