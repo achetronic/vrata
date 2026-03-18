@@ -4,7 +4,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
@@ -23,7 +22,7 @@ import (
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /groups [get]
 func (d *Dependencies) ListGroups(w http.ResponseWriter, r *http.Request) {
-	groups, err := d.Store.ListGroups(context.Background())
+	groups, err := d.Store.ListGroups(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
@@ -54,7 +53,7 @@ func (d *Dependencies) CreateGroup(w http.ResponseWriter, r *http.Request) {
 		group.ID = uuid.NewString()
 	}
 
-	if err := d.Store.SaveGroup(context.Background(), group); err != nil {
+	if err := d.Store.SaveGroup(r.Context(), group); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -76,7 +75,7 @@ func (d *Dependencies) CreateGroup(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) GetGroup(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 
-	group, err := d.Store.GetGroup(context.Background(), groupID)
+	group, err := d.Store.GetGroup(r.Context(), groupID)
 	if err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
@@ -101,7 +100,7 @@ func (d *Dependencies) GetGroup(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 
-	if _, err := d.Store.GetGroup(context.Background(), groupID); err != nil {
+	if _, err := d.Store.GetGroup(r.Context(), groupID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
@@ -113,7 +112,7 @@ func (d *Dependencies) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	group.ID = groupID
 
-	if err := d.Store.SaveGroup(context.Background(), group); err != nil {
+	if err := d.Store.SaveGroup(r.Context(), group); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -135,7 +134,7 @@ func (d *Dependencies) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 
-	if err := d.Store.DeleteGroup(context.Background(), groupID); err != nil {
+	if err := d.Store.DeleteGroup(r.Context(), groupID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}

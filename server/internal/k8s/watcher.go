@@ -227,12 +227,7 @@ func (w *Watcher) watchEndpointSlices(ctx context.Context, destID string, destPo
 			slog.Int("count", len(eps)),
 		)
 
-		if err := w.deps.OnChange(ctx); err != nil {
-			w.deps.Logger.Error("k8s watcher: OnChange failed",
-				slog.String("destID", destID),
-				slog.String("error", err.Error()),
-			)
-		}
+		w.notifyChange(ctx, destID)
 	}
 
 	informer.AddEventHandler(kcache.ResourceEventHandlerFuncs{
@@ -328,12 +323,7 @@ func (w *Watcher) watchExternalNameService(ctx context.Context, destID string, d
 			slog.Uint64("port", uint64(destPort)),
 		)
 
-		if err := w.deps.OnChange(ctx); err != nil {
-			w.deps.Logger.Error("k8s watcher: OnChange failed",
-				slog.String("destID", destID),
-				slog.String("error", err.Error()),
-			)
-		}
+		w.notifyChange(ctx, destID)
 	}
 
 	informer.AddEventHandler(kcache.ResourceEventHandlerFuncs{
@@ -348,12 +338,7 @@ func (w *Watcher) watchExternalNameService(ctx context.Context, destID string, d
 				slog.String("destID", destID),
 			)
 
-			if err := w.deps.OnChange(ctx); err != nil {
-				w.deps.Logger.Error("k8s watcher: OnChange failed",
-					slog.String("destID", destID),
-					slog.String("error", err.Error()),
-				)
-			}
+			w.notifyChange(ctx, destID)
 		},
 	})
 
@@ -381,6 +366,19 @@ func isEDS(d model.Destination) bool {
 	return d.Options != nil &&
 		d.Options.Discovery != nil &&
 		d.Options.Discovery.Type == model.DiscoveryTypeKubernetes
+}
+
+// notifyChange safely calls OnChange if set.
+func (w *Watcher) notifyChange(ctx context.Context, destID string) {
+	if w.deps.OnChange == nil {
+		return
+	}
+	if err := w.deps.OnChange(ctx); err != nil {
+		w.deps.Logger.Error("k8s watcher: OnChange failed",
+			slog.String("destID", destID),
+			slog.String("error", err.Error()),
+		)
+	}
 }
 
 func parseFQDN(host string) (namespace, service string, err error) {

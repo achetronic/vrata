@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -192,14 +193,36 @@ func compileRoute(
 		}
 	}
 
-	// Headers from route + group.
-	cr.headers = append(cr.headers, r.Match.Headers...)
+	// Headers from route + group — pre-compile regexes.
+	var rawHeaders []model.HeaderMatcher
+	rawHeaders = append(rawHeaders, r.Match.Headers...)
 	if g != nil {
-		cr.headers = append(cr.headers, g.Headers...)
+		rawHeaders = append(rawHeaders, g.Headers...)
+	}
+	for _, hm := range rawHeaders {
+		chm := compiledHeaderMatcher{name: hm.Name, value: hm.Value}
+		if hm.Regex && hm.Value != "" {
+			re, err := regexp.Compile(hm.Value)
+			if err != nil {
+				return cr, fmt.Errorf("compiling header regex %q: %w", hm.Value, err)
+			}
+			chm.regex = re
+		}
+		cr.headers = append(cr.headers, chm)
 	}
 
-	// Query params.
-	cr.queryParams = r.Match.QueryParams
+	// Query params — pre-compile regexes.
+	for _, qp := range r.Match.QueryParams {
+		cqp := compiledQueryParamMatcher{name: qp.Name, value: qp.Value}
+		if qp.Regex && qp.Value != "" {
+			re, err := regexp.Compile(qp.Value)
+			if err != nil {
+				return cr, fmt.Errorf("compiling query param regex %q: %w", qp.Value, err)
+			}
+			cqp.regex = re
+		}
+		cr.queryParams = append(cr.queryParams, cqp)
+	}
 
 	// Hostnames: merge group + route.
 	if g != nil {

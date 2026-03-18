@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
@@ -21,7 +20,7 @@ import (
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /middlewares [get]
 func (d *Dependencies) ListMiddlewares(w http.ResponseWriter, r *http.Request) {
-	middlewares, err := d.Store.ListMiddlewares(context.Background())
+	middlewares, err := d.Store.ListMiddlewares(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
@@ -52,7 +51,7 @@ func (d *Dependencies) CreateMiddleware(w http.ResponseWriter, r *http.Request) 
 		mw.ID = uuid.NewString()
 	}
 
-	if err := d.Store.SaveMiddleware(context.Background(), mw); err != nil {
+	if err := d.Store.SaveMiddleware(r.Context(), mw); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -74,7 +73,7 @@ func (d *Dependencies) CreateMiddleware(w http.ResponseWriter, r *http.Request) 
 func (d *Dependencies) GetMiddleware(w http.ResponseWriter, r *http.Request) {
 	middlewareID := r.PathValue("middlewareId")
 
-	mw, err := d.Store.GetMiddleware(context.Background(), middlewareID)
+	mw, err := d.Store.GetMiddleware(r.Context(), middlewareID)
 	if err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
@@ -99,7 +98,7 @@ func (d *Dependencies) GetMiddleware(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) {
 	middlewareID := r.PathValue("middlewareId")
 
-	if _, err := d.Store.GetMiddleware(context.Background(), middlewareID); err != nil {
+	if _, err := d.Store.GetMiddleware(r.Context(), middlewareID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
@@ -111,7 +110,7 @@ func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) 
 	}
 	mw.ID = middlewareID
 
-	if err := d.Store.SaveMiddleware(context.Background(), mw); err != nil {
+	if err := d.Store.SaveMiddleware(r.Context(), mw); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -133,7 +132,7 @@ func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) 
 func (d *Dependencies) DeleteMiddleware(w http.ResponseWriter, r *http.Request) {
 	middlewareID := r.PathValue("middlewareId")
 
-	if err := d.Store.DeleteMiddleware(context.Background(), middlewareID); err != nil {
+	if err := d.Store.DeleteMiddleware(r.Context(), middlewareID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}

@@ -93,19 +93,22 @@ func interpolateFields(
 		}
 		val = strings.ReplaceAll(val, "${request.scheme}", scheme)
 
+		pos := 0
 		for {
-			s := strings.Index(val, "${request.header.")
-			if s == -1 {
+			idx := strings.Index(val[pos:], "${request.header.")
+			if idx == -1 {
 				break
 			}
+			s := pos + idx
 			end := strings.Index(val[s:], "}")
 			if end == -1 {
 				break
 			}
 			end += s
-			placeholder := val[s : end+1]
 			headerName := val[s+len("${request.header.") : end]
-			val = strings.Replace(val, placeholder, r.Header.Get(headerName), 1)
+			headerValue := r.Header.Get(headerName)
+			val = val[:s] + headerValue + val[end+1:]
+			pos = s + len(headerValue)
 		}
 
 		val = strings.ReplaceAll(val, "${response.status}", fmt.Sprintf("%d", statusCode))

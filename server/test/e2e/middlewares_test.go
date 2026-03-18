@@ -224,8 +224,14 @@ func TestE2E_Proxy_JWTMiddlewareEC(t *testing.T) {
 	hEnc := base64.RawURLEncoding.EncodeToString(hJSON)
 	cEnc := base64.RawURLEncoding.EncodeToString(cJSON)
 	hash := sha256.Sum256([]byte(hEnc + "." + cEnc))
-	sig, _ := ecdsa.SignASN1(rand.Reader, ecKey, hash[:])
-	token := hEnc + "." + cEnc + "." + base64.RawURLEncoding.EncodeToString(sig)
+	r, s, _ := ecdsa.Sign(rand.Reader, ecKey, hash[:])
+	byteLen := (ecKey.Curve.Params().BitSize + 7) / 8
+	sigBytes := make([]byte, 2*byteLen)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	copy(sigBytes[byteLen-len(rBytes):byteLen], rBytes)
+	copy(sigBytes[2*byteLen-len(sBytes):], sBytes)
+	token := hEnc + "." + cEnc + "." + base64.RawURLEncoding.EncodeToString(sigBytes)
 
 	code, _, body := proxyGet(t, "/e2e-jwt-ec", map[string]string{"Authorization": "Bearer " + token})
 	if code != 200 || body != "ec-ok" {

@@ -3,7 +3,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
@@ -22,7 +21,7 @@ import (
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /routes [get]
 func (d *Dependencies) ListRoutes(w http.ResponseWriter, r *http.Request) {
-	routes, err := d.Store.ListRoutes(context.Background())
+	routes, err := d.Store.ListRoutes(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
@@ -58,7 +57,7 @@ func (d *Dependencies) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		route.ID = uuid.NewString()
 	}
 
-	if err := d.Store.SaveRoute(context.Background(), route); err != nil {
+	if err := d.Store.SaveRoute(r.Context(), route); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -80,7 +79,7 @@ func (d *Dependencies) CreateRoute(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) GetRoute(w http.ResponseWriter, r *http.Request) {
 	routeID := r.PathValue("routeId")
 
-	route, err := d.Store.GetRoute(context.Background(), routeID)
+	route, err := d.Store.GetRoute(r.Context(), routeID)
 	if err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
@@ -105,7 +104,7 @@ func (d *Dependencies) GetRoute(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 	routeID := r.PathValue("routeId")
 
-	if _, err := d.Store.GetRoute(context.Background(), routeID); err != nil {
+	if _, err := d.Store.GetRoute(r.Context(), routeID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
@@ -122,7 +121,7 @@ func (d *Dependencies) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := d.Store.SaveRoute(context.Background(), route); err != nil {
+	if err := d.Store.SaveRoute(r.Context(), route); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -164,7 +163,7 @@ func validateRouteAction(route model.Route) error {
 func (d *Dependencies) DeleteRoute(w http.ResponseWriter, r *http.Request) {
 	routeID := r.PathValue("routeId")
 
-	if err := d.Store.DeleteRoute(context.Background(), routeID); err != nil {
+	if err := d.Store.DeleteRoute(r.Context(), routeID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}

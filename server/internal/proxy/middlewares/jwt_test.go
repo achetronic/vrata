@@ -342,10 +342,16 @@ func signECJWT(t *testing.T, key *ecdsa.PrivateKey, header, claims map[string]in
 	cEnc := base64.RawURLEncoding.EncodeToString(cJSON)
 	signed := hEnc + "." + cEnc
 	hash := sha256.Sum256([]byte(signed))
-	sig, err := ecdsa.SignASN1(rand.Reader, key, hash[:])
+	r, s, err := ecdsa.Sign(rand.Reader, key, hash[:])
 	if err != nil {
 		t.Fatal(err)
 	}
+	byteLen := (key.Curve.Params().BitSize + 7) / 8
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	sig := make([]byte, 2*byteLen)
+	copy(sig[byteLen-len(rBytes):byteLen], rBytes)
+	copy(sig[2*byteLen-len(sBytes):], sBytes)
 	return signed + "." + base64.RawURLEncoding.EncodeToString(sig)
 }
 

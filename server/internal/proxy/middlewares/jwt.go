@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"hash"
 	"io"
 	"log/slog"
 	"math/big"
@@ -148,10 +147,7 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 
 	stop := func() {
 		for _, v := range validators {
-			select {
-			case v.stop <- struct{}{}:
-			default:
-			}
+			close(v.stop)
 		}
 	}
 
@@ -183,31 +179,78 @@ type verifierKey struct {
 }
 
 // verify checks the signature over signedContent using this key.
-func (vk verifierKey) verify(signedContent, signature []byte) bool {
+func (vk verifierKey) verify(alg string, signedContent, signature []byte) bool {
 	switch k := vk.key.(type) {
 	case *rsa.PublicKey:
-		h := sha256.Sum256(signedContent)
-		return rsa.VerifyPKCS1v15(k, crypto.SHA256, h[:], signature) == nil
+		hash, hashFunc := rsaHashForAlg(alg)
+		h := hash(signedContent)
+		return rsa.VerifyPKCS1v15(k, hashFunc, h, signature) == nil
 
 	case *ecdsa.PublicKey:
-		var h []byte
-		switch k.Curve {
-		case elliptic.P384():
-			s := sha512.Sum384(signedContent)
-			h = s[:]
-		case elliptic.P521():
-			s := sha512.Sum512(signedContent)
-			h = s[:]
-		default:
-			s := sha256.Sum256(signedContent)
-			h = s[:]
+		hash := ecHashForCurve(k.Curve)
+		h := hash(signedContent)
+		sig := ecConvertP1363ToASN1(signature, k.Curve)
+		if sig == nil {
+			return false
 		}
-		return ecdsa.VerifyASN1(k, h, signature)
+		return ecdsa.VerifyASN1(k, h, sig)
 
 	case ed25519.PublicKey:
 		return ed25519.Verify(k, signedContent, signature)
 	}
 	return false
+}
+
+// rsaHashForAlg returns the hash function and crypto.Hash for the given RSA alg.
+func rsaHashForAlg(alg string) (func([]byte) []byte, crypto.Hash) {
+	switch alg {
+	case "RS384", "PS384":
+		return func(b []byte) []byte { h := sha512.Sum384(b); return h[:] }, crypto.SHA384
+	case "RS512", "PS512":
+		return func(b []byte) []byte { h := sha512.Sum512(b); return h[:] }, crypto.SHA512
+	default:
+		return func(b []byte) []byte { h := sha256.Sum256(b); return h[:] }, crypto.SHA256
+	}
+}
+
+// ecHashForCurve returns the hash function matching the EC curve.
+func ecHashForCurve(curve elliptic.Curve) func([]byte) []byte {
+	switch curve {
+	case elliptic.P384():
+		return func(b []byte) []byte { h := sha512.Sum384(b); return h[:] }
+	case elliptic.P521():
+		return func(b []byte) []byte { h := sha512.Sum512(b); return h[:] }
+	default:
+		return func(b []byte) []byte { h := sha256.Sum256(b); return h[:] }
+	}
+}
+
+// ecConvertP1363ToASN1 converts a JWT-style R||S signature to ASN.1 DER
+// format for use with ecdsa.VerifyASN1.
+func ecConvertP1363ToASN1(sig []byte, curve elliptic.Curve) []byte {
+	byteLen := (curve.Params().BitSize + 7) / 8
+	if len(sig) != 2*byteLen {
+		return nil
+	}
+	r := new(big.Int).SetBytes(sig[:byteLen])
+	s := new(big.Int).SetBytes(sig[byteLen:])
+
+	// ASN.1 DER encoding: SEQUENCE { INTEGER r, INTEGER s }
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+	// Pad with 0x00 if high bit set
+	if len(rBytes) > 0 && rBytes[0]&0x80 != 0 {
+		rBytes = append([]byte{0}, rBytes...)
+	}
+	if len(sBytes) > 0 && sBytes[0]&0x80 != 0 {
+		sBytes = append([]byte{0}, sBytes...)
+	}
+	der := []byte{0x30, byte(len(rBytes) + len(sBytes) + 4),
+		0x02, byte(len(rBytes))}
+	der = append(der, rBytes...)
+	der = append(der, 0x02, byte(len(sBytes)))
+	der = append(der, sBytes...)
+	return der
 }
 
 func (v *jwtValidator) validateSignatureAndClaims(
@@ -236,7 +279,7 @@ func (v *jwtValidator) verifySignature(header jwtHeader, signedContent string, s
 		if header.Kid != "" && k.kid != "" && header.Kid != k.kid {
 			continue
 		}
-		if k.verify(content, signature) {
+		if k.verify(header.Alg, content, signature) {
 			return true
 		}
 	}
@@ -487,4 +530,3 @@ func parsePEM(data []byte) ([]verifierKey, error) {
 }
 
 // suppress unused import warning for hash
-var _ hash.Hash

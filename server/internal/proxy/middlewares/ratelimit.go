@@ -11,15 +11,23 @@ import (
 )
 
 // RateLimitMiddleware creates a middleware that rate-limits requests using
-// an embedded token bucket per client IP.
+// an embedded token bucket per client IP. Returns the middleware and a stop
+// function to halt the background eviction goroutine.
 func RateLimitMiddleware(cfg *model.RateLimitConfig) Middleware {
+	m, _ := RateLimitMiddlewareWithStop(cfg)
+	return m
+}
+
+// RateLimitMiddlewareWithStop creates a rate limit middleware and returns a
+// stop function that halts the background eviction goroutine.
+func RateLimitMiddlewareWithStop(cfg *model.RateLimitConfig) (Middleware, func()) {
 	if cfg == nil {
-		return passthrough
+		return passthrough, nil
 	}
 
 	limiter := newTokenBucketLimiter(cfg.RequestsPerSecond, cfg.Burst)
 
-	return func(next http.Handler) http.Handler {
+	mw := Middleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := clientIP(r)
 			if !limiter.Allow(key) {
@@ -28,7 +36,13 @@ func RateLimitMiddleware(cfg *model.RateLimitConfig) Middleware {
 			}
 			next.ServeHTTP(w, r)
 		})
+	})
+
+	stop := func() {
+		close(limiter.stop)
 	}
+
+	return mw, stop
 }
 
 func clientIP(r *http.Request) string {
@@ -42,13 +56,12 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-// tokenBucketLimiter is a per-key token bucket rate limiter with automatic
-// eviction of stale entries.
 type tokenBucketLimiter struct {
 	rps     float64
 	burst   int
 	mu      sync.Mutex
 	buckets map[string]*bucket
+	stop    chan struct{}
 }
 
 type bucket struct {
@@ -69,12 +82,12 @@ func newTokenBucketLimiter(rps float64, burst int) *tokenBucketLimiter {
 		rps:     rps,
 		burst:   burst,
 		buckets: make(map[string]*bucket),
+		stop:    make(chan struct{}),
 	}
 	go l.evictLoop()
 	return l
 }
 
-// Allow checks whether a request from the given key is allowed.
 func (l *tokenBucketLimiter) Allow(key string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -100,13 +113,16 @@ func (l *tokenBucketLimiter) Allow(key string) bool {
 	return true
 }
 
-// evictLoop periodically removes buckets that have been idle long enough
-// to have fully refilled, preventing unbounded memory growth.
 func (l *tokenBucketLimiter) evictLoop() {
 	ticker := time.NewTicker(bucketEvictionInterval)
 	defer ticker.Stop()
-	for range ticker.C {
-		l.evictStale()
+	for {
+		select {
+		case <-ticker.C:
+			l.evictStale()
+		case <-l.stop:
+			return
+		}
 	}
 }
 

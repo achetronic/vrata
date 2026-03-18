@@ -116,7 +116,8 @@ func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) (middl
 	case model.MiddlewareTypeExtAuthz:
 		return middlewares.ExtAuthzMiddleware(mw.ExtAuthz, services), nil
 	case model.MiddlewareTypeRateLimit:
-		return middlewares.RateLimitMiddleware(mw.RateLimit), nil
+		m, stop := middlewares.RateLimitMiddlewareWithStop(mw.RateLimit)
+		return m, stop
 	case model.MiddlewareTypeJWT:
 		m, stop := middlewares.JWTMiddlewareWithStop(mw.JWT, services)
 		return m, stop
@@ -208,6 +209,10 @@ func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, gr
 		if upstream.CircuitBreaker != nil {
 			upstream.CircuitBreaker.OnRequest()
 			defer upstream.CircuitBreaker.OnComplete()
+		}
+
+		if b, ok := upstream.Balancer.(interface{ Done(string) }); ok {
+			defer b.Done(upstream.Destination.ID)
 		}
 
 		proxy := upstream.ReverseProxy()
@@ -456,15 +461,21 @@ func mirrorRequest(original *http.Request, mirror *model.RouteMirror, upstreams 
 
 	go func() {
 		proxy := upstream.ReverseProxy()
-		proxy.ServeHTTP(&discardResponseWriter{}, clone)
+		proxy.ServeHTTP(newDiscardResponseWriter(), clone)
 	}()
 }
 
-type discardResponseWriter struct{}
+type discardResponseWriter struct {
+	header http.Header
+}
 
-func (discardResponseWriter) Header() http.Header        { return http.Header{} }
-func (discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
-func (discardResponseWriter) WriteHeader(int)             {}
+func newDiscardResponseWriter() *discardResponseWriter {
+	return &discardResponseWriter{header: make(http.Header)}
+}
+
+func (d *discardResponseWriter) Header() http.Header        { return d.header }
+func (d *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (d *discardResponseWriter) WriteHeader(int)             {}
 
 // applyRewrite modifies the request URL based on RouteRewrite config.
 func applyRewrite(r *http.Request, rw *model.RouteRewrite) {

@@ -76,17 +76,13 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		req.Header.Set("X-Request-Attempt-Count", fmt.Sprintf("%d", attempt+1))
 
 		attemptReq := req
-		var cancelAttempt context.CancelFunc
 		if perAttemptTimeout > 0 {
-			var ctx context.Context
-			ctx, cancelAttempt = context.WithTimeout(req.Context(), perAttemptTimeout)
+			ctx, cancel := context.WithTimeout(req.Context(), perAttemptTimeout)
+			defer cancel()
 			attemptReq = req.WithContext(ctx)
 		}
 
 		resp, err := rt.inner.RoundTrip(attemptReq)
-		if cancelAttempt != nil {
-			cancelAttempt()
-		}
 		if err != nil {
 			lastErr = err
 			if attempt < maxAttempts-1 {
@@ -108,12 +104,7 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return resp, nil
 	}
 
-	// All retries exhausted. Re-execute one last time to get a fresh response
-	// with a readable body.
-	if bodyBytes != nil {
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-	}
-	return rt.inner.RoundTrip(req)
+	return nil, lastErr
 }
 
 func shouldRetry(status int, retry *model.RouteRetry) bool {

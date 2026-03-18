@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/achetronic/rutoso/internal/api/respond"
@@ -18,7 +17,7 @@ import (
 // @Failure     500 {object} respond.ErrorBody
 // @Router      /debug/config [get]
 func (d *Dependencies) GetConfigDump(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
+	ctx := r.Context()
 
 	listeners, err := d.Store.ListListeners(ctx)
 	if err != nil {

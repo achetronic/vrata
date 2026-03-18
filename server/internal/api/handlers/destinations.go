@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
@@ -21,7 +20,7 @@ import (
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /destinations [get]
 func (d *Dependencies) ListDestinations(w http.ResponseWriter, r *http.Request) {
-	destinations, err := d.Store.ListDestinations(context.Background())
+	destinations, err := d.Store.ListDestinations(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
@@ -52,7 +51,7 @@ func (d *Dependencies) CreateDestination(w http.ResponseWriter, r *http.Request)
 		destination.ID = uuid.NewString()
 	}
 
-	if err := d.Store.SaveDestination(context.Background(), destination); err != nil {
+	if err := d.Store.SaveDestination(r.Context(), destination); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -74,7 +73,7 @@ func (d *Dependencies) CreateDestination(w http.ResponseWriter, r *http.Request)
 func (d *Dependencies) GetDestination(w http.ResponseWriter, r *http.Request) {
 	destinationID := r.PathValue("destinationId")
 
-	destination, err := d.Store.GetDestination(context.Background(), destinationID)
+	destination, err := d.Store.GetDestination(r.Context(), destinationID)
 	if err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
@@ -99,7 +98,7 @@ func (d *Dependencies) GetDestination(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) UpdateDestination(w http.ResponseWriter, r *http.Request) {
 	destinationID := r.PathValue("destinationId")
 
-	if _, err := d.Store.GetDestination(context.Background(), destinationID); err != nil {
+	if _, err := d.Store.GetDestination(r.Context(), destinationID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
@@ -111,7 +110,7 @@ func (d *Dependencies) UpdateDestination(w http.ResponseWriter, r *http.Request)
 	}
 	destination.ID = destinationID
 
-	if err := d.Store.SaveDestination(context.Background(), destination); err != nil {
+	if err := d.Store.SaveDestination(r.Context(), destination); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -133,7 +132,7 @@ func (d *Dependencies) UpdateDestination(w http.ResponseWriter, r *http.Request)
 func (d *Dependencies) DeleteDestination(w http.ResponseWriter, r *http.Request) {
 	destinationID := r.PathValue("destinationId")
 
-	if err := d.Store.DeleteDestination(context.Background(), destinationID); err != nil {
+	if err := d.Store.DeleteDestination(r.Context(), destinationID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}

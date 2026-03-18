@@ -34,18 +34,32 @@ func (t *RoutingTable) AddCleanup(fn func()) {
 
 // compiledRoute is a pre-compiled route ready for matching.
 type compiledRoute struct {
-	model       model.Route
-	group       *model.RouteGroup
-	pathRegex   *regexp.Regexp // nil if not regex match
-	pathPrefix  string
-	pathExact   string
-	methods     map[string]bool // nil = match all
-	headers     []model.HeaderMatcher
-	queryParams []model.QueryParamMatcher
-	grpcOnly    bool
-	hostnames   []string
-	celProgram  *celeval.Program // nil if no CEL expression
-	handler     http.Handler
+	model            model.Route
+	group            *model.RouteGroup
+	pathRegex        *regexp.Regexp
+	pathPrefix       string
+	pathExact        string
+	methods          map[string]bool
+	headers          []compiledHeaderMatcher
+	queryParams      []compiledQueryParamMatcher
+	grpcOnly         bool
+	hostnames        []string
+	celProgram       *celeval.Program
+	handler          http.Handler
+}
+
+// compiledHeaderMatcher is a pre-compiled header matcher.
+type compiledHeaderMatcher struct {
+	name  string
+	value string
+	regex *regexp.Regexp // nil if exact match
+}
+
+// compiledQueryParamMatcher is a pre-compiled query param matcher.
+type compiledQueryParamMatcher struct {
+	name  string
+	value string
+	regex *regexp.Regexp // nil if exact match
 }
 
 // NewRouter creates a new Router with an empty routing table.
@@ -137,17 +151,16 @@ func (cr *compiledRoute) match(req *http.Request) bool {
 
 	// Header check.
 	for _, hm := range cr.headers {
-		val := req.Header.Get(hm.Name)
+		val := req.Header.Get(hm.name)
 		if val == "" {
 			return false
 		}
-		if hm.Value != "" {
-			if hm.Regex {
-				re, err := regexp.Compile(hm.Value)
-				if err != nil || !re.MatchString(val) {
+		if hm.value != "" {
+			if hm.regex != nil {
+				if !hm.regex.MatchString(val) {
 					return false
 				}
-			} else if val != hm.Value {
+			} else if val != hm.value {
 				return false
 			}
 		}
@@ -155,17 +168,16 @@ func (cr *compiledRoute) match(req *http.Request) bool {
 
 	// Query param check.
 	for _, qp := range cr.queryParams {
-		val := req.URL.Query().Get(qp.Name)
+		val := req.URL.Query().Get(qp.name)
 		if val == "" {
 			return false
 		}
-		if qp.Value != "" {
-			if qp.Regex {
-				re, err := regexp.Compile(qp.Value)
-				if err != nil || !re.MatchString(val) {
+		if qp.value != "" {
+			if qp.regex != nil {
+				if !qp.regex.MatchString(val) {
 					return false
 				}
-			} else if val != qp.Value {
+			} else if val != qp.value {
 				return false
 			}
 		}

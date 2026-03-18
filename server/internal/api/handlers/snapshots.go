@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -22,7 +21,7 @@ import (
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /snapshots [get]
 func (d *Dependencies) ListSnapshots(w http.ResponseWriter, r *http.Request) {
-	summaries, err := d.Store.ListSnapshots(context.Background())
+	summaries, err := d.Store.ListSnapshots(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
@@ -55,7 +54,7 @@ func (d *Dependencies) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx := r.Context()
 
 	snap, err := buildSnapshot(ctx, d)
 	if err != nil {
@@ -92,7 +91,7 @@ func (d *Dependencies) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) GetSnapshot(w http.ResponseWriter, r *http.Request) {
 	snapshotID := r.PathValue("snapshotId")
 
-	vs, err := d.Store.GetSnapshot(context.Background(), snapshotID)
+	vs, err := d.Store.GetSnapshot(r.Context(), snapshotID)
 	if err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
@@ -120,7 +119,7 @@ func (d *Dependencies) GetSnapshot(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 	snapshotID := r.PathValue("snapshotId")
 
-	if err := d.Store.DeleteSnapshot(context.Background(), snapshotID); err != nil {
+	if err := d.Store.DeleteSnapshot(r.Context(), snapshotID); err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 			return
@@ -147,7 +146,7 @@ func (d *Dependencies) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 // @Router      /snapshots/{snapshotId}/activate [post]
 func (d *Dependencies) ActivateSnapshot(w http.ResponseWriter, r *http.Request) {
 	snapshotID := r.PathValue("snapshotId")
-	ctx := context.Background()
+	ctx := r.Context()
 
 	if err := d.Store.ActivateSnapshot(ctx, snapshotID); err != nil {
 		if errors.Is(err, model.ErrNotFound) {

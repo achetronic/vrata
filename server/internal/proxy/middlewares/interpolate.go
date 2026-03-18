@@ -33,21 +33,25 @@ func Interpolate(template string, r *http.Request) string {
 	}
 	result = strings.ReplaceAll(result, "${request.scheme}", scheme)
 
-	// Handle ${request.header.NAME} patterns.
+	// Handle ${request.header.NAME} patterns. Track position to avoid
+	// re-matching replaced content (prevents infinite loop with adversarial
+	// header values containing "${request.header.").
+	pos := 0
 	for {
-		start := strings.Index(result, "${request.header.")
-		if start == -1 {
+		idx := strings.Index(result[pos:], "${request.header.")
+		if idx == -1 {
 			break
 		}
+		start := pos + idx
 		end := strings.Index(result[start:], "}")
 		if end == -1 {
 			break
 		}
 		end += start
-		placeholder := result[start : end+1]
 		headerName := result[start+len("${request.header.") : end]
 		headerValue := r.Header.Get(headerName)
-		result = strings.Replace(result, placeholder, headerValue, 1)
+		result = result[:start] + headerValue + result[end+1:]
+		pos = start + len(headerValue)
 	}
 
 	return result

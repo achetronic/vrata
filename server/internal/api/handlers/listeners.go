@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 
@@ -21,7 +20,7 @@ import (
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /listeners [get]
 func (d *Dependencies) ListListeners(w http.ResponseWriter, r *http.Request) {
-	listeners, err := d.Store.ListListeners(context.Background())
+	listeners, err := d.Store.ListListeners(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
@@ -56,7 +55,7 @@ func (d *Dependencies) CreateListener(w http.ResponseWriter, r *http.Request) {
 		listener.Address = "0.0.0.0"
 	}
 
-	if err := d.Store.SaveListener(context.Background(), listener); err != nil {
+	if err := d.Store.SaveListener(r.Context(), listener); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -78,7 +77,7 @@ func (d *Dependencies) CreateListener(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) GetListener(w http.ResponseWriter, r *http.Request) {
 	listenerID := r.PathValue("listenerId")
 
-	listener, err := d.Store.GetListener(context.Background(), listenerID)
+	listener, err := d.Store.GetListener(r.Context(), listenerID)
 	if err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
@@ -103,7 +102,7 @@ func (d *Dependencies) GetListener(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) UpdateListener(w http.ResponseWriter, r *http.Request) {
 	listenerID := r.PathValue("listenerId")
 
-	if _, err := d.Store.GetListener(context.Background(), listenerID); err != nil {
+	if _, err := d.Store.GetListener(r.Context(), listenerID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
@@ -119,7 +118,7 @@ func (d *Dependencies) UpdateListener(w http.ResponseWriter, r *http.Request) {
 		listener.Address = "0.0.0.0"
 	}
 
-	if err := d.Store.SaveListener(context.Background(), listener); err != nil {
+	if err := d.Store.SaveListener(r.Context(), listener); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
 	}
@@ -141,7 +140,7 @@ func (d *Dependencies) UpdateListener(w http.ResponseWriter, r *http.Request) {
 func (d *Dependencies) DeleteListener(w http.ResponseWriter, r *http.Request) {
 	listenerID := r.PathValue("listenerId")
 
-	if err := d.Store.DeleteListener(context.Background(), listenerID); err != nil {
+	if err := d.Store.DeleteListener(r.Context(), listenerID); err != nil {
 		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
 		return
 	}
