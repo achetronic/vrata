@@ -1,4 +1,4 @@
-package session
+package redis
 
 import (
 	"context"
@@ -7,29 +7,28 @@ import (
 	"time"
 )
 
-func redisAddr() string {
+func testAddr() string {
 	if addr := os.Getenv("REDIS_ADDRESS"); addr != "" {
 		return addr
 	}
 	return "localhost:6379"
 }
 
-func skipWithoutRedis(t *testing.T) *RedisStore {
+func skipWithoutRedis(t *testing.T) *Store {
 	t.Helper()
-	store, err := NewRedisStore(redisAddr(), "", 0)
+	store, err := New(testAddr(), "", 0)
 	if err != nil {
-		t.Skipf("Redis not available at %s: %v", redisAddr(), err)
+		t.Skipf("Redis not available at %s: %v", testAddr(), err)
 	}
 	t.Cleanup(func() { store.Close() })
 	return store
 }
 
-func TestRedisStore_SetGet(t *testing.T) {
+func TestStore_SetGet(t *testing.T) {
 	store := skipWithoutRedis(t)
 	ctx := context.Background()
 
-	err := store.Set(ctx, "sid-1", "route-1", "dest-A", 60)
-	if err != nil {
+	if err := store.Set(ctx, "sid-1", "route-1", "dest-A", 60); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
 
@@ -42,7 +41,7 @@ func TestRedisStore_SetGet(t *testing.T) {
 	}
 }
 
-func TestRedisStore_GetMissing(t *testing.T) {
+func TestStore_GetMissing(t *testing.T) {
 	store := skipWithoutRedis(t)
 	ctx := context.Background()
 
@@ -55,7 +54,7 @@ func TestRedisStore_GetMissing(t *testing.T) {
 	}
 }
 
-func TestRedisStore_Overwrite(t *testing.T) {
+func TestStore_Overwrite(t *testing.T) {
 	store := skipWithoutRedis(t)
 	ctx := context.Background()
 
@@ -68,7 +67,7 @@ func TestRedisStore_Overwrite(t *testing.T) {
 	}
 }
 
-func TestRedisStore_TTLExpiry(t *testing.T) {
+func TestStore_TTLExpiry(t *testing.T) {
 	store := skipWithoutRedis(t)
 	ctx := context.Background()
 
@@ -81,7 +80,7 @@ func TestRedisStore_TTLExpiry(t *testing.T) {
 	}
 }
 
-func TestRedisStore_RouteIsolation(t *testing.T) {
+func TestStore_RouteIsolation(t *testing.T) {
 	store := skipWithoutRedis(t)
 	ctx := context.Background()
 

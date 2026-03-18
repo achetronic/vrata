@@ -37,7 +37,7 @@ import (
 	"github.com/achetronic/vrata/internal/gateway"
 	"github.com/achetronic/vrata/internal/proxy"
 	raftnode "github.com/achetronic/vrata/internal/raft"
-	"github.com/achetronic/vrata/internal/session"
+	sessionredis "github.com/achetronic/vrata/internal/session/redis"
 	"github.com/achetronic/vrata/internal/store"
 	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 	"github.com/achetronic/vrata/internal/store/raftstore"
@@ -284,7 +284,7 @@ func buildSessionStore(cfg *config.Config, logger *slog.Logger) (proxy.SessionSt
 		if addr == "" {
 			addr = "localhost:6379"
 		}
-		store, err := session.NewRedisStore(addr, rc.Password, rc.DB)
+		store, err := sessionredis.New(addr, rc.Password, rc.DB)
 		if err != nil {
 			return nil, fmt.Errorf("connecting to Redis at %s: %w", addr, err)
 		}
