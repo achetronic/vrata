@@ -17,10 +17,10 @@ import (
 	"net/http"
 	"time"
 
-	rft "github.com/achetronic/rutoso/internal/raft"
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/store"
-	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
+	rft "github.com/achetronic/vrata/internal/raft"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/store"
+	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 )
 
 

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/proxy"
-	memstore "github.com/achetronic/rutoso/internal/store/memory"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy"
+	memstore "github.com/achetronic/vrata/internal/store/memory"
 )
 
 func TestRebuildBuildsRoutingTable(t *testing.T) {

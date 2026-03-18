@@ -112,7 +112,7 @@ type ForwardAction struct {
 type DestinationPinning struct {
 	// CookieName is the name of the session cookie that identifies the client.
 	// All routes sharing the same cookie name share the same session ID.
-	// Default: "_rutoso_pin".
+	// Default: "_vrata_pin".
 	CookieName string `json:"cookieName,omitempty" yaml:"cookieName,omitempty"`
 
 	// TTL is the lifetime of the session cookie. Accepts Go duration strings

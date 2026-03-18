@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // OutlierDetector tracks error rates per upstream and ejects endpoints

@@ -5,7 +5,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/achetronic/rutoso/internal/api/respond"
+	"github.com/achetronic/vrata/internal/api/respond"
 )
 
 // RaftApply is an internal endpoint used for write-forwarding in cluster mode.

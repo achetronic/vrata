@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/proxy/celeval"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy/celeval"
 )
 
 // BuildTable compiles a routing table from model entities.

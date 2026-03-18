@@ -11,7 +11,7 @@ import (
 
 	"github.com/hashicorp/raft"
 
-	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
+	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 )
 
 // CommandType identifies the store operation carried by a Raft log entry.

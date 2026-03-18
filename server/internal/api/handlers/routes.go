@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/achetronic/rutoso/internal/api/respond"
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/api/respond"
+	"github.com/achetronic/vrata/internal/model"
 	"github.com/google/uuid"
 )
 

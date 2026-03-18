@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // SyncStream streams configuration snapshots to proxy-mode instances via

@@ -1,5 +1,5 @@
 # Default values for the Vrata chart.
-# Documentation: https://github.com/achetronic/rutoso
+# Documentation: https://github.com/achetronic/vrata
 
 image:
   repository: ghcr.io/achetronic/vrata

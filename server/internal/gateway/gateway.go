@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/achetronic/rutoso/internal/proxy"
-	"github.com/achetronic/rutoso/internal/store"
+	"github.com/achetronic/vrata/internal/proxy"
+	"github.com/achetronic/vrata/internal/store"
 )
 
 // Dependencies holds the external collaborators required by the Gateway.

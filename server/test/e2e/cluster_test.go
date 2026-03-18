@@ -129,7 +129,7 @@ func waitClusterHealthy(t *testing.T) {
 func portForward(t *testing.T, pod string) (string, func()) {
 	t.Helper()
 	localPort := freeTestPort(t)
-	cmd := exec.Command("kubectl", "--context", "kind-rutoso-dev",
+	cmd := exec.Command("kubectl", "--context", "kind-vrata-dev",
 		"-n", clusterNamespace(), "port-forward", pod,
 		fmt.Sprintf("%d:8080", localPort))
 	cmd.Stdout = nil

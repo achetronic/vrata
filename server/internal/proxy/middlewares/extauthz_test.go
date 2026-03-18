@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/achetronic/rutoso/internal/model"
-	extauthzv1 "github.com/achetronic/rutoso/proto/extauthz/v1"
+	"github.com/achetronic/vrata/internal/model"
+	extauthzv1 "github.com/achetronic/vrata/proto/extauthz/v1"
 	"google.golang.org/grpc"
 )
 

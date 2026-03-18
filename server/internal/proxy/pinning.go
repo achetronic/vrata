@@ -4,7 +4,7 @@ import (
 	"hash/crc32"
 	"sort"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // destinationRing is a weighted consistent hash ring used for destination

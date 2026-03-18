@@ -1,4 +1,4 @@
-module github.com/achetronic/rutoso
+module github.com/achetronic/vrata
 
 go 1.25.0
 

@@ -45,7 +45,7 @@ func TestE2E_Proxy_DestinationPinning(t *testing.T) {
 				{"destinationId": destB, "weight": 50},
 			},
 			"destinationPinning": map[string]any{
-				"cookieName": "_rutoso_pin",
+				"cookieName": "_vrata_pin",
 				"ttl":        "1h",
 			},
 		},
@@ -88,7 +88,7 @@ func TestE2E_Proxy_DestinationPinningWeightRespected(t *testing.T) {
 				{"destinationId": destB, "weight": 10},
 			},
 			"destinationPinning": map[string]any{
-				"cookieName": "_rutoso_pinw",
+				"cookieName": "_vrata_pinw",
 				"ttl":        "1h",
 			},
 		},
@@ -129,7 +129,7 @@ func TestE2E_Proxy_DestinationPinningDestinationRemoved(t *testing.T) {
 				{"destinationId": destA, "weight": 50},
 				{"destinationId": destB, "weight": 50},
 			},
-			"destinationPinning": map[string]any{"cookieName": "_rutoso_pinr", "ttl": "1h"},
+			"destinationPinning": map[string]any{"cookieName": "_vrata_pinr", "ttl": "1h"},
 		},
 	})
 	routeID := id(route)
@@ -154,7 +154,7 @@ func TestE2E_Proxy_DestinationPinningDestinationRemoved(t *testing.T) {
 			"destinations": []map[string]any{
 				{"destinationId": remaining, "weight": 100},
 			},
-			"destinationPinning": map[string]any{"cookieName": "_rutoso_pinr", "ttl": "1h"},
+			"destinationPinning": map[string]any{"cookieName": "_vrata_pinr", "ttl": "1h"},
 		},
 	})
 	snapID2 := activateSnapshot(t)
@@ -180,7 +180,7 @@ func TestE2E_Proxy_DestinationPinningMultipleRoutes(t *testing.T) {
 	destB := createDestination(t, "e2e-pinm-b", upB.host(), upB.port())
 	defer apiDelete(t, "/destinations/"+destB)
 
-	pinCfg := map[string]any{"cookieName": "_rutoso_pinm", "ttl": "1h"}
+	pinCfg := map[string]any{"cookieName": "_vrata_pinm", "ttl": "1h"}
 
 	_, route1 := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-pinm1", "match": map[string]any{"pathPrefix": "/e2e-pinm1"},

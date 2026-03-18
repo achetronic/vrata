@@ -5,7 +5,7 @@ import (
 
 	"github.com/felixge/httpsnoop"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // HeadersMiddleware creates a middleware that adds/removes request and

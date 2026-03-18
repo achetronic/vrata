@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // ListenerManager manages HTTP listeners that serve proxied traffic.

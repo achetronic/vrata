@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 func generateTestKey(t *testing.T) *rsa.PrivateKey {

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // RateLimitMiddleware creates a middleware that rate-limits requests using

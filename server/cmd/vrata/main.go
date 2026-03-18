@@ -4,14 +4,14 @@
 //
 // Usage:
 //
-//	rutoso --config /path/to/config.yaml [--store-path /path/to/rutoso.db]
+//	vrata --config /path/to/config.yaml [--store-path /path/to/rutoso.db]
 //
 //	@title			Rutoso API
 //	@version		1.0
 //	@description	Programmable HTTP reverse proxy. Manage routes, destinations,
 //	@description	listeners, and middlewares via REST API. Changes apply instantly.
 //	@contact.name	Rutoso project
-//	@contact.url	https://github.com/achetronic/rutoso
+//	@contact.url	https://github.com/achetronic/vrata
 //	@license.name	Apache 2.0
 //	@license.url	https://www.apache.org/licenses/LICENSE-2.0
 //	@host			localhost:8080
@@ -31,27 +31,27 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/api"
-	"github.com/achetronic/rutoso/internal/api/handlers"
-	"github.com/achetronic/rutoso/internal/config"
-	"github.com/achetronic/rutoso/internal/proxy"
-	raftnode "github.com/achetronic/rutoso/internal/raft"
-	"github.com/achetronic/rutoso/internal/store"
-	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
-	"github.com/achetronic/rutoso/internal/store/raftstore"
-	rtsync "github.com/achetronic/rutoso/internal/sync"
+	"github.com/achetronic/vrata/internal/api"
+	"github.com/achetronic/vrata/internal/api/handlers"
+	"github.com/achetronic/vrata/internal/config"
+	"github.com/achetronic/vrata/internal/proxy"
+	raftnode "github.com/achetronic/vrata/internal/raft"
+	"github.com/achetronic/vrata/internal/store"
+	boltstore "github.com/achetronic/vrata/internal/store/bolt"
+	"github.com/achetronic/vrata/internal/store/raftstore"
+	rtsync "github.com/achetronic/vrata/internal/sync"
 )
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "rutoso: %v\n", err)
+		fmt.Fprintf(os.Stderr, "vrata: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
 	configPath := flag.String("config", "config.yaml", "path to the YAML configuration file")
-	storePath := flag.String("store-path", "rutoso.db", "path to the bbolt database file")
+	storePath := flag.String("store-path", "vrata.db", "path to the bbolt database file")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
@@ -74,7 +74,7 @@ func run() error {
 // runControlPlane starts the control plane: REST API, persistent store, and
 // the SSE sync endpoint for proxy instances. No proxy, no listeners.
 func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) error {
-	logger.Info("rutoso starting in control plane mode",
+	logger.Info("vrata starting in control plane mode",
 		slog.String("http", cfg.Server.Address),
 		slog.String("store", storePath),
 	)
@@ -149,7 +149,7 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) 
 // runProxy starts the proxy-only mode. No local store, no REST API. Connects
 // to a remote control plane via SSE and applies configuration snapshots.
 func runProxy(cfg *config.Config, logger *slog.Logger) error {
-	logger.Info("rutoso starting in proxy mode",
+	logger.Info("vrata starting in proxy mode",
 		slog.String("controlPlane", cfg.ControlPlane.Address),
 	)
 

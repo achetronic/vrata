@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // JWTMiddleware creates a JWT validation middleware.

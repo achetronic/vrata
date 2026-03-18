@@ -10,8 +10,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/store"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/store"
 )
 
 // Store is an in-memory, thread-safe implementation of store.Store.

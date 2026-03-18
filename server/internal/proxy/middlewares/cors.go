@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // CORSMiddleware creates a CORS middleware from a CORSConfig.

@@ -208,7 +208,7 @@ definitions:
         description: |-
           CookieName is the name of the session cookie that identifies the client.
           All routes sharing the same cookie name share the same session ID.
-          Default: "_rutoso_pin".
+          Default: "_vrata_pin".
         type: string
       ttl:
         description: |-
@@ -1435,7 +1435,7 @@ host: localhost:8080
 info:
   contact:
     name: Rutoso project
-    url: https://github.com/achetronic/rutoso
+    url: https://github.com/achetronic/vrata
   description: |-
     Programmable HTTP reverse proxy. Manage routes, destinations,
     listeners, and middlewares via REST API. Changes apply instantly.

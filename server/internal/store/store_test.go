@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/store"
-	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
-	memstore "github.com/achetronic/rutoso/internal/store/memory"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/store"
+	boltstore "github.com/achetronic/vrata/internal/store/bolt"
+	memstore "github.com/achetronic/vrata/internal/store/memory"
 )
 
 type storeFactory func(t *testing.T) store.Store

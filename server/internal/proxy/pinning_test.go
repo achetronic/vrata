@@ -4,7 +4,7 @@ import (
 	"hash/crc32"
 	"testing"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 func TestDestinationRingDeterministic(t *testing.T) {

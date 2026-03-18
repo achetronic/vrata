@@ -22,7 +22,7 @@ import (
 func TestE2E_Proxy_HeadersMiddleware(t *testing.T) {
 	_, mw := apiPost(t, "/middlewares", map[string]any{
 		"name": "e2e-hdr-mw", "type": "headers",
-		"headers": map[string]any{"responseHeadersToAdd": []map[string]any{{"key": "X-Rutoso-E2E", "value": "true"}}},
+		"headers": map[string]any{"responseHeadersToAdd": []map[string]any{{"key": "X-Vrata-E2E", "value": "true"}}},
 	})
 	defer apiDelete(t, "/middlewares/"+id(mw))
 	_, route := apiPost(t, "/routes", map[string]any{
@@ -34,7 +34,7 @@ func TestE2E_Proxy_HeadersMiddleware(t *testing.T) {
 	defer apiDelete(t, "/snapshots/"+snapID)
 
 	_, headers, _ := proxyGet(t, "/e2e-hdr-mw", nil)
-	if headers.Get("X-Rutoso-E2E") != "true" {
+	if headers.Get("X-Vrata-E2E") != "true" {
 		t.Errorf("missing header")
 	}
 }

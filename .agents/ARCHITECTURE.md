@@ -1,22 +1,22 @@
-# Architecture - Rutoso
+# Architecture - Vrata
 
 ## Overview
 
-Rutoso is a control plane for Envoy proxies. It exposes a REST API that lets operators
+Vrata is a control plane for Envoy proxies. It exposes a REST API that lets operators
 define route groups and routes with rich matching rules, and translates that configuration
 into xDS resources that are pushed live to connected Envoy instances via gRPC streaming.
 
-The system is designed to be horizontally scalable. Multiple Rutoso replicas can run
+The system is designed to be horizontally scalable. Multiple Vrata replicas can run
 simultaneously, sharing state through a pluggable persistence layer. Every change to the
 store triggers a snapshot rebuild that is pushed to all connected Envoys without requiring
 a proxy restart.
 
-Rutoso intentionally has no UI of its own. It is the backend layer. A UI, a CLI, or any
+Vrata intentionally has no UI of its own. It is the backend layer. A UI, a CLI, or any
 other client talks to the REST API.
 
 ## Components
 
-### cmd/rutoso
+### cmd/vrata
 Entry point. Responsible for:
 - Parsing the `--config` flag and loading configuration.
 - Instantiating all dependencies (store, xDS cache, logger).
@@ -63,7 +63,7 @@ type Store interface {
 
 The `Subscribe` method allows the gateway layer to react to changes in real time.
 Initial implementation TBD (see DECISIONS.md). Requirements: simple backup, HA-capable
-replication across Rutoso replicas.
+replication across Vrata replicas.
 
 ### internal/api
 REST API built on `net/http`. Structured as:
@@ -100,7 +100,7 @@ Client (UI / CLI / curl)
         ▼                                             │
     Gateway                                    (backup / HA sync)
         │  rebuilds snapshot                          │
-        ▼                                         Other Rutoso
+        ▼                                         Other Vrata
    xDS Server                                     replicas
         │  streams updated snapshot
         ▼
@@ -123,7 +123,7 @@ Client (UI / CLI / curl)
 ```
 server/
 ├── cmd/
-│   └── rutoso/
+│   └── vrata/
 │       └── main.go               # Wiring, startup, signal handling
 ├── internal/
 │   ├── config/

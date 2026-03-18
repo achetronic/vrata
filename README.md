@@ -1,6 +1,6 @@
-# Rutoso
+# Vrata
 
-A programmable reverse proxy you control entirely through a REST API. Create routes, point them at upstreams, attach middlewares, and Rutoso reconfigures itself on the fly — no restarts, no config files to manage, no external proxy.
+A programmable reverse proxy you control entirely through a REST API. Create routes, point them at upstreams, attach middlewares, and Vrata reconfigures itself on the fly — no restarts, no config files to manage, no external proxy.
 
 One binary. Zero dependencies.
 
@@ -26,10 +26,10 @@ The repo ships with a `config.yaml` at the root with sensible defaults. Copy it 
 
 ```bash
 make build
-./bin/rutoso --config config.yaml
+./bin/vrata --config config.yaml
 ```
 
-That starts Rutoso in control plane mode: the REST API listens on `:8080` and proxied traffic goes through whatever listeners you create.
+That starts Vrata in control plane mode: the REST API listens on `:8080` and proxied traffic goes through whatever listeners you create.
 
 Now configure it:
 
@@ -63,12 +63,12 @@ Swagger UI is available at `http://localhost:8080/api/v1/docs/`.
 
 ## Configuration
 
-Rutoso reads a YAML config file passed via `--config`. The repo includes [`config.yaml`](config.yaml) with all available options and commented defaults. Every string value supports `${ENV_VAR:-default}` substitution.
+Vrata reads a YAML config file passed via `--config`. The repo includes [`config.yaml`](config.yaml) with all available options and commented defaults. Every string value supports `${ENV_VAR:-default}` substitution.
 
 ```yaml
 # "controlplane" (default) — API + store + proxy in one process
 # "proxy" — connects to a remote control plane, no local API or store
-mode: "${RUTOSO_MODE:-controlplane}"
+mode: "${VRATA_MODE:-controlplane}"
 
 server:
   address: "${SERVER_ADDRESS:-:8080}"
@@ -88,7 +88,7 @@ The persistent state lives in a single bbolt file. Pass `--store-path` to contro
 ## Build & test
 
 ```bash
-make build          # Binary at ./bin/rutoso
+make build          # Binary at ./bin/vrata
 make test           # Unit + e2e tests
 make proto          # Regenerate protobuf Go code
 make docs           # Regenerate OpenAPI spec
@@ -100,7 +100,7 @@ make docker-build   # Docker image
 **Single node** (default) — control plane + proxy in one process:
 
 ```bash
-./bin/rutoso --config config.yaml --store-path /data/rutoso.db
+./bin/vrata --config config.yaml --store-path /data/vrata.db
 ```
 
 **Multi node** — one control plane, N stateless proxies:
@@ -119,29 +119,29 @@ Proxies reconnect automatically on disconnect. They hold no state — fully disp
 ```bash
 docker run -d \
   -v ./config.yaml:/config.yaml \
-  -v rutoso-data:/data \
+  -v vrata-data:/data \
   -p 8080:8080 -p 3000:3000 \
-  achetronic/rutoso:latest \
-  --config /config.yaml --store-path /data/rutoso.db
+  achetronic/vrata:latest \
+  --config /config.yaml --store-path /data/vrata.db
 ```
 
-## Extending Rutoso
+## Extending Vrata
 
 ### External processor
 
-Rutoso defines its own gRPC protocol for bidirectional request/response processing at [`server/proto/extproc/v1/extproc.proto`](server/proto/extproc/v1/extproc.proto). Processors can also run in HTTP mode (JSON) with full feature parity. Write a processor in any language, point a middleware at it, and Rutoso sends every request phase through it.
+Vrata defines its own gRPC protocol for bidirectional request/response processing at [`server/proto/extproc/v1/extproc.proto`](server/proto/extproc/v1/extproc.proto). Processors can also run in HTTP mode (JSON) with full feature parity. Write a processor in any language, point a middleware at it, and Vrata sends every request phase through it.
 
 ### External authorization
 
-Authorization services implement [`server/proto/extauthz/v1/extauthz.proto`](server/proto/extauthz/v1/extauthz.proto) (gRPC) or respond to plain HTTP check requests. Rutoso forwards configurable headers, evaluates the response, and either allows the request through or returns the denial to the client.
+Authorization services implement [`server/proto/extauthz/v1/extauthz.proto`](server/proto/extauthz/v1/extauthz.proto) (gRPC) or respond to plain HTTP check requests. Vrata forwards configurable headers, evaluates the response, and either allows the request through or returns the denial to the client.
 
 ## Contributing
 
 Contributions are welcome. The codebase is Go, standard library where possible, minimal dependencies.
 
 ```bash
-git clone https://github.com/achetronic/rutoso.git
-cd rutoso
+git clone https://github.com/achetronic/vrata.git
+cd vrata
 make test
 ```
 

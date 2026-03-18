@@ -27,8 +27,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	kcache "k8s.io/client-go/tools/cache"
 
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/store"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/store"
 )
 
 // Endpoint represents a single resolved address + port.

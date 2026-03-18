@@ -12,7 +12,7 @@ const docTemplate = `{
         "title": "{{.Title}}",
         "contact": {
             "name": "Rutoso project",
-            "url": "https://github.com/achetronic/rutoso"
+            "url": "https://github.com/achetronic/vrata"
         },
         "license": {
             "name": "Apache 2.0",
@@ -1618,7 +1618,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "cookieName": {
-                    "description": "CookieName is the name of the session cookie that identifies the client.\nAll routes sharing the same cookie name share the same session ID.\nDefault: \"_rutoso_pin\".",
+                    "description": "CookieName is the name of the session cookie that identifies the client.\nAll routes sharing the same cookie name share the same session ID.\nDefault: \"_vrata_pin\".",
                     "type": "string"
                 },
                 "ttl": {

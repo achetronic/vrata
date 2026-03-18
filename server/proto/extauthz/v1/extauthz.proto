@@ -9,7 +9,7 @@ syntax = "proto3";
 
 package extauthz.v1;
 
-option go_package = "github.com/achetronic/rutoso/proto/extauthz/v1;extauthzv1";
+option go_package = "github.com/achetronic/vrata/proto/extauthz/v1;extauthzv1";
 
 // Authorizer is the gRPC service that external authorization services implement.
 service Authorizer {

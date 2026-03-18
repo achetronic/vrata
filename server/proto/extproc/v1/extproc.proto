@@ -17,7 +17,7 @@ syntax = "proto3";
 
 package extproc.v1;
 
-option go_package = "github.com/achetronic/rutoso/proto/extproc/v1;extprocv1";
+option go_package = "github.com/achetronic/vrata/proto/extproc/v1;extprocv1";
 
 // Processor is the gRPC service that external processors implement.
 // Rutoso opens one bidirectional stream per HTTP transaction. Each

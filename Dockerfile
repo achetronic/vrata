@@ -4,7 +4,7 @@ WORKDIR /src
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 COPY server/ ./
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/vrata ./cmd/rutoso
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/vrata ./cmd/vrata
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /bin/vrata /vrata

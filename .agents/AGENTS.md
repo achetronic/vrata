@@ -1,6 +1,6 @@
-# AGENTS.md - Rutoso
+# AGENTS.md - Vrata
 
-Rutoso is an API-first Envoy control plane. It exposes a REST API to manage route groups
+Vrata is an API-first Envoy control plane. It exposes a REST API to manage route groups
 and individual routes, computes Envoy configuration from those resources, and pushes it
 live to any number of connected Envoy proxies via xDS — no restarts, no downtime.
 The goal is to eventually sit behind a UI, a CLI, or any other client.
@@ -17,7 +17,7 @@ The goal is to eventually sit behind a UI, a CLI, or any other client.
 ```
 server/
 ├── cmd/
-│   └── rutoso/
+│   └── vrata/
 │       └── main.go          # Entry point. Parses --config, wires dependencies, starts servers.
 ├── internal/
 │   ├── config/              # Config loading (YAML + os.ExpandEnv), struct definitions.
@@ -47,8 +47,8 @@ server/
 
 ## External Integrations
 
-- **Envoy proxies** — connect to Rutoso's gRPC xDS endpoint on startup.
-  Rutoso is their source of truth for listeners, clusters, routes, and endpoints.
+- **Envoy proxies** — connect to Vrata's gRPC xDS endpoint on startup.
+  Vrata is their source of truth for listeners, clusters, routes, and endpoints.
 - **go-control-plane** — official Envoy xDS library for Go (`github.com/envoyproxy/go-control-plane`).
 
 ## HTTP Endpoints (REST API)
@@ -87,7 +87,7 @@ Every abstraction earns its place. If something can be done with the stdlib, it 
 ## Build & Run
 
 ```bash
-make build          # Compile binary to ./bin/rutoso
+make build          # Compile binary to ./bin/vrata
 make run            # Run locally against config.yaml
 make run-dev        # Run locally; xDS endpoint reachable from external Envoys (e.g. in k8s via port-forward or NodePort)
 make docker-build   # Build Docker image
@@ -108,7 +108,7 @@ make docs           # Regenerate OpenAPI spec via swag-go v2
 ## Gotchas
 
 1. **xDS node IDs matter** — each Envoy must be configured with a unique `node.id` that matches
-   what Rutoso uses to key snapshots. If two Envoys share an ID they get the same config.
+   what Vrata uses to key snapshots. If two Envoys share an ID they get the same config.
 2. **Snapshot version must increment** — go-control-plane rejects snapshots with the same version
    as the previous one. Always bump the version on every change, even if the content is identical.
 3. **os.ExpandEnv runs before YAML unmarshalling** — the raw YAML bytes are expanded first,
@@ -116,7 +116,7 @@ make docs           # Regenerate OpenAPI spec via swag-go v2
 4. **Duplicate route detection is in-process** — on every write, the store checks for conflicting
    match rules (path + method + hostname + headers) within the same group. This check must be
    atomic with the write to avoid races under concurrent requests.
-5. **HA requires distributed state** — a single Rutoso instance is stateful. Running multiple
+5. **HA requires distributed state** — a single Vrata instance is stateful. Running multiple
    replicas without a shared/replicated store will cause split-brain. See DECISIONS.md.
 6. **swag-go v2 annotation format differs from v1** — do not mix annotation styles. Always
    use the v2 format (`@Success`, `@Param`, etc. with OpenAPI 3.1 compatible types).

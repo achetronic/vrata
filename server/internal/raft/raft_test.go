@@ -9,8 +9,8 @@ import (
 
 	"github.com/hashicorp/raft"
 
-	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
-	"github.com/achetronic/rutoso/internal/model"
+	boltstore "github.com/achetronic/vrata/internal/store/bolt"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 func newTestStore(t *testing.T) *boltstore.Store {

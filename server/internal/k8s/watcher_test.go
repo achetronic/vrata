@@ -13,8 +13,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/achetronic/rutoso/internal/model"
-	memstore "github.com/achetronic/rutoso/internal/store/memory"
+	"github.com/achetronic/vrata/internal/model"
+	memstore "github.com/achetronic/vrata/internal/store/memory"
 )
 
 func boolPtr(b bool) *bool     { return &b }

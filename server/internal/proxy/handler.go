@@ -15,8 +15,8 @@ import (
 
 	"github.com/felixge/httpsnoop"
 
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/proxy/middlewares"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy/middlewares"
 )
 
 // buildRouteHandler creates the http.Handler for a route, including middleware
@@ -364,7 +364,7 @@ func pickPinned(
 	cfg := fwd.DestinationPinning
 	cookieName := cfg.CookieName
 	if cookieName == "" {
-		cookieName = "_rutoso_pin"
+		cookieName = "_vrata_pin"
 	}
 
 	sid := ""

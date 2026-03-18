@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
-	extprocv1 "github.com/achetronic/rutoso/proto/extproc/v1"
+	"github.com/achetronic/vrata/internal/model"
+	extprocv1 "github.com/achetronic/vrata/proto/extproc/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )

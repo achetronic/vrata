@@ -10,7 +10,7 @@ Technical decisions made by the project owner. Any AI tool working on this repos
 **Date**: 2026-03-15
 **Status**: Decided
 
-Rutoso pushes configuration to Envoy proxies via the xDS protocol (gRPC streaming) using
+Vrata pushes configuration to Envoy proxies via the xDS protocol (gRPC streaming) using
 the official `go-control-plane` library. It does not generate static Envoy YAML files and
 does not rely on Envoy's `--config-path` or hot-reload mechanisms.
 
@@ -34,7 +34,7 @@ The REST API is built on Go's standard library `net/http`. No external HTTP fram
 (Gin, Echo, Chi, Fiber, etc.) is used unless a concrete, documented justification is
 provided and approved.
 
-**Reasoning**: Rutoso's API surface is well-defined and not complex enough to justify
+**Reasoning**: Vrata's API surface is well-defined and not complex enough to justify
 a framework dependency. `net/http` is stable, has zero transitive dependencies, and is
 sufficient for routing, middleware chaining, and JSON handling at this scale. Minimising
 external dependencies reduces supply-chain risk and simplifies long-term maintenance.
@@ -50,7 +50,7 @@ reconsidering the decision properly.
 **Date**: 2026-03-15
 **Status**: Decided
 
-`log/slog` from the Go standard library is the only logging library used in Rutoso.
+`log/slog` from the Go standard library is the only logging library used in Vrata.
 It supports both human-readable (text) and JSON output formats, controlled by config.
 
 **Reasoning**: slog is lightweight, has no external dependencies, and covers all logging
@@ -108,7 +108,7 @@ When loading `config.yaml`, the raw file bytes are passed through `os.ExpandEnv`
 being unmarshalled into the `Config` struct. This allows any string value in the config
 to reference environment variables using `${VAR_NAME}` syntax.
 
-**Reasoning**: Makes Rutoso trivially deployable in containerised environments (Kubernetes,
+**Reasoning**: Makes Vrata trivially deployable in containerised environments (Kubernetes,
 Docker Compose) where secrets and environment-specific values are injected as environment
 variables without needing a separate templating tool.
 
@@ -124,13 +124,13 @@ runtime — all config must flow through the `Config` struct loaded at startup.
 **Status**: Implemented
 
 The persistent store implementation uses `go.etcd.io/bbolt` — an embedded, pure-Go
-key/value database that stores all data in a single file (`rutoso.db` by default,
+key/value database that stores all data in a single file (`vrata.db` by default,
 configurable via `--store-path`). Two buckets are used: `groups` and `routes`,
 both storing JSON-encoded domain objects keyed by their UUID.
 
 **Reasoning**: bbolt requires zero external processes, zero infrastructure, and produces
 a single file that can be backed up with a plain `cp`. It supports concurrent reads (multiple
-readers) with serialised writes, which matches Rutoso's workload. For HA deployments with
+readers) with serialised writes, which matches Vrata's workload. For HA deployments with
 multiple replicas, the database file can be placed on shared storage (NFS, CSI volume)
 or replicated with an external tool. This satisfies all stated requirements with minimum
 operational complexity.
@@ -366,15 +366,15 @@ Do not add hash_policy at the cluster level.
 
 ---
 
-## discovery on Destination is Rutoso-internal (no namespace/service fields)
+## discovery on Destination is Vrata-internal (no namespace/service fields)
 
 **Date**: 2026-03-16
 **Status**: Implemented
 
-`Destination.Options.Discovery` is a Rutoso-internal concept — it signals to
-Rutoso that endpoint discovery should be delegated to the Kubernetes EndpointSlice
+`Destination.Options.Discovery` is a Vrata-internal concept — it signals to
+Vrata that endpoint discovery should be delegated to the Kubernetes EndpointSlice
 watcher. The `host` field holds the full service FQDN
-(e.g. `my-svc.default.svc.cluster.local`). Rutoso derives the namespace and
+(e.g. `my-svc.default.svc.cluster.local`). Vrata derives the namespace and
 service name from the FQDN at watch time. There are no separate `namespace` or
 `serviceName` fields on `Destination`.
 
@@ -435,7 +435,7 @@ with user-facing semantic names. Envoy's internal field names are never exposed:
 The translation lives entirely in `xds/builder.go`. Model types never reference
 Envoy proto field names.
 
-**Reasoning**: Rutoso is an API on top of Envoy. Users think in terms of
+**Reasoning**: Vrata is an API on top of Envoy. Users think in terms of
 "retry on server errors" and "rewrite the path prefix", not in terms of
 `retry_on: "5xx,reset"` or `prefix_rewrite`. Semantic naming also insulates the
 API from Envoy internal restructuring across versions.
@@ -447,9 +447,9 @@ API from Envoy internal restructuring across versions.
 
 The Kubernetes EndpointSlice watcher (`internal/k8s`) is started only when a valid
 k8s client can be built (in-cluster config, or `~/.kube/config` fallback). If neither
-is available the watcher is silently disabled and Rutoso continues running without EDS.
+is available the watcher is silently disabled and Vrata continues running without EDS.
 
-**Reasoning**: Rutoso must be usable outside of Kubernetes (local dev, bare-metal) without
+**Reasoning**: Vrata must be usable outside of Kubernetes (local dev, bare-metal) without
 requiring a kubeconfig to be present. Making the watcher optional with a graceful fallback
 avoids a hard startup dependency on the cluster API.
 
@@ -547,21 +547,21 @@ short-circuit first. Do not make a CEL compile error fatal to other routes.
 
 ---
 
-## External processor: Rutoso-native proto, not Envoy-compatible
+## External processor: Vrata-native proto, not Envoy-compatible
 
 **Date**: 2026-03-17
 **Status**: Decided
 
-The external processor middleware uses a Rutoso-native gRPC service definition
-(`rutoso.extproc.v1.Processor`) and Rutoso-native config model. It is NOT
+The external processor middleware uses a Vrata-native gRPC service definition
+(`vrata.extproc.v1.Processor`) and Vrata-native config model. It is NOT
 compatible with Envoy's `ext_proc` proto. The wire protocol, message names,
-and config fields are designed for Rutoso users with semantic naming.
+and config fields are designed for Vrata users with semantic naming.
 
 **Reasoning**: Partial Envoy compatibility would mislead users into thinking
-existing Envoy ext_proc servers work out of the box. Since Rutoso simplifies
+existing Envoy ext_proc servers work out of the box. Since Vrata simplifies
 the model (no trailers, no dynamic metadata, no route cache clearing), the
 proto would be a leaky subset that frustrates more than it helps. A clean
-Rutoso-native proto sets honest expectations and allows better naming.
+Vrata-native proto sets honest expectations and allows better naming.
 
 Key design points:
 - Headers are `repeated HeaderPair` (key+value pairs), not maps, to preserve
@@ -588,7 +588,7 @@ field on `ForwardAction` was renamed to `Destinations` (JSON tag changed
 from `"backends"` to `"destinations"`). The function `SelectBackend` was
 renamed to `SelectDestination`.
 
-**Reasoning**: Rutoso uses the term "Destination" for upstream targets.
+**Reasoning**: Vrata uses the term "Destination" for upstream targets.
 "Backend" was a leftover from early development. Using consistent
 terminology across the model, API, and documentation prevents confusion.
 
@@ -614,7 +614,7 @@ is deterministic: all proxies compute the same result from the same snapshot,
 so no shared state is needed between proxy instances.
 
 Key design points:
-- One cookie (`_rutoso_pin` by default) holds a UUID session ID
+- One cookie (`_vrata_pin` by default) holds a UUID session ID
 - The hash includes `routeID`, so different routes pin independently
 - If a destination is removed from the snapshot, the hash redistributes
   to remaining destinations with minimal movement

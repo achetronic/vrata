@@ -14,7 +14,7 @@ import (
 	"github.com/felixge/httpsnoop"
 	"github.com/google/uuid"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // AccessLogMiddleware creates a middleware that logs request and response

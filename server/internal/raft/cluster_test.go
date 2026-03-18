@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	raftnode "github.com/achetronic/rutoso/internal/raft"
-	"github.com/achetronic/rutoso/internal/config"
-	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
-	"github.com/achetronic/rutoso/internal/store/raftstore"
-	"github.com/achetronic/rutoso/internal/model"
+	raftnode "github.com/achetronic/vrata/internal/raft"
+	"github.com/achetronic/vrata/internal/config"
+	boltstore "github.com/achetronic/vrata/internal/store/bolt"
+	"github.com/achetronic/vrata/internal/store/raftstore"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 func freePort(t *testing.T) int {

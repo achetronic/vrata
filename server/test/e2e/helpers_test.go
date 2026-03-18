@@ -1,6 +1,6 @@
-// Package e2e runs end-to-end tests against a live Rutoso control plane
+// Package e2e runs end-to-end tests against a live Vrata control plane
 // and proxy. Tests spin up their own helper servers (JWKS, auth, processor,
-// WebSocket, controllable upstreams) and create all required Rutoso
+// WebSocket, controllable upstreams) and create all required Vrata
 // entities via the API. Every test cleans up after itself.
 //
 // Requirements:

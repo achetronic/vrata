@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // HealthChecker periodically checks the health of upstreams using active

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // retryTransport wraps an http.RoundTripper with retry logic.

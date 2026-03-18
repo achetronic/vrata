@@ -6,7 +6,7 @@ package store
 import (
 	"context"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // EventType classifies what kind of change a StoreEvent represents.

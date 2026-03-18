@@ -16,8 +16,8 @@ import (
 	"github.com/hashicorp/raft"
 	raftboltdb "github.com/hashicorp/raft-boltdb/v2"
 
-	"github.com/achetronic/rutoso/internal/config"
-	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
+	"github.com/achetronic/vrata/internal/config"
+	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 )
 
 const (

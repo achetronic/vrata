@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/proxy"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy"
 )
 
 // Dependencies holds the external collaborators required by the sync client.

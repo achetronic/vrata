@@ -5,7 +5,7 @@ package handlers
 import (
 	"log/slog"
 
-	"github.com/achetronic/rutoso/internal/store"
+	"github.com/achetronic/vrata/internal/store"
 )
 
 // RaftApplier is the interface the Raft apply handler needs from the Raft node.

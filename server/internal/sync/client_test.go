@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
-	"github.com/achetronic/rutoso/internal/proxy"
+	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy"
 )
 
 func TestClientAppliesSnapshot(t *testing.T) {

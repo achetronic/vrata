@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/achetronic/rutoso/internal/model"
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // Upstream represents a destination with its reverse proxy, TLS config,

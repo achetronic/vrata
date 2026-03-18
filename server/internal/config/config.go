@@ -80,7 +80,7 @@ type ClusterConfig struct {
 type ClusterDiscovery struct {
 	// DNS is a hostname that resolves to all cluster nodes via A or AAAA
 	// records. Typical value in Kubernetes is the headless Service FQDN:
-	// "rutoso-headless.namespace.svc.cluster.local".
+	// "vrata-headless.namespace.svc.cluster.local".
 	// Rutoso resolves this name periodically and uses the returned IPs
 	// combined with BindAddress port as the peer list.
 	DNS string `yaml:"dns"`

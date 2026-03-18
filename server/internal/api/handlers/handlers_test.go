@@ -10,8 +10,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/achetronic/rutoso/internal/model"
-	memstore "github.com/achetronic/rutoso/internal/store/memory"
+	"github.com/achetronic/vrata/internal/model"
+	memstore "github.com/achetronic/vrata/internal/store/memory"
 )
 
 func newDeps(t *testing.T) (*Dependencies, *memstore.Store) {

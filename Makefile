@@ -1,8 +1,8 @@
-BINARY      := rutoso
+BINARY      := vrata
 IMAGE       := achetronic/$(BINARY)
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 CONFIG      ?= config.yaml
-STORE_PATH  ?= /tmp/rutoso.db
+STORE_PATH  ?= /tmp/vrata.db
 
 GO          := go
 GOFLAGS     := -ldflags="-s -w -X main.version=$(VERSION)"
@@ -11,7 +11,7 @@ SERVER_DIR  := ./server
 
 SWAG        := swag
 SWAG_FLAGS  := --generalInfo main.go \
-	--dir $(SERVER_DIR)/cmd/rutoso,$(SERVER_DIR)/internal/api/handlers,$(SERVER_DIR)/internal/api/respond,$(SERVER_DIR)/internal/model \
+	--dir $(SERVER_DIR)/cmd/vrata,$(SERVER_DIR)/internal/api/handlers,$(SERVER_DIR)/internal/api/respond,$(SERVER_DIR)/internal/model \
 	--parseInternal \
 	--output $(SERVER_DIR)/docs \
 	--outputTypes go,json,yaml
@@ -33,7 +33,7 @@ docs:
 	$(SWAG) init $(SWAG_FLAGS)
 	cd $(SERVER_DIR) && $(GO) run ./cmd/swag-reorder docs/swagger.json
 
-## build: compile the binary into ./bin/rutoso
+## build: compile the binary into ./bin/vrata
 build:
 	mkdir -p $(BUILD_DIR)
 	cd $(SERVER_DIR) && CGO_ENABLED=0 $(GO) build $(GOFLAGS) -o ../$(BUILD_DIR)/$(BINARY) ./cmd/$(BINARY)

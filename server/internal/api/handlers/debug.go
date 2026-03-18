@@ -3,7 +3,7 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/achetronic/rutoso/internal/api/respond"
+	"github.com/achetronic/vrata/internal/api/respond"
 )
 
 // GetConfigDump returns the complete current configuration: all listeners,
