@@ -32,9 +32,13 @@ import (
 	"time"
 
 	"github.com/achetronic/rutoso/internal/api"
+	"github.com/achetronic/rutoso/internal/api/handlers"
 	"github.com/achetronic/rutoso/internal/config"
 	"github.com/achetronic/rutoso/internal/proxy"
+	raftnode "github.com/achetronic/rutoso/internal/raft"
+	"github.com/achetronic/rutoso/internal/store"
 	boltstore "github.com/achetronic/rutoso/internal/store/bolt"
+	"github.com/achetronic/rutoso/internal/store/raftstore"
 	rtsync "github.com/achetronic/rutoso/internal/sync"
 )
 
@@ -85,14 +89,39 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger, storePath string) 
 		}
 	}()
 
-	router := api.NewRouter(st, logger)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// In cluster mode, wrap the bolt store with the Raft store.
+	var activeStore store.Store = st
+	var raftApplier handlers.RaftApplier
+	if cfg.Cluster != nil {
+		node, err := raftnode.NewNode(ctx, cfg.Cluster, st, logger, cfg.Server.Address)
+		if err != nil {
+			return fmt.Errorf("starting raft node: %w", err)
+		}
+		defer node.Shutdown()
+
+		if err := node.WaitForLeader(120 * time.Second); err != nil {
+			return fmt.Errorf("waiting for raft leader: %w", err)
+		}
+
+		rs := raftstore.New(st, node)
+		activeStore = rs
+		raftApplier = node
+
+		logger.Info("raft cluster mode active",
+			slog.String("nodeId", cfg.Cluster.NodeID),
+			slog.String("bindAddress", cfg.Cluster.BindAddress),
+			slog.Bool("isLeader", node.IsLeader()),
+		)
+	}
+
+	router := api.NewRouter(activeStore, logger, raftApplier)
 	httpSrv := &http.Server{
 		Addr:    cfg.Server.Address,
 		Handler: router,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	httpSrv.BaseContext = func(_ net.Listener) context.Context { return ctx }
 

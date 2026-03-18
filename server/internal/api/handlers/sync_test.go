@@ -106,7 +106,11 @@ func TestSyncStreamSendsOnSnapshotActivate(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v1/sync/stream", nil).WithContext(reqCtx)
 	w := newFlushRecorder()
 
-	go deps.SyncStream(w, req)
+	done := make(chan struct{})
+	go func() {
+		deps.SyncStream(w, req)
+		close(done)
+	}()
 
 	time.Sleep(200 * time.Millisecond)
 
@@ -128,7 +132,13 @@ func TestSyncStreamSendsOnSnapshotActivate(t *testing.T) {
 
 	time.Sleep(200 * time.Millisecond)
 	reqCancel()
-	time.Sleep(100 * time.Millisecond)
+
+	// Wait for the handler to fully exit before reading the body.
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not exit")
+	}
 
 	body := w.Body.String()
 	count := strings.Count(body, "event: snapshot")

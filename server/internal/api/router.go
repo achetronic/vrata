@@ -15,12 +15,14 @@ import (
 )
 
 // NewRouter creates and returns the root http.Handler for the Rutoso REST API.
-func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
+// raftApplier is optional; pass nil when running in single-node mode.
+func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApplier) http.Handler {
 	mux := http.NewServeMux()
 
 	deps := &handlers.Dependencies{
 		Store:  st,
 		Logger: logger,
+		Raft:   raftApplier,
 	}
 
 	// Route endpoints
@@ -63,6 +65,9 @@ func NewRouter(st store.Store, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/snapshots/{snapshotId}", deps.GetSnapshot)
 	mux.HandleFunc("DELETE /api/v1/snapshots/{snapshotId}", deps.DeleteSnapshot)
 	mux.HandleFunc("POST /api/v1/snapshots/{snapshotId}/activate", deps.ActivateSnapshot)
+
+	// Internal Raft endpoint (cluster mode only)
+	mux.HandleFunc("POST /api/v1/internal/raft/apply", deps.RaftApply)
 
 	// Debug
 	mux.HandleFunc("GET /api/v1/debug/config", deps.GetConfigDump)

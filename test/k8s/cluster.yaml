@@ -1,0 +1,141 @@
+# Namespace for the cluster e2e tests.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cp-cluster-test
+---
+# Headless Service for Raft peer-to-peer communication (DNS discovery).
+apiVersion: v1
+kind: Service
+metadata:
+  name: cp-headless
+  namespace: cp-cluster-test
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    app: cp
+  ports:
+    - name: raft
+      port: 7000
+      targetPort: 7000
+---
+# ClusterIP Service for the REST API (used by proxies and tests).
+apiVersion: v1
+kind: Service
+metadata:
+  name: cp-api
+  namespace: cp-cluster-test
+spec:
+  selector:
+    app: cp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+# NodePort for test access from outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cp-api-nodeport
+  namespace: cp-cluster-test
+spec:
+  selector:
+    app: cp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      nodePort: 31080
+  type: NodePort
+---
+# ConfigMap with the control plane config template.
+# POD_NAME is injected by the downward API as nodeId.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cp-config
+  namespace: cp-cluster-test
+data:
+  config.yaml: |
+    mode: "controlplane"
+    server:
+      address: ":8080"
+    cluster:
+      nodeId: "${POD_NAME}"
+      bindAddress: ":7000"
+      advertiseAddress: "${POD_IP}:7000"
+      dataDir: "/data/raft"
+      peers:
+        - "cp-0=cp-0.cp-headless.cp-cluster-test.svc.cluster.local:7000"
+        - "cp-1=cp-1.cp-headless.cp-cluster-test.svc.cluster.local:7000"
+        - "cp-2=cp-2.cp-headless.cp-cluster-test.svc.cluster.local:7000"
+    log:
+      format: "json"
+      level: "info"
+---
+# StatefulSet with 3 replicas. Each pod gets a stable name (cp-0, cp-1, cp-2)
+# used as nodeId via the downward API.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cp
+  namespace: cp-cluster-test
+spec:
+  serviceName: cp-headless
+  replicas: 3
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: cp
+  template:
+    metadata:
+      labels:
+        app: cp
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: cp
+          image: rutoso:e2e-cluster
+          imagePullPolicy: Never
+          args:
+            - --config=/config/config.yaml
+            - --store-path=/data/rutoso.db
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 7000
+              name: raft
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            tcpSocket:
+              port: 7000
+            initialDelaySeconds: 2
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: cp-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Mi

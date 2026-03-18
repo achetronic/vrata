@@ -35,8 +35,55 @@ type Config struct {
 	// Only used in proxy mode.
 	ControlPlane ControlPlaneConfig `yaml:"controlPlane"`
 
+	// Cluster enables Raft-based HA replication across multiple control
+	// plane instances. When absent, the control plane runs in single-node
+	// mode with a local bbolt database.
+	Cluster *ClusterConfig `yaml:"cluster,omitempty"`
+
 	// Log controls the logging behaviour.
 	Log LogConfig `yaml:"log"`
+}
+
+// ClusterConfig enables multi-node HA for the control plane via embedded
+// Raft consensus. All nodes must have the same peers configuration.
+type ClusterConfig struct {
+	// NodeID is the unique identifier for this node in the Raft cluster.
+	// Must be unique across all nodes. Example: "cp-0".
+	NodeID string `yaml:"nodeId"`
+
+	// BindAddress is the host:port this node listens on for Raft
+	// peer-to-peer communication. Example: ":7000".
+	BindAddress string `yaml:"bindAddress"`
+
+	// AdvertiseAddress is the host:port that other nodes use to reach
+	// this node. Required when BindAddress uses 0.0.0.0 or has no host.
+	// In Kubernetes, set this to the pod IP:port via the downward API.
+	// Example: "${POD_IP}:7000"
+	AdvertiseAddress string `yaml:"advertiseAddress"`
+
+	// DataDir is the directory where Raft logs and snapshots are stored.
+	// Default: "/data/raft"
+	DataDir string `yaml:"dataDir"`
+
+	// Peers is the explicit list of all cluster members, including this node.
+	// Format: "nodeId=host:port". Used when DNS discovery is not configured.
+	// Example: ["cp-0=10.0.0.1:7000", "cp-1=10.0.0.2:7000", "cp-2=10.0.0.3:7000"]
+	Peers []string `yaml:"peers"`
+
+	// Discovery configures automatic peer discovery. When set, Peers is
+	// ignored. When absent, Peers is used.
+	Discovery *ClusterDiscovery `yaml:"discovery,omitempty"`
+}
+
+// ClusterDiscovery configures automatic peer discovery for the Raft cluster.
+// Only one discovery method may be set at a time.
+type ClusterDiscovery struct {
+	// DNS is a hostname that resolves to all cluster nodes via A or AAAA
+	// records. Typical value in Kubernetes is the headless Service FQDN:
+	// "rutoso-headless.namespace.svc.cluster.local".
+	// Rutoso resolves this name periodically and uses the returned IPs
+	// combined with BindAddress port as the peer list.
+	DNS string `yaml:"dns"`
 }
 
 // ControlPlaneConfig holds settings for proxy-mode instances that connect
@@ -106,6 +153,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
 	}
+	if cfg.Cluster != nil && cfg.Cluster.DataDir == "" {
+		cfg.Cluster.DataDir = "/data/raft"
+	}
 }
 
 // Validate checks that the configuration is internally consistent.
@@ -117,6 +167,19 @@ func Validate(cfg *Config) error {
 	}
 	if cfg.Mode == ModeProxy && cfg.ControlPlane.Address == "" {
 		return fmt.Errorf("proxy mode requires controlPlane.address to be set")
+	}
+	if cfg.Cluster != nil {
+		if cfg.Cluster.NodeID == "" {
+			return fmt.Errorf("cluster.nodeId is required when cluster is configured")
+		}
+		if cfg.Cluster.BindAddress == "" {
+			return fmt.Errorf("cluster.bindAddress is required when cluster is configured")
+		}
+		hasDNS := cfg.Cluster.Discovery != nil && cfg.Cluster.Discovery.DNS != ""
+		hasPeers := len(cfg.Cluster.Peers) > 0
+		if !hasDNS && !hasPeers {
+			return fmt.Errorf("cluster requires either discovery.dns or at least one peer")
+		}
 	}
 	return nil
 }

@@ -6,20 +6,6 @@ _(nothing)_
 
 ## Pending
 
-### HA — Embedded distributed store (Hashicorp Raft + bbolt)
-Rutoso must run in HA with N replicas where any node can die without losing
-configuration and proxies always have a Rutoso available.
-
-Tasks:
-- [ ] Add `hashicorp/raft` and `hashicorp/raft-boltdb` to go.mod
-- [ ] Implement `internal/raft/fsm.go`
-- [ ] Implement `internal/raft/cluster.go`
-- [ ] Implement `store/raft/raft.go`: store.Store wrapper
-- [ ] Add `cluster` config block to config.yaml
-- [ ] Leader detection: non-leader nodes redirect writes
-- [ ] Snapshot/restore: serialize and restore full bbolt state
-- [ ] Integration test: 3-node cluster
-
 ### Housekeeping
 - [ ] Add authentication to the REST API
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
@@ -41,6 +27,20 @@ Scope:
 
 ## Done
 
+- [x] **HA — Raft consensus** — 3-5 node control plane cluster with embedded hashicorp/raft
+  - `internal/raft/fsm.go`: FSM applies commands to bolt store, Dump/Restore for snapshots
+  - `internal/raft/node.go`: Raft lifecycle, static + DNS peer discovery, bootstrap with retry, advertise address, resource cleanup on shutdown
+  - `internal/raft/logger.go`: hclog→slog adapter with level parsing
+  - `internal/store/raftstore/`: store.Store wrapper (reads→local bolt, writes→Raft leader)
+  - `internal/api/handlers/raft.go`: internal apply endpoint secured to private IPs only
+  - Config: `cluster` block with `nodeId`, `bindAddress`, `advertiseAddress`, `dataDir`, `peers`, `discovery.dns`
+  - Write-forwarding: followers forward to leader transparently via HTTP with 10s timeout
+  - k8s manifests: StatefulSet + headless Service with `publishNotReadyAddresses: true`
+  - Makefile: `make e2e-cluster` builds image, loads into kind, deploys, waits, runs cluster tests
+  - 14 unit tests (FSM apply, snapshot/restore, peer parsing, single-node, 3-node replication, dump/restore)
+  - 5 e2e tests against kind cluster (basic write, snapshot activation, replication, SSE stream, config dump)
+  - 5 handler tests (non-cluster 503, public IP 403, private IP 200, loopback 200, isPrivateAddr)
+  - Exported `CommandType` constants used across fsm, raftstore, and bolt (DRY)
 - [x] **Destination pinning** — weighted consistent hash for canary-safe sticky sessions
 - [x] **BackendRef → DestinationRef rename** — consistent terminology
 - [x] **Audit round 5 — 30 bugs fixed** (JWT ECDSA P1363, RSA alg-aware, infinite loop, retry, circuit breaker, outlier, rate limiter, health checks, regex pre-compile, cleanup callbacks, etc.)
@@ -52,4 +52,4 @@ Scope:
 - [x] **Kubernetes ExternalName Service** — watches Service object, resolves spec.externalName
 - [x] **Store publish outside bolt transaction** — prevents stale reads during rebuild
 - [x] **Full proxy implementation** — routing, middlewares, balancers, health, circuit breaker, outlier, TLS, HTTP/2, retry, rewrite, mirror, WebSocket, access log
-- [x] **209 tests** — unit + e2e against live cluster with controllable upstreams
+- [x] **235 tests** — unit + e2e against live cluster and kind

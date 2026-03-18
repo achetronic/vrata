@@ -8,8 +8,19 @@ import (
 	"github.com/achetronic/rutoso/internal/store"
 )
 
+// RaftApplier is the interface the Raft apply handler needs from the Raft node.
+// It is satisfied by *raft.Node and allows the handler package to remain
+// decoupled from the raft package.
+type RaftApplier interface {
+	// ApplyRaw applies a raw JSON-encoded command through the Raft log.
+	// Only called when this node is the leader.
+	ApplyRaw(data []byte) error
+}
+
 // Dependencies holds all external collaborators shared by the HTTP handlers.
 type Dependencies struct {
 	Store  store.Store
 	Logger *slog.Logger
+	// Raft is optional. When set, the internal Raft apply endpoint is active.
+	Raft RaftApplier
 }

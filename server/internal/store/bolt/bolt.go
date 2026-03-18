@@ -686,3 +686,134 @@ func (s *Store) publish(ev store.StoreEvent) {
 		}
 	}
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Raft FSM support
+// ────────────────────────────────────────────────────────────────────────────
+
+// ApplyCommand applies a single replicated command to the store.
+// Called by the Raft FSM on every committed log entry.
+func (s *Store) ApplyCommand(cmdType string, id string, payload json.RawMessage) error {
+	ctx := context.Background()
+
+	switch cmdType {
+	case "SaveRoute":
+		var v model.Route
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("ApplyCommand SaveRoute: %w", err)
+		}
+		return s.SaveRoute(ctx, v)
+	case "DeleteRoute":
+		return s.DeleteRoute(ctx, id)
+	case "SaveGroup":
+		var v model.RouteGroup
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("ApplyCommand SaveGroup: %w", err)
+		}
+		return s.SaveGroup(ctx, v)
+	case "DeleteGroup":
+		return s.DeleteGroup(ctx, id)
+	case "SaveMiddleware":
+		var v model.Middleware
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("ApplyCommand SaveMiddleware: %w", err)
+		}
+		return s.SaveMiddleware(ctx, v)
+	case "DeleteMiddleware":
+		return s.DeleteMiddleware(ctx, id)
+	case "SaveListener":
+		var v model.Listener
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("ApplyCommand SaveListener: %w", err)
+		}
+		return s.SaveListener(ctx, v)
+	case "DeleteListener":
+		return s.DeleteListener(ctx, id)
+	case "SaveDestination":
+		var v model.Destination
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("ApplyCommand SaveDestination: %w", err)
+		}
+		return s.SaveDestination(ctx, v)
+	case "DeleteDestination":
+		return s.DeleteDestination(ctx, id)
+	case "SaveSnapshot":
+		var v model.VersionedSnapshot
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("ApplyCommand SaveSnapshot: %w", err)
+		}
+		return s.SaveSnapshot(ctx, v)
+	case "DeleteSnapshot":
+		return s.DeleteSnapshot(ctx, id)
+	case "ActivateSnapshot":
+		return s.ActivateSnapshot(ctx, id)
+	default:
+		return fmt.Errorf("unknown command type: %s", cmdType)
+	}
+}
+
+// Dump serialises the full database as a JSON map of bucket → key → value.
+// Used by the Raft FSM to create log compaction snapshots.
+func (s *Store) Dump() ([]byte, error) {
+	dump := make(map[string]map[string]json.RawMessage)
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		for _, name := range []string{
+			bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners,
+			bucketDestinations, bucketSnapshots, bucketMeta,
+		} {
+			b := tx.Bucket([]byte(name))
+			if b == nil {
+				continue
+			}
+			entries := make(map[string]json.RawMessage)
+			b.ForEach(func(k, v []byte) error {
+				key := string(k)
+				val := make([]byte, len(v))
+				copy(val, v)
+				entries[key] = json.RawMessage(val)
+				return nil
+			})
+			dump[name] = entries
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dumping bolt db: %w", err)
+	}
+
+	return json.Marshal(dump)
+}
+
+// Restore replaces the full database with the contents of a Dump.
+// Used by the Raft FSM to restore a node from a log compaction snapshot.
+func (s *Store) Restore(data []byte) error {
+	var dump map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(data, &dump); err != nil {
+		return fmt.Errorf("decoding snapshot: %w", err)
+	}
+
+	return s.db.Update(func(tx *bolt.Tx) error {
+		for bucketName, entries := range dump {
+			b := tx.Bucket([]byte(bucketName))
+			if b == nil {
+				var err error
+				b, err = tx.CreateBucketIfNotExists([]byte(bucketName))
+				if err != nil {
+					return err
+				}
+			}
+			// Clear existing data.
+			b.ForEach(func(k, _ []byte) error {
+				return b.Delete(k)
+			})
+			// Write new data.
+			for k, v := range entries {
+				if err := b.Put([]byte(k), v); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	})
+}

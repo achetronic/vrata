@@ -77,3 +77,57 @@ func TestValidateControlPlaneMode(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestValidateClusterStaticPeers(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		Cluster: &ClusterConfig{
+			NodeID:      "cp-0",
+			BindAddress: ":7000",
+			Peers:       []string{"cp-0=10.0.0.1:7000"},
+		},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateClusterDNSDiscovery(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		Cluster: &ClusterConfig{
+			NodeID:      "cp-0",
+			BindAddress: ":7000",
+			Discovery:   &ClusterDiscovery{DNS: "cp-headless.ns.svc.cluster.local"},
+		},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateClusterMissingNodeID(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		Cluster: &ClusterConfig{
+			BindAddress: ":7000",
+			Peers:       []string{"cp-0=10.0.0.1:7000"},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Error("expected error for missing nodeId")
+	}
+}
+
+func TestValidateClusterMissingPeersAndDNS(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		Cluster: &ClusterConfig{
+			NodeID:      "cp-0",
+			BindAddress: ":7000",
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Error("expected error when neither peers nor DNS is set")
+	}
+}

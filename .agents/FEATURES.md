@@ -114,6 +114,24 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Non-EDS ignored        | 100%   | Unit        |
 | OnChange nil-safe      | 100%   | Code review |
 
+## HA Cluster (Raft)
+
+| Feature | Status | Tests |
+|---|---|---|
+| Raft FSM (apply commands to bolt) | 100% | Unit (7 command types + unknown + invalid) |
+| Raft snapshot/restore (Dump + Restore) | 100% | Unit + integration |
+| Static peer discovery | 100% | Unit |
+| DNS peer discovery (k8s headless Service) | 100% | E2E (kind) |
+| Bootstrap with retry (k8s cold start) | 100% | E2E (kind) |
+| Advertise address (pod IP in k8s) | 100% | E2E (kind) |
+| Write-forwarding (follower → leader) | 100% | E2E (kind) |
+| Single-node cluster | 100% | Unit |
+| 3-node replication | 100% | Unit + E2E |
+| Resource cleanup on shutdown | 100% | Code review |
+| Internal apply endpoint (private IP only) | 100% | Unit (5 tests) |
+| Raft store wrapper (reads local, writes Raft) | 100% | Unit + E2E |
+| Cluster config validation | 100% | Unit (4 tests) |
+
 ## Store
 
 | Feature                                 | Status | Tests |
@@ -145,10 +163,13 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Proxy router + pinning | 15      | 15      |
 | CEL eval               | 11      | 11      |
 | Proxy middlewares      | 55      | 55      |
+| Raft (FSM, cluster, peers) | 14  | 14      |
+| Raft handlers          | 5       | 5       |
+| Config                 | 10      | 10      |
 | Sync client            | 2       | 2       |
-| Config                 | 5       | 5       |
-| E2E (live)             | 40      | 40      |
-| **Total**              | **212** | **212** |
+| E2E (proxy, live)      | 40      | 40      |
+| E2E (cluster, kind)    | 5       | 5       |
+| **Total**              | **235** | **235** |
 
 ## Bugs Fixed Across All Audits
 
