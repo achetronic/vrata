@@ -21,17 +21,23 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// ExtProcMiddleware creates a middleware that sends HTTP transaction phases
-// to an external processor service for inspection, mutation, or rejection.
+// ExtProcMiddleware creates an external processor middleware.
 func ExtProcMiddleware(cfg *model.ExtProcConfig, services map[string]Service) Middleware {
+	m, _ := ExtProcMiddlewareWithStop(cfg, services)
+	return m
+}
+
+// ExtProcMiddlewareWithStop creates an external processor middleware and
+// returns a stop function that closes the gRPC connection (if gRPC mode).
+func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Service) (Middleware, func()) {
 	if cfg == nil || cfg.DestinationID == "" {
-		return passthrough
+		return passthrough, nil
 	}
 
 	svc, ok := services[cfg.DestinationID]
 	if !ok {
 		slog.Error("extproc: destination not found", slog.String("destinationId", cfg.DestinationID))
-		return passthrough
+		return passthrough, nil
 	}
 
 	timeout := 200 * time.Millisecond
@@ -56,11 +62,26 @@ func ExtProcMiddleware(cfg *model.ExtProcConfig, services map[string]Service) Mi
 		phases:        phases,
 	}
 
-	return func(next http.Handler) http.Handler {
+	var cleanup func()
+
+	if cfg.Mode != "http" {
+		target := strings.TrimPrefix(strings.TrimPrefix(svc.BaseURL, "http://"), "https://")
+		conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			slog.Error("extproc: failed to create gRPC connection", slog.String("error", err.Error()))
+		} else {
+			ep.grpcConn = conn
+			cleanup = func() { conn.Close() }
+		}
+	}
+
+	mw := Middleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ep.handle(next, w, r)
 		})
-	}
+	})
+
+	return mw, cleanup
 }
 
 func passthrough(next http.Handler) http.Handler { return next }
@@ -76,6 +97,7 @@ type extProc struct {
 	timeout       time.Duration
 	statusOnError int
 	phases        resolvedPhases
+	grpcConn      *grpc.ClientConn
 }
 
 // resolvedPhases holds the resolved phase configuration with defaults applied.
@@ -341,16 +363,13 @@ func (ep *extProc) sendGRPC(req *extprocv1.ProcessingRequest) (*extprocv1.Proces
 	return ep.doGRPC(ctx, req)
 }
 
-// doGRPC performs the gRPC call.
+// doGRPC performs the gRPC call using the pooled connection.
 func (ep *extProc) doGRPC(ctx context.Context, req *extprocv1.ProcessingRequest) (*extprocv1.ProcessingResponse, error) {
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	conn, err := grpc.NewClient(ep.svc.BaseURL, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("connecting to processor: %w", err)
+	if ep.grpcConn == nil {
+		return nil, fmt.Errorf("no gRPC connection available")
 	}
-	defer conn.Close()
 
-	client := extprocv1.NewProcessorClient(conn)
+	client := extprocv1.NewProcessorClient(ep.grpcConn)
 	stream, err := client.Process(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("opening processor stream: %w", err)

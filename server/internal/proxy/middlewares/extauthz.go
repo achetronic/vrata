@@ -146,17 +146,16 @@ func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 
 	target := strings.TrimPrefix(strings.TrimPrefix(svc.BaseURL, "http://"), "https://")
 
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Error("extauthz: failed to create gRPC connection", slog.String("error", err.Error()))
+		return passthrough
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
-
-			conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
-			if err != nil {
-				handleAuthzError(w, r, next, cfg.FailureModeAllow, "grpc dial failed")
-				return
-			}
-			defer conn.Close()
 
 			var headers []*extauthzv1.HeaderPair
 			for key, values := range r.Header {

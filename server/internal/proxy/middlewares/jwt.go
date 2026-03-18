@@ -310,10 +310,12 @@ func (v *jwtValidator) validateClaims(claims map[string]interface{}) bool {
 		}
 	}
 
-	if exp, ok := claims["exp"].(float64); ok {
-		if time.Now().Unix() > int64(exp) {
-			return false
-		}
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		return false
+	}
+	if time.Now().Unix() > int64(exp) {
+		return false
 	}
 
 	return true

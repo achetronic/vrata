@@ -993,6 +993,14 @@ definitions:
           RequestsPerSecond is the sustained rate of requests allowed per client IP.
           Default: 10.
         type: number
+      trustedProxies:
+        description: |-
+          TrustedProxies lists CIDR ranges from which X-Forwarded-For is trusted.
+          When empty, X-Forwarded-For is ignored and the direct client IP is used.
+          Example: ["10.0.0.0/8", "172.16.0.0/12"]
+        items:
+          type: string
+        type: array
     type: object
   model.RetryBackoff:
     properties:

@@ -26,10 +26,11 @@ func RateLimitMiddlewareWithStop(cfg *model.RateLimitConfig) (Middleware, func()
 	}
 
 	limiter := newTokenBucketLimiter(cfg.RequestsPerSecond, cfg.Burst)
+	trustedNets := parseTrustedProxies(cfg.TrustedProxies)
 
 	mw := Middleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := clientIP(r)
+			key := clientIP(r, trustedNets)
 			if !limiter.Allow(key) {
 				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 				return
@@ -45,15 +46,42 @@ func RateLimitMiddlewareWithStop(cfg *model.RateLimitConfig) (Middleware, func()
 	return mw, stop
 }
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
+// parseTrustedProxies parses CIDR strings into net.IPNet for fast lookup.
+func parseTrustedProxies(cidrs []string) []*net.IPNet {
+	var nets []*net.IPNet
+	for _, cidr := range cidrs {
+		_, n, err := net.ParseCIDR(cidr)
+		if err == nil {
+			nets = append(nets, n)
 		}
-		return strings.TrimSpace(xff)
 	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return host
+	return nets
+}
+
+// clientIP extracts the client IP, only trusting X-Forwarded-For when the
+// direct connection comes from a trusted proxy.
+func clientIP(r *http.Request, trusted []*net.IPNet) string {
+	directIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+
+	if len(trusted) > 0 && r.Header.Get("X-Forwarded-For") != "" {
+		ip := net.ParseIP(directIP)
+		isTrusted := false
+		for _, n := range trusted {
+			if n.Contains(ip) {
+				isTrusted = true
+				break
+			}
+		}
+		if isTrusted {
+			xff := r.Header.Get("X-Forwarded-For")
+			if idx := strings.Index(xff, ","); idx != -1 {
+				return strings.TrimSpace(xff[:idx])
+			}
+			return strings.TrimSpace(xff)
+		}
+	}
+
+	return directIP
 }
 
 type tokenBucketLimiter struct {

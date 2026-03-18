@@ -122,9 +122,11 @@ func buildMiddleware(mw model.Middleware, upstreams map[string]*Upstream) (middl
 		m, stop := middlewares.JWTMiddlewareWithStop(mw.JWT, services)
 		return m, stop
 	case model.MiddlewareTypeAccessLog:
-		return middlewares.AccessLogMiddleware(mw.AccessLog), nil
+		m, stop := middlewares.AccessLogMiddlewareWithStop(mw.AccessLog)
+		return m, stop
 	case model.MiddlewareTypeExtProc:
-		return middlewares.ExtProcMiddleware(mw.ExtProc, services), nil
+		m, stop := middlewares.ExtProcMiddlewareWithStop(mw.ExtProc, services)
+		return m, stop
 	default:
 		return nil, nil
 	}

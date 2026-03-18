@@ -497,3 +497,31 @@ func TestJWTEd25519InvalidSignature(t *testing.T) {
 		t.Errorf("expected 401 for wrong Ed25519 key, got %d", w.Code)
 	}
 }
+
+func TestJWTMissingExpClaim(t *testing.T) {
+	key := generateTestKey(t)
+	jwks := makeJWKS(t, &key.PublicKey, "kid1")
+
+	cfg := &model.JWTConfig{
+		Providers: map[string]model.JWTProvider{
+			"default": {Issuer: "iss", JWKsInline: jwks},
+		},
+	}
+
+	mw := JWTMiddleware(cfg, nil)
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+	}))
+
+	token := signJWT(t, key, map[string]interface{}{"alg": "RS256", "kid": "kid1"},
+		map[string]interface{}{"iss": "iss"})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 401 {
+		t.Errorf("expected 401 for token without exp, got %d", w.Code)
+	}
+}

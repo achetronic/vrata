@@ -408,6 +408,11 @@ type RateLimitConfig struct {
 	// Burst is the maximum number of requests allowed in a burst above the
 	// sustained rate. Default: same as RequestsPerSecond.
 	Burst int `json:"burst,omitempty" yaml:"burst,omitempty"`
+
+	// TrustedProxies lists CIDR ranges from which X-Forwarded-For is trusted.
+	// When empty, X-Forwarded-For is ignored and the direct client IP is used.
+	// Example: ["10.0.0.0/8", "172.16.0.0/12"]
+	TrustedProxies []string `json:"trustedProxies,omitempty" yaml:"trustedProxies,omitempty"`
 }
 
 // ────────────────────────────────────────────────────────────────────────────

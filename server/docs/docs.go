@@ -2453,6 +2453,13 @@ const docTemplate = `{
                 "requestsPerSecond": {
                     "description": "RequestsPerSecond is the sustained rate of requests allowed per client IP.\nDefault: 10.",
                     "type": "number"
+                },
+                "trustedProxies": {
+                    "description": "TrustedProxies lists CIDR ranges from which X-Forwarded-For is trusted.\nWhen empty, X-Forwarded-For is ignored and the direct client IP is used.\nExample: [\"10.0.0.0/8\", \"172.16.0.0/12\"]",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

@@ -23,12 +23,8 @@ Tasks:
 ### Housekeeping
 - [ ] Add authentication to the REST API
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
-- [ ] gRPC connection pooling for ExtProc and ExtAuthz
-- [ ] SSE heartbeat/keepalive for dead connection detection
-- [ ] Access log file handle lifecycle (close on table swap)
-- [ ] Access log synchronized writes
-- [ ] Rate limit key should not trust X-Forwarded-For blindly
-- [ ] JWT require `exp` claim by default
+- [ ] ExtProc observe-only goroutine backpressure/tracking
+- [ ] Listener graceful restart (wait for old to close before binding new)
 
 ## Done
 

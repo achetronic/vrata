@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/achetronic/rutoso/internal/model"
 )
@@ -55,10 +56,18 @@ func (d *Dependencies) SyncStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-heartbeat.C:
+			if _, err := w.Write([]byte(": keepalive\n\n")); err != nil {
+				return
+			}
+			flusher.Flush()
 		case ev, ok := <-events:
 			if !ok {
 				return

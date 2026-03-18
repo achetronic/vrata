@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/felixge/httpsnoop"
@@ -19,17 +20,24 @@ import (
 // AccessLogMiddleware creates a middleware that logs request and response
 // as two separate log entries linked by a generated request ID.
 func AccessLogMiddleware(cfg *model.AccessLogConfig) Middleware {
+	m, _ := AccessLogMiddlewareWithStop(cfg)
+	return m
+}
+
+// AccessLogMiddlewareWithStop creates an access log middleware and returns a
+// stop function that closes the log file handle (if file-based).
+func AccessLogMiddlewareWithStop(cfg *model.AccessLogConfig) (Middleware, func()) {
 	if cfg == nil || cfg.Path == "" {
-		return passthrough
+		return passthrough, nil
 	}
 	if cfg.OnRequest == nil && cfg.OnResponse == nil {
-		return passthrough
+		return passthrough, nil
 	}
 
-	writer := openLogWriter(cfg.Path)
+	lw := openLogWriter(cfg.Path)
 	useJSON := cfg.JSON
 
-	return func(next http.Handler) http.Handler {
+	mw := Middleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			requestID := uuid.NewString()
 			start := time.Now()
@@ -37,31 +45,65 @@ func AccessLogMiddleware(cfg *model.AccessLogConfig) Middleware {
 
 			if cfg.OnRequest != nil {
 				entry := interpolateFields(cfg.OnRequest.Fields, r, originalPath, 0, 0, requestID, start, 0)
-				writeLine(writer, entry, useJSON)
+				lw.writeLine(entry, useJSON)
 			}
 
 			m := httpsnoop.CaptureMetrics(next, w, r)
 
 			if cfg.OnResponse != nil {
 				entry := interpolateFields(cfg.OnResponse.Fields, r, originalPath, m.Code, m.Written, requestID, start, m.Duration)
-				writeLine(writer, entry, useJSON)
+				lw.writeLine(entry, useJSON)
 			}
 		})
-	}
+	})
+
+	return mw, lw.close
 }
 
-func openLogWriter(path string) io.Writer {
+// logWriter wraps an io.Writer with a mutex to prevent interleaved lines
+// from concurrent requests, and tracks the closer for cleanup.
+type logWriter struct {
+	mu     sync.Mutex
+	w      io.Writer
+	closer io.Closer
+}
+
+func openLogWriter(path string) *logWriter {
 	switch path {
 	case "/dev/stdout", "stdout":
-		return os.Stdout
+		return &logWriter{w: os.Stdout}
 	case "/dev/stderr", "stderr":
-		return os.Stderr
+		return &logWriter{w: os.Stderr}
 	default:
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			return os.Stdout
+			return &logWriter{w: os.Stdout}
 		}
-		return f
+		return &logWriter{w: f, closer: f}
+	}
+}
+
+// writeLine writes a single log entry atomically.
+func (lw *logWriter) writeLine(fields map[string]string, useJSON bool) {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
+
+	if useJSON {
+		data, _ := json.Marshal(fields)
+		fmt.Fprintf(lw.w, "%s\n", data)
+	} else {
+		parts := make([]string, 0, len(fields))
+		for k, v := range fields {
+			parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+		}
+		fmt.Fprintf(lw.w, "%s\n", strings.Join(parts, " "))
+	}
+}
+
+// close releases the file handle if this writer owns one.
+func (lw *logWriter) close() {
+	if lw.closer != nil {
+		lw.closer.Close()
 	}
 }
 
@@ -122,19 +164,6 @@ func interpolateFields(
 	}
 
 	return result
-}
-
-func writeLine(w io.Writer, fields map[string]string, useJSON bool) {
-	if useJSON {
-		data, _ := json.Marshal(fields)
-		fmt.Fprintf(w, "%s\n", data)
-	} else {
-		parts := make([]string, 0, len(fields))
-		for k, v := range fields {
-			parts = append(parts, fmt.Sprintf("%s=%s", k, v))
-		}
-		fmt.Fprintf(w, "%s\n", strings.Join(parts, " "))
-	}
 }
 
 func reqHost(r *http.Request) string {
