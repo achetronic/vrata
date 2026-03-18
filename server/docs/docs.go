@@ -1522,6 +1522,14 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "sticky": {
+                    "description": "Sticky holds parameters for STICKY.\nOnly used when Algorithm is STICKY.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.StickyOptions"
+                        }
+                    ]
+                },
                 "weightedConsistentHash": {
                     "description": "WeightedConsistentHash holds parameters for WEIGHTED_CONSISTENT_HASH.\nOnly used when Algorithm is WEIGHTED_CONSISTENT_HASH.",
                     "allOf": [
@@ -1549,11 +1557,13 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "WEIGHTED_RANDOM",
-                "WEIGHTED_CONSISTENT_HASH"
+                "WEIGHTED_CONSISTENT_HASH",
+                "STICKY"
             ],
             "x-enum-varnames": [
                 "DestinationLBWeightedRandom",
-                "DestinationLBWeightedConsistentHash"
+                "DestinationLBWeightedConsistentHash",
+                "DestinationLBSticky"
             ]
         },
         "model.DestinationOptions": {
@@ -3014,6 +3024,19 @@ const docTemplate = `{
                 "name": {
                     "description": "Name is a human-readable label.",
                     "type": "string"
+                }
+            }
+        },
+        "model.StickyOptions": {
+            "type": "object",
+            "properties": {
+                "cookie": {
+                    "description": "Cookie configures the session cookie used for client identification.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.DestinationPinCookie"
+                        }
+                    ]
                 }
             }
         },

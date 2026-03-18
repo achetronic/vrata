@@ -143,6 +143,12 @@ definitions:
         description: |-
           Algorithm selects the destination selection policy.
           Default: WEIGHTED_RANDOM.
+      sticky:
+        allOf:
+        - $ref: '#/definitions/model.StickyOptions'
+        description: |-
+          Sticky holds parameters for STICKY.
+          Only used when Algorithm is STICKY.
       weightedConsistentHash:
         allOf:
         - $ref: '#/definitions/model.WeightedConsistentHashOptions'
@@ -161,10 +167,12 @@ definitions:
     enum:
     - WEIGHTED_RANDOM
     - WEIGHTED_CONSISTENT_HASH
+    - STICKY
     type: string
     x-enum-varnames:
     - DestinationLBWeightedRandom
     - DestinationLBWeightedConsistentHash
+    - DestinationLBSticky
   model.DestinationOptions:
     properties:
       circuitBreaker:
@@ -1431,6 +1439,13 @@ definitions:
       name:
         description: Name is a human-readable label.
         type: string
+    type: object
+  model.StickyOptions:
+    properties:
+      cookie:
+        allOf:
+        - $ref: '#/definitions/model.DestinationPinCookie'
+        description: Cookie configures the session cookie used for client identification.
     type: object
   model.TLSMode:
     enum:
