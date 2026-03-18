@@ -30,7 +30,7 @@ func TestE2E_Proxy_Retry(t *testing.T) {
 	_, route := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-retry", "match": map[string]any{"pathPrefix": "/e2e-retry"},
 		"forward": map[string]any{
-			"backends": []map[string]any{{"destinationId": destID, "weight": 100}},
+			"destinations": []map[string]any{{"destinationId": destID, "weight": 100}},
 			"retry":    map[string]any{"attempts": 3, "on": []string{"server-error"}},
 		},
 	})
@@ -58,7 +58,7 @@ func TestE2E_Proxy_RequestTimeout(t *testing.T) {
 	_, route := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-timeout", "match": map[string]any{"pathPrefix": "/e2e-timeout"},
 		"forward": map[string]any{
-			"backends": []map[string]any{{"destinationId": destID, "weight": 100}},
+			"destinations": []map[string]any{{"destinationId": destID, "weight": 100}},
 			"timeouts": map[string]any{"request": "500ms"},
 		},
 	})
@@ -88,7 +88,7 @@ func TestE2E_Proxy_Mirror(t *testing.T) {
 	_, route := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-mirror", "match": map[string]any{"pathPrefix": "/e2e-mirror"},
 		"forward": map[string]any{
-			"backends": []map[string]any{{"destinationId": upDestID, "weight": 100}},
+			"destinations": []map[string]any{{"destinationId": upDestID, "weight": 100}},
 			"mirror":   map[string]any{"destinationId": mirrorDestID, "percentage": 100},
 		},
 	})
@@ -121,7 +121,7 @@ func TestE2E_Proxy_WebSocket(t *testing.T) {
 
 	_, route := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-ws", "match": map[string]any{"pathPrefix": "/e2e-ws"},
-		"forward": map[string]any{"backends": []map[string]any{{"destinationId": destID, "weight": 100}}},
+		"forward": map[string]any{"destinations": []map[string]any{{"destinationId": destID, "weight": 100}}},
 	})
 	defer apiDelete(t, "/routes/"+id(route))
 	snapID := activateSnapshot(t)

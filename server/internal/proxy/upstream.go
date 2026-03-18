@@ -94,7 +94,7 @@ func NewUpstream(d model.Destination) (*Upstream, error) {
 // buildBalancer creates the appropriate balancer for a destination.
 func buildBalancer(d model.Destination) Balancer {
 	if d.Options == nil || d.Options.Balancing == nil {
-		return nil // default weighted random handled by SelectBackend
+		return nil // default weighted random handled by SelectDestination
 	}
 	switch d.Options.Balancing.Algorithm {
 	case model.LBPolicyRingHash:
@@ -199,19 +199,19 @@ func (u *Upstream) ReverseProxy() *httputil.ReverseProxy {
 	return proxy
 }
 
-// SelectBackend picks a backend from weighted backends using weighted random.
-// When all weights are zero, backends are selected uniformly at random.
-func SelectBackend(backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream {
-	if len(backends) == 0 {
+// SelectDestination picks a destination from weighted dests using weighted random.
+// When all weights are zero, dests are selected uniformly at random.
+func SelectDestination(dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+	if len(dests) == 0 {
 		return nil
 	}
-	if len(backends) == 1 {
-		return upstreams[backends[0].DestinationID]
+	if len(dests) == 1 {
+		return upstreams[dests[0].DestinationID]
 	}
 
 	total := uint32(0)
 	allZero := true
-	for _, b := range backends {
+	for _, b := range dests {
 		total += b.Weight
 		if b.Weight > 0 {
 			allZero = false
@@ -219,17 +219,17 @@ func SelectBackend(backends []model.BackendRef, upstreams map[string]*Upstream) 
 	}
 
 	if allZero {
-		idx := rand.Intn(len(backends))
-		return upstreams[backends[idx].DestinationID]
+		idx := rand.Intn(len(dests))
+		return upstreams[dests[idx].DestinationID]
 	}
 
 	r := rand.Uint32() % total
 	cumulative := uint32(0)
-	for _, b := range backends {
+	for _, b := range dests {
 		cumulative += b.Weight
 		if r < cumulative {
 			return upstreams[b.DestinationID]
 		}
 	}
-	return upstreams[backends[len(backends)-1].DestinationID]
+	return upstreams[dests[len(dests)-1].DestinationID]
 }

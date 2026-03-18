@@ -15,7 +15,7 @@ func makeUpstreams() map[string]*Upstream {
 }
 
 func TestWeightedRandomSelection(t *testing.T) {
-	backends := []model.BackendRef{
+	backends := []model.DestinationRef{
 		{DestinationID: "a", Weight: 50},
 		{DestinationID: "b", Weight: 50},
 	}
@@ -23,9 +23,9 @@ func TestWeightedRandomSelection(t *testing.T) {
 
 	counts := map[string]int{}
 	for i := 0; i < 1000; i++ {
-		u := SelectBackend(backends, upstreams)
+		u := SelectDestination(backends, upstreams)
 		if u == nil {
-			t.Fatal("SelectBackend returned nil")
+			t.Fatal("SelectDestination returned nil")
 		}
 		counts[u.Destination.ID]++
 	}
@@ -38,7 +38,7 @@ func TestWeightedRandomSelection(t *testing.T) {
 
 func TestRoundRobinBalancer(t *testing.T) {
 	rr := &RoundRobinBalancer{}
-	backends := []model.BackendRef{
+	backends := []model.DestinationRef{
 		{DestinationID: "a"},
 		{DestinationID: "b"},
 	}
@@ -55,7 +55,7 @@ func TestRoundRobinBalancer(t *testing.T) {
 
 func TestRingHashConsistency(t *testing.T) {
 	rh := NewRingHashBalancer(1024, 8388608)
-	backends := []model.BackendRef{
+	backends := []model.DestinationRef{
 		{DestinationID: "a"},
 		{DestinationID: "b"},
 	}

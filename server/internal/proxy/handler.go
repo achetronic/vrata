@@ -181,7 +181,7 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, group *model.RouteGroup, routeID string) http.Handler {
 	var pinRing *destinationRing
 	if fwd.DestinationPinning != nil {
-		pinRing = buildDestinationRing(fwd.Backends)
+		pinRing = buildDestinationRing(fwd.Destinations)
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -296,7 +296,7 @@ func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
 	}
 }
 
-// pickDestination selects a destination from the backends list.
+// pickDestination selects a destination from the dests list.
 // Level 1: destination selection (weights or pinning).
 // Level 2 (endpoint selection within a destination) is handled by the
 // balancer inside ReverseProxy, not here.
@@ -308,19 +308,19 @@ func pickDestination(
 	pinRing *destinationRing,
 	w http.ResponseWriter,
 ) *Upstream {
-	if len(fwd.Backends) == 0 {
+	if len(fwd.Destinations) == 0 {
 		return nil
 	}
-	if len(fwd.Backends) == 1 {
-		u := upstreams[fwd.Backends[0].DestinationID]
+	if len(fwd.Destinations) == 1 {
+		u := upstreams[fwd.Destinations[0].DestinationID]
 		if u != nil && !isHealthy(u) {
 			return nil
 		}
 		return u
 	}
 
-	// Filter healthy backends.
-	healthy := filterHealthy(fwd.Backends, upstreams)
+	// Filter healthy dests.
+	healthy := filterHealthy(fwd.Destinations, upstreams)
 	if len(healthy) == 0 {
 		return nil
 	}
@@ -331,7 +331,7 @@ func pickDestination(
 	}
 
 	// Default: weighted random.
-	return SelectBackend(healthy, upstreams)
+	return SelectDestination(healthy, upstreams)
 }
 
 // pickPinned selects a destination using the weighted consistent hash ring
@@ -343,7 +343,7 @@ func pickPinned(
 	w http.ResponseWriter,
 	routeID string,
 	ring *destinationRing,
-	healthy []model.BackendRef,
+	healthy []model.DestinationRef,
 ) *Upstream {
 	cfg := fwd.DestinationPinning
 	cookieName := cfg.CookieName
@@ -378,15 +378,15 @@ func pickPinned(
 
 	destID := ring.PickValid(hashKey, validSet)
 	if destID == "" {
-		return SelectBackend(healthy, upstreams)
+		return SelectDestination(healthy, upstreams)
 	}
 	return upstreams[destID]
 }
 
-// filterHealthy returns only backends whose upstream is healthy.
-func filterHealthy(backends []model.BackendRef, upstreams map[string]*Upstream) []model.BackendRef {
-	var healthy []model.BackendRef
-	for _, b := range backends {
+// filterHealthy returns only dests whose upstream is healthy.
+func filterHealthy(dests []model.DestinationRef, upstreams map[string]*Upstream) []model.DestinationRef {
+	var healthy []model.DestinationRef
+	for _, b := range dests {
 		u, ok := upstreams[b.DestinationID]
 		if ok && isHealthy(u) {
 			healthy = append(healthy, b)

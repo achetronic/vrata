@@ -9,7 +9,7 @@ import (
 
 // destinationRing is a weighted consistent hash ring used for destination
 // pinning. Each destination occupies ring space proportional to its weight.
-// Given the same backends and the same key, every proxy produces the same
+// Given the same dests and the same key, every proxy produces the same
 // result — no shared state required.
 type destinationRing struct {
 	entries []ringNode
@@ -23,14 +23,14 @@ type ringNode struct {
 const vnodeMultiplier = 100
 
 // buildDestinationRing creates a weighted consistent hash ring from a list
-// of backends. Destinations with higher weight get more virtual nodes.
-func buildDestinationRing(backends []model.BackendRef) *destinationRing {
-	if len(backends) == 0 {
+// of dests. Destinations with higher weight get more virtual nodes.
+func buildDestinationRing(dests []model.DestinationRef) *destinationRing {
+	if len(dests) == 0 {
 		return &destinationRing{}
 	}
 
 	var entries []ringNode
-	for _, b := range backends {
+	for _, b := range dests {
 		vnodes := int(b.Weight) * vnodeMultiplier
 		if vnodes < 1 {
 			vnodes = 1

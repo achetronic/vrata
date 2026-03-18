@@ -24,7 +24,7 @@ type Route struct {
 	Match MatchRule `json:"match" yaml:"match"`
 
 	// Forward proxies the request to one or more upstream
-	// Destinations. Contains all forwarding behaviour: backends, timeouts,
+	// Destinations. Contains all forwarding behaviour: destinations, timeouts,
 	// retries, URL rewriting, and traffic mirroring.
 	// Mutually exclusive with Redirect and DirectResponse.
 	Forward *ForwardAction `json:"forward,omitempty" yaml:"forward,omitempty"`
@@ -56,11 +56,11 @@ type Route struct {
 // ForwardAction groups all configuration that controls how Rutoso forwards
 // a matched request to upstream Destinations.
 type ForwardAction struct {
-	// Backends lists the upstream Destinations for this route.
+	// Destinations lists the upstream Destinations for this route.
 	// Each entry references a Destination by ID and carries a traffic weight.
-	// Weights across all backends must sum to 100 when more than one backend
-	// is defined. If only one backend is provided its weight is ignored.
-	Backends []BackendRef `json:"backends" yaml:"backends"`
+	// Weights across all destinations must sum to 100 when more than one
+	// is defined. If only one destination is provided its weight is ignored.
+	Destinations []DestinationRef `json:"destinations" yaml:"destinations"`
 
 	// Timeouts controls how long the request is allowed to take.
 	Timeouts *RouteTimeouts `json:"timeouts,omitempty" yaml:"timeouts,omitempty"`
@@ -108,7 +108,7 @@ type ForwardAction struct {
 
 // DestinationPinning configures sticky destination selection. Once a client
 // is assigned to a destination, it stays there until the cookie expires or
-// the destination is removed from the backends list.
+// the destination is removed from the destinations list.
 type DestinationPinning struct {
 	// CookieName is the name of the session cookie that identifies the client.
 	// All routes sharing the same cookie name share the same session ID.
@@ -194,7 +194,7 @@ type RetryBackoff struct {
 type RouteRewrite struct {
 	// Path replaces the matched path prefix with the given value.
 	// For example, if the route matches "/api/v1" and Path is "/internal",
-	// a request to "/api/v1/users" arrives at the backend as "/internal/users".
+	// a request to "/api/v1/users" arrives at the destination as "/internal/users".
 	Path string `json:"path,omitempty" yaml:"path,omitempty"`
 
 	// PathRegex rewrites the path using a regular expression substitution.
@@ -208,7 +208,7 @@ type RouteRewrite struct {
 	HostFromHeader string `json:"hostFromHeader,omitempty" yaml:"hostFromHeader,omitempty"`
 
 	// AutoHost sets the Host header to the hostname of the upstream
-	// Destination automatically. Useful when the backend requires its own
+	// Destination automatically. Useful when the destination requires its own
 	// hostname (e.g. an external SaaS API).
 	AutoHost bool `json:"autoHost,omitempty" yaml:"autoHost,omitempty"`
 }

@@ -267,7 +267,7 @@ func TestE2E_Proxy_ExtAuthzMiddleware(t *testing.T) {
 
 	_, route := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-authz", "match": map[string]any{"pathPrefix": "/e2e-authz"},
-		"forward": map[string]any{"backends": []map[string]any{{"destinationId": upDestID, "weight": 100}}},
+		"forward": map[string]any{"destinations": []map[string]any{{"destinationId": upDestID, "weight": 100}}},
 		"middlewareIds": []string{id(mw)},
 	})
 	defer apiDelete(t, "/routes/"+id(route))
@@ -316,7 +316,7 @@ func TestE2E_Proxy_ExtProcMiddleware(t *testing.T) {
 
 	_, route := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-extproc", "match": map[string]any{"pathPrefix": "/e2e-extproc"},
-		"forward": map[string]any{"backends": []map[string]any{{"destinationId": upDestID, "weight": 100}}},
+		"forward": map[string]any{"destinations": []map[string]any{{"destinationId": upDestID, "weight": 100}}},
 		"middlewareIds": []string{id(mw)},
 	})
 	defer apiDelete(t, "/routes/"+id(route))

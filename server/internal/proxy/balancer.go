@@ -15,29 +15,29 @@ import (
 	"github.com/achetronic/rutoso/internal/model"
 )
 
-// Balancer selects an upstream from a set of backends.
+// Balancer selects an upstream from a set of dests.
 type Balancer interface {
-	Pick(r *http.Request, backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream
+	Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream
 }
 
 // WeightedRandomBalancer picks by weighted random.
 type WeightedRandomBalancer struct{}
 
-func (WeightedRandomBalancer) Pick(_ *http.Request, backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream {
-	return SelectBackend(backends, upstreams)
+func (WeightedRandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+	return SelectDestination(dests, upstreams)
 }
 
-// RoundRobinBalancer cycles through backends in order.
+// RoundRobinBalancer cycles through dests in order.
 type RoundRobinBalancer struct {
 	counter atomic.Uint64
 }
 
-func (rr *RoundRobinBalancer) Pick(_ *http.Request, backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream {
-	if len(backends) == 0 {
+func (rr *RoundRobinBalancer) Pick(_ *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+	if len(dests) == 0 {
 		return nil
 	}
-	idx := rr.counter.Add(1) % uint64(len(backends))
-	return upstreams[backends[idx].DestinationID]
+	idx := rr.counter.Add(1) % uint64(len(dests))
+	return upstreams[dests[idx].DestinationID]
 }
 
 // LeastRequestBalancer picks the upstream with the fewest active requests.
@@ -50,13 +50,13 @@ func NewLeastRequestBalancer() *LeastRequestBalancer {
 	return &LeastRequestBalancer{inflight: make(map[string]int64)}
 }
 
-func (lb *LeastRequestBalancer) Pick(_ *http.Request, backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream {
+func (lb *LeastRequestBalancer) Pick(_ *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
 	var best string
 	bestCount := int64(1<<63 - 1)
-	for _, b := range backends {
+	for _, b := range dests {
 		count := lb.inflight[b.DestinationID]
 		if count < bestCount {
 			bestCount = count
@@ -79,15 +79,15 @@ func (lb *LeastRequestBalancer) Done(destID string) {
 	}
 }
 
-// RandomBalancer picks a random backend.
+// RandomBalancer picks a random destination.
 type RandomBalancer struct{}
 
-func (RandomBalancer) Pick(_ *http.Request, backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream {
-	if len(backends) == 0 {
+func (RandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
+	if len(dests) == 0 {
 		return nil
 	}
-	idx := rand.Intn(len(backends))
-	return upstreams[backends[idx].DestinationID]
+	idx := rand.Intn(len(dests))
+	return upstreams[dests[idx].DestinationID]
 }
 
 // ─── Consistent hashing ─────────────────────────────────────────────────────
@@ -118,18 +118,18 @@ func NewRingHashBalancer(minSize, maxSize int) *RingHashBalancer {
 	return &RingHashBalancer{ringSize: size}
 }
 
-// Build constructs the hash ring from the given backends.
-func (rh *RingHashBalancer) Build(backends []model.BackendRef) {
+// Build constructs the hash ring from the given dests.
+func (rh *RingHashBalancer) Build(dests []model.DestinationRef) {
 	rh.mu.Lock()
 	defer rh.mu.Unlock()
 
 	rh.ring = nil
-	vnodes := rh.ringSize / len(backends)
+	vnodes := rh.ringSize / len(dests)
 	if vnodes < 1 {
 		vnodes = 1
 	}
 
-	for _, b := range backends {
+	for _, b := range dests {
 		for i := 0; i < vnodes; i++ {
 			key := []byte(fmt.Sprintf("%s:%d", b.DestinationID, i))
 			h := crc32.ChecksumIEEE(key)
@@ -142,12 +142,12 @@ func (rh *RingHashBalancer) Build(backends []model.BackendRef) {
 	})
 }
 
-func (rh *RingHashBalancer) Pick(r *http.Request, backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream {
+func (rh *RingHashBalancer) Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
 
 	if len(rh.ring) == 0 {
-		return SelectBackend(backends, upstreams)
+		return SelectDestination(dests, upstreams)
 	}
 
 	h := hashRequest(r)
@@ -164,7 +164,7 @@ func (rh *RingHashBalancer) Pick(r *http.Request, backends []model.BackendRef, u
 type MaglevBalancer struct {
 	mu        sync.RWMutex
 	table     []int
-	backends  []string
+	dests  []string
 	tableSize int
 }
 
@@ -176,20 +176,20 @@ func NewMaglevBalancer(tableSize int) *MaglevBalancer {
 }
 
 // Build constructs the Maglev lookup table.
-func (m *MaglevBalancer) Build(backends []model.BackendRef) {
+func (m *MaglevBalancer) Build(dests []model.DestinationRef) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	n := len(backends)
+	n := len(dests)
 	if n == 0 {
 		m.table = nil
-		m.backends = nil
+		m.dests = nil
 		return
 	}
 
-	m.backends = make([]string, n)
-	for i, b := range backends {
-		m.backends[i] = b.DestinationID
+	m.dests = make([]string, n)
+	for i, b := range dests {
+		m.dests[i] = b.DestinationID
 	}
 
 	table := make([]int, m.tableSize)
@@ -200,7 +200,7 @@ func (m *MaglevBalancer) Build(backends []model.BackendRef) {
 	// Permutation table.
 	offset := make([]uint64, n)
 	skip := make([]uint64, n)
-	for i, b := range backends {
+	for i, b := range dests {
 		h := md5.Sum([]byte(b.DestinationID))
 		offset[i] = binary.LittleEndian.Uint64(h[:8]) % uint64(m.tableSize)
 		skip[i] = (binary.LittleEndian.Uint64(h[8:]) % uint64(m.tableSize-1)) + 1
@@ -231,20 +231,20 @@ func (m *MaglevBalancer) Build(backends []model.BackendRef) {
 	m.table = table
 }
 
-func (m *MaglevBalancer) Pick(r *http.Request, backends []model.BackendRef, upstreams map[string]*Upstream) *Upstream {
+func (m *MaglevBalancer) Pick(r *http.Request, dests []model.DestinationRef, upstreams map[string]*Upstream) *Upstream {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	if len(m.table) == 0 || len(m.backends) == 0 {
-		return SelectBackend(backends, upstreams)
+	if len(m.table) == 0 || len(m.dests) == 0 {
+		return SelectDestination(dests, upstreams)
 	}
 
 	h := hashRequest(r)
 	idx := m.table[h%uint32(len(m.table))]
-	if idx < 0 || idx >= len(m.backends) {
-		return SelectBackend(backends, upstreams)
+	if idx < 0 || idx >= len(m.dests) {
+		return SelectDestination(dests, upstreams)
 	}
-	return upstreams[m.backends[idx]]
+	return upstreams[m.dests[idx]]
 }
 
 // hashRequest computes a hash from the request using the provided hash policies.

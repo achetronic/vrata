@@ -45,7 +45,7 @@ func TestE2E_Proxy_ForwardToUpstream(t *testing.T) {
 
 	_, route := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-fwd", "match": map[string]any{"pathPrefix": "/e2e-fwd"},
-		"forward": map[string]any{"backends": []map[string]any{{"destinationId": destID, "weight": 100}}},
+		"forward": map[string]any{"destinations": []map[string]any{{"destinationId": destID, "weight": 100}}},
 	})
 	defer apiDelete(t, "/routes/"+id(route))
 	snapID := activateSnapshot(t)
@@ -194,7 +194,7 @@ func TestE2E_Proxy_PathRewriteRegex(t *testing.T) {
 	_, route := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-rwx", "match": map[string]any{"pathPrefix": "/e2e-rwx"},
 		"forward": map[string]any{
-			"backends": []map[string]any{{"destinationId": destID, "weight": 100}},
+			"destinations": []map[string]any{{"destinationId": destID, "weight": 100}},
 			"rewrite":  map[string]any{"pathRegex": map[string]any{"pattern": "^/e2e-rwx(.*)", "substitution": "/rewritten$1"}},
 		},
 	})

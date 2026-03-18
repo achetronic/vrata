@@ -1351,19 +1351,6 @@
                 }
             }
         },
-        "model.BackendRef": {
-            "type": "object",
-            "properties": {
-                "destinationId": {
-                    "description": "DestinationID is the ID of the Destination.",
-                    "type": "string"
-                },
-                "weight": {
-                    "description": "Weight controls the proportion of traffic. Must sum to 100 across backends.",
-                    "type": "integer"
-                }
-            }
-        },
         "model.BalancingOptions": {
             "type": "object",
             "properties": {
@@ -1561,7 +1548,7 @@
                     ]
                 },
                 "http2": {
-                    "description": "HTTP2 enables HTTP/2 to the upstream. Required for gRPC backends.",
+                    "description": "HTTP2 enables HTTP/2 to the upstream. Required for gRPC destinations.",
                     "type": "boolean"
                 },
                 "maxRequestsPerConnection": {
@@ -1596,6 +1583,19 @@
                 "ttl": {
                     "description": "TTL is the lifetime of the session cookie. Accepts Go duration strings\n(e.g. \"1h\", \"24h\"). When the cookie expires, the client goes through\nweighted selection again. Default: \"1h\".",
                     "type": "string"
+                }
+            }
+        },
+        "model.DestinationRef": {
+            "type": "object",
+            "properties": {
+                "destinationId": {
+                    "description": "DestinationID is the ID of the Destination.",
+                    "type": "string"
+                },
+                "weight": {
+                    "description": "Weight controls the proportion of traffic. Must sum to 100 across\ndestinations when more than one is defined.",
+                    "type": "integer"
                 }
             }
         },
@@ -1826,13 +1826,6 @@
         "model.ForwardAction": {
             "type": "object",
             "properties": {
-                "backends": {
-                    "description": "Backends lists the upstream Destinations for this route.\nEach entry references a Destination by ID and carries a traffic weight.\nWeights across all backends must sum to 100 when more than one backend\nis defined. If only one backend is provided its weight is ignored.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.BackendRef"
-                    }
-                },
                 "destinationPinning": {
                     "description": "DestinationPinning enables sticky destination selection for canary\ndeployments. When enabled, the first request uses weighted selection\nto pick a destination; subsequent requests from the same client are\npinned to that destination via a session cookie and a weighted\nconsistent hash. All proxies compute the same result deterministically\nfrom the snapshot — no shared state required.",
                     "allOf": [
@@ -1840,6 +1833,13 @@
                             "$ref": "#/definitions/model.DestinationPinning"
                         }
                     ]
+                },
+                "destinations": {
+                    "description": "Destinations lists the upstream Destinations for this route.\nEach entry references a Destination by ID and carries a traffic weight.\nWeights across all destinations must sum to 100 when more than one\nis defined. If only one destination is provided its weight is ignored.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DestinationRef"
+                    }
                 },
                 "hashPolicy": {
                     "description": "HashPolicy controls how Rutoso computes the consistent-hash key for\nsticky sessions. Only relevant when the Destination uses RING_HASH or\nMAGLEV balancing (configured in Destination.Options.Balancing).\n\nThis field lives on the route — not on the Destination — because Rutoso\nevaluates hash_policy at routing time using request attributes (headers,\ncookies, client IP) that are only available in the RouteAction context.\nThe Destination defines *which algorithm* and ring parameters to use;\nthe route defines *what request data* feeds the hash function.\nBoth sides must be configured for sticky sessions to work.\n\nEntries are evaluated in order; the first one that produces a value wins.\nEvaluated at routing time before selecting an endpoint.",
@@ -2519,7 +2519,7 @@
                     ]
                 },
                 "forward": {
-                    "description": "Forward proxies the request to one or more upstream\nDestinations. Contains all forwarding behaviour: backends, timeouts,\nretries, URL rewriting, and traffic mirroring.\nMutually exclusive with Redirect and DirectResponse.",
+                    "description": "Forward proxies the request to one or more upstream\nDestinations. Contains all forwarding behaviour: destinations, timeouts,\nretries, URL rewriting, and traffic mirroring.\nMutually exclusive with Redirect and DirectResponse.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/model.ForwardAction"
@@ -2728,7 +2728,7 @@
             "type": "object",
             "properties": {
                 "autoHost": {
-                    "description": "AutoHost sets the Host header to the hostname of the upstream\nDestination automatically. Useful when the backend requires its own\nhostname (e.g. an external SaaS API).",
+                    "description": "AutoHost sets the Host header to the hostname of the upstream\nDestination automatically. Useful when the destination requires its own\nhostname (e.g. an external SaaS API).",
                     "type": "boolean"
                 },
                 "host": {
@@ -2740,7 +2740,7 @@
                     "type": "string"
                 },
                 "path": {
-                    "description": "Path replaces the matched path prefix with the given value.\nFor example, if the route matches \"/api/v1\" and Path is \"/internal\",\na request to \"/api/v1/users\" arrives at the backend as \"/internal/users\".",
+                    "description": "Path replaces the matched path prefix with the given value.\nFor example, if the route matches \"/api/v1\" and Path is \"/internal\",\na request to \"/api/v1/users\" arrives at the destination as \"/internal/users\".",
                     "type": "string"
                 },
                 "pathRegex": {

@@ -24,7 +24,7 @@ package model
 //     without accidentally breaking the regex.
 //
 //   - PathRegex (group) + no path specifier (route) → group regex is the
-//     full match. The route contributes only backends and other matchers.
+//     full match. The route contributes only destinations and other matchers.
 //
 // In all cases, Hostnames are merged (union) and Headers are appended.
 type RouteGroup struct {

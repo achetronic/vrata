@@ -87,12 +87,12 @@ func BuildTable(
 	}
 
 	// Build balancer rings/tables for upstreams that use consistent hashing.
-	// Collect all backend refs that point to each upstream.
-	backendsByDest := make(map[string][]model.BackendRef)
+	// Collect all destination refs that point to each upstream.
+	refsByDest := make(map[string][]model.DestinationRef)
 	for _, cr := range compiled {
 		if cr.model.Forward != nil {
-			for _, b := range cr.model.Forward.Backends {
-				backendsByDest[b.DestinationID] = append(backendsByDest[b.DestinationID], b)
+			for _, b := range cr.model.Forward.Destinations {
+				refsByDest[b.DestinationID] = append(refsByDest[b.DestinationID], b)
 			}
 		}
 	}
@@ -100,9 +100,9 @@ func BuildTable(
 		if u.Balancer == nil {
 			continue
 		}
-		if backends, ok := backendsByDest[destID]; ok {
-			if builder, ok := u.Balancer.(interface{ Build([]model.BackendRef) }); ok {
-				builder.Build(backends)
+		if dests, ok := refsByDest[destID]; ok {
+			if builder, ok := u.Balancer.(interface{ Build([]model.DestinationRef) }); ok {
+				builder.Build(dests)
 			}
 		}
 	}

@@ -40,16 +40,6 @@ definitions:
           type: string
         type: object
     type: object
-  model.BackendRef:
-    properties:
-      destinationId:
-        description: DestinationID is the ID of the Destination.
-        type: string
-      weight:
-        description: Weight controls the proportion of traffic. Must sum to 100 across
-          backends.
-        type: integer
-    type: object
   model.BalancingOptions:
     properties:
       algorithm:
@@ -194,7 +184,7 @@ definitions:
         - $ref: '#/definitions/model.HealthCheckOptions'
         description: HealthCheck configures active HTTP health checking.
       http2:
-        description: HTTP2 enables HTTP/2 to the upstream. Required for gRPC backends.
+        description: HTTP2 enables HTTP/2 to the upstream. Required for gRPC destinations.
         type: boolean
       maxRequestsPerConnection:
         description: |-
@@ -226,6 +216,17 @@ definitions:
           (e.g. "1h", "24h"). When the cookie expires, the client goes through
           weighted selection again. Default: "1h".
         type: string
+    type: object
+  model.DestinationRef:
+    properties:
+      destinationId:
+        description: DestinationID is the ID of the Destination.
+        type: string
+      weight:
+        description: |-
+          Weight controls the proportion of traffic. Must sum to 100 across
+          destinations when more than one is defined.
+        type: integer
     type: object
   model.DiscoveryType:
     enum:
@@ -422,15 +423,6 @@ definitions:
     type: object
   model.ForwardAction:
     properties:
-      backends:
-        description: |-
-          Backends lists the upstream Destinations for this route.
-          Each entry references a Destination by ID and carries a traffic weight.
-          Weights across all backends must sum to 100 when more than one backend
-          is defined. If only one backend is provided its weight is ignored.
-        items:
-          $ref: '#/definitions/model.BackendRef'
-        type: array
       destinationPinning:
         allOf:
         - $ref: '#/definitions/model.DestinationPinning'
@@ -441,6 +433,15 @@ definitions:
           pinned to that destination via a session cookie and a weighted
           consistent hash. All proxies compute the same result deterministically
           from the snapshot — no shared state required.
+      destinations:
+        description: |-
+          Destinations lists the upstream Destinations for this route.
+          Each entry references a Destination by ID and carries a traffic weight.
+          Weights across all destinations must sum to 100 when more than one
+          is defined. If only one destination is provided its weight is ignored.
+        items:
+          $ref: '#/definitions/model.DestinationRef'
+        type: array
       hashPolicy:
         description: |-
           HashPolicy controls how Rutoso computes the consistent-hash key for
@@ -1054,7 +1055,7 @@ definitions:
         - $ref: '#/definitions/model.ForwardAction'
         description: |-
           Forward proxies the request to one or more upstream
-          Destinations. Contains all forwarding behaviour: backends, timeouts,
+          Destinations. Contains all forwarding behaviour: destinations, timeouts,
           retries, URL rewriting, and traffic mirroring.
           Mutually exclusive with Redirect and DirectResponse.
       id:
@@ -1247,7 +1248,7 @@ definitions:
       autoHost:
         description: |-
           AutoHost sets the Host header to the hostname of the upstream
-          Destination automatically. Useful when the backend requires its own
+          Destination automatically. Useful when the destination requires its own
           hostname (e.g. an external SaaS API).
         type: boolean
       host:
@@ -1263,7 +1264,7 @@ definitions:
         description: |-
           Path replaces the matched path prefix with the given value.
           For example, if the route matches "/api/v1" and Path is "/internal",
-          a request to "/api/v1/users" arrives at the backend as "/internal/users".
+          a request to "/api/v1/users" arrives at the destination as "/internal/users".
         type: string
       pathRegex:
         allOf:

@@ -23,7 +23,7 @@ func TestE2E_Proxy_WeightedBackends(t *testing.T) {
 		"name":  "e2e-weights",
 		"match": map[string]any{"pathPrefix": "/e2e-weights"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 80},
 				{"destinationId": destB, "weight": 20},
 			},
@@ -45,7 +45,7 @@ func TestE2E_Proxy_WeightedBackends(t *testing.T) {
 		"name":  "e2e-weights",
 		"match": map[string]any{"pathPrefix": "/e2e-weights"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 30},
 				{"destinationId": destB, "weight": 70},
 			},
@@ -66,7 +66,7 @@ func TestE2E_Proxy_WeightedBackends(t *testing.T) {
 		"name":  "e2e-weights",
 		"match": map[string]any{"pathPrefix": "/e2e-weights"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 50},
 				{"destinationId": destB, "weight": 50},
 			},
@@ -87,7 +87,7 @@ func TestE2E_Proxy_WeightedBackends(t *testing.T) {
 		"name":  "e2e-weights",
 		"match": map[string]any{"pathPrefix": "/e2e-weights"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 100},
 				{"destinationId": destB, "weight": 0},
 			},
@@ -121,7 +121,7 @@ func TestE2E_Proxy_ThreeBackendsWeighted(t *testing.T) {
 		"name":  "e2e-3weights",
 		"match": map[string]any{"pathPrefix": "/e2e-3weights"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 60},
 				{"destinationId": destB, "weight": 30},
 				{"destinationId": destC, "weight": 10},

@@ -8,7 +8,7 @@ import (
 )
 
 func TestDestinationRingDeterministic(t *testing.T) {
-	backends := []model.BackendRef{
+	backends := []model.DestinationRef{
 		{DestinationID: "a", Weight: 50},
 		{DestinationID: "b", Weight: 50},
 	}
@@ -24,7 +24,7 @@ func TestDestinationRingDeterministic(t *testing.T) {
 }
 
 func TestDestinationRingWeightDistribution(t *testing.T) {
-	backends := []model.BackendRef{
+	backends := []model.DestinationRef{
 		{DestinationID: "heavy", Weight: 90},
 		{DestinationID: "light", Weight: 10},
 	}
@@ -44,7 +44,7 @@ func TestDestinationRingWeightDistribution(t *testing.T) {
 }
 
 func TestDestinationRingPickValid(t *testing.T) {
-	backends := []model.BackendRef{
+	backends := []model.DestinationRef{
 		{DestinationID: "a", Weight: 50},
 		{DestinationID: "b", Weight: 50},
 	}
@@ -75,7 +75,7 @@ func TestDestinationRingPickValid(t *testing.T) {
 }
 
 func TestDestinationRingDestinationRemoved(t *testing.T) {
-	backends := []model.BackendRef{
+	backends := []model.DestinationRef{
 		{DestinationID: "a", Weight: 50},
 		{DestinationID: "b", Weight: 50},
 	}
@@ -107,7 +107,7 @@ func TestDestinationRingEmpty(t *testing.T) {
 }
 
 func TestDestinationRingSingleBackend(t *testing.T) {
-	ring := buildDestinationRing([]model.BackendRef{{DestinationID: "only", Weight: 100}})
+	ring := buildDestinationRing([]model.DestinationRef{{DestinationID: "only", Weight: 100}})
 
 	for i := 0; i < 100; i++ {
 		key := crc32.ChecksumIEEE([]byte(itoa(i)))
@@ -118,11 +118,11 @@ func TestDestinationRingSingleBackend(t *testing.T) {
 }
 
 func TestDestinationRingStableOnWeightChange(t *testing.T) {
-	backends1 := []model.BackendRef{
+	backends1 := []model.DestinationRef{
 		{DestinationID: "a", Weight: 80},
 		{DestinationID: "b", Weight: 20},
 	}
-	backends2 := []model.BackendRef{
+	backends2 := []model.DestinationRef{
 		{DestinationID: "a", Weight: 60},
 		{DestinationID: "b", Weight: 40},
 	}

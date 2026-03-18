@@ -40,7 +40,7 @@ func TestE2E_Proxy_DestinationPinning(t *testing.T) {
 		"name":  "e2e-pin",
 		"match": map[string]any{"pathPrefix": "/e2e-pin"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 50},
 				{"destinationId": destB, "weight": 50},
 			},
@@ -83,7 +83,7 @@ func TestE2E_Proxy_DestinationPinningWeightRespected(t *testing.T) {
 		"name":  "e2e-pinw",
 		"match": map[string]any{"pathPrefix": "/e2e-pinw"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 90},
 				{"destinationId": destB, "weight": 10},
 			},
@@ -125,7 +125,7 @@ func TestE2E_Proxy_DestinationPinningDestinationRemoved(t *testing.T) {
 		"name":  "e2e-pinr",
 		"match": map[string]any{"pathPrefix": "/e2e-pinr"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 50},
 				{"destinationId": destB, "weight": 50},
 			},
@@ -151,7 +151,7 @@ func TestE2E_Proxy_DestinationPinningDestinationRemoved(t *testing.T) {
 		"name":  "e2e-pinr",
 		"match": map[string]any{"pathPrefix": "/e2e-pinr"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": remaining, "weight": 100},
 			},
 			"destinationPinning": map[string]any{"cookieName": "_rutoso_pinr", "ttl": "1h"},
@@ -185,7 +185,7 @@ func TestE2E_Proxy_DestinationPinningMultipleRoutes(t *testing.T) {
 	_, route1 := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-pinm1", "match": map[string]any{"pathPrefix": "/e2e-pinm1"},
 		"forward": map[string]any{
-			"backends":           []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
+			"destinations":           []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
 			"destinationPinning": pinCfg,
 		},
 	})
@@ -194,7 +194,7 @@ func TestE2E_Proxy_DestinationPinningMultipleRoutes(t *testing.T) {
 	_, route2 := apiPost(t, "/routes", map[string]any{
 		"name": "e2e-pinm2", "match": map[string]any{"pathPrefix": "/e2e-pinm2"},
 		"forward": map[string]any{
-			"backends":           []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
+			"destinations":           []map[string]any{{"destinationId": destA, "weight": 50}, {"destinationId": destB, "weight": 50}},
 			"destinationPinning": pinCfg,
 		},
 	})
@@ -240,7 +240,7 @@ func TestE2E_Proxy_NoPinningStillRandom(t *testing.T) {
 		"name":  "e2e-nopin",
 		"match": map[string]any{"pathPrefix": "/e2e-nopin"},
 		"forward": map[string]any{
-			"backends": []map[string]any{
+			"destinations": []map[string]any{
 				{"destinationId": destA, "weight": 50},
 				{"destinationId": destB, "weight": 50},
 			},

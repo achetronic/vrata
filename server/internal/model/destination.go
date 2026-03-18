@@ -76,7 +76,7 @@ type DestinationOptions struct {
 	// When nil, Rutoso connects directly to host:port.
 	Discovery *DestinationDiscovery `json:"discovery,omitempty"`
 
-	// HTTP2 enables HTTP/2 to the upstream. Required for gRPC backends.
+	// HTTP2 enables HTTP/2 to the upstream. Required for gRPC destinations.
 	HTTP2 bool `json:"http2,omitempty"`
 
 	// MaxRequestsPerConnection drains a connection after this many requests.
@@ -192,12 +192,13 @@ type DestinationDiscovery struct {
 	Type DiscoveryType `json:"type"`
 }
 
-// BackendRef references a Destination by ID and assigns a traffic weight.
-type BackendRef struct {
+// DestinationRef references a Destination by ID and assigns a traffic weight.
+type DestinationRef struct {
 	// DestinationID is the ID of the Destination.
 	DestinationID string `json:"destinationId"`
 
-	// Weight controls the proportion of traffic. Must sum to 100 across backends.
+	// Weight controls the proportion of traffic. Must sum to 100 across
+	// destinations when more than one is defined.
 	Weight uint32 `json:"weight"`
 }
 
