@@ -1586,6 +1586,19 @@
                 }
             }
         },
+        "model.DestinationPinning": {
+            "type": "object",
+            "properties": {
+                "cookieName": {
+                    "description": "CookieName is the name of the session cookie that identifies the client.\nAll routes sharing the same cookie name share the same session ID.\nDefault: \"_rutoso_pin\".",
+                    "type": "string"
+                },
+                "ttl": {
+                    "description": "TTL is the lifetime of the session cookie. Accepts Go duration strings\n(e.g. \"1h\", \"24h\"). When the cookie expires, the client goes through\nweighted selection again. Default: \"1h\".",
+                    "type": "string"
+                }
+            }
+        },
         "model.DiscoveryType": {
             "type": "string",
             "enum": [
@@ -1820,6 +1833,14 @@
                         "$ref": "#/definitions/model.BackendRef"
                     }
                 },
+                "destinationPinning": {
+                    "description": "DestinationPinning enables sticky destination selection for canary\ndeployments. When enabled, the first request uses weighted selection\nto pick a destination; subsequent requests from the same client are\npinned to that destination via a session cookie and a weighted\nconsistent hash. All proxies compute the same result deterministically\nfrom the snapshot — no shared state required.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.DestinationPinning"
+                        }
+                    ]
+                },
                 "hashPolicy": {
                     "description": "HashPolicy controls how Rutoso computes the consistent-hash key for\nsticky sessions. Only relevant when the Destination uses RING_HASH or\nMAGLEV balancing (configured in Destination.Options.Balancing).\n\nThis field lives on the route — not on the Destination — because Rutoso\nevaluates hash_policy at routing time using request attributes (headers,\ncookies, client IP) that are only available in the RouteAction context.\nThe Destination defines *which algorithm* and ring parameters to use;\nthe route defines *what request data* feeds the hash function.\nBoth sides must be configured for sticky sessions to work.\n\nEntries are evaluated in order; the first one that produces a value wins.\nEvaluated at routing time before selecting an endpoint.",
                     "type": "array",
@@ -1828,7 +1849,7 @@
                     }
                 },
                 "maxGrpcTimeout": {
-                    "description": "MaxGRPCTimeout caps the timeout that a gRPC client can request via\nthe grpc-timeout header. If the client asks for more, Rutoso clamps\nit to this value. Accepts Go duration strings (e.g. \"30s\").\nMaps to RouteAction.max_grpc_timeout.",
+                    "description": "MaxGRPCTimeout caps the timeout that a gRPC client can request via\nthe grpc-timeout header. If the client asks for more, Rutoso clamps\nit to this value. Accepts Go duration strings (e.g. \"30s\").",
                     "type": "string"
                 },
                 "mirror": {

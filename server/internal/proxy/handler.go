@@ -3,7 +3,9 @@ package proxy
 import (
 	"bytes"
 	"context"
+	cryptorand "crypto/rand"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"math/rand"
 	"net/http"
@@ -33,7 +35,7 @@ func buildRouteHandler(
 	case route.Redirect != nil:
 		handler = redirectHandler(route.Redirect)
 	case route.Forward != nil:
-		handler = forwardHandler(route.Forward, upstreams, group)
+		handler = forwardHandler(route.Forward, upstreams, group, route.ID)
 	default:
 		handler = http.NotFoundHandler()
 	}
@@ -176,9 +178,14 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 }
 
 // forwardHandler creates a handler that proxies to upstream destinations.
-func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, group *model.RouteGroup) http.Handler {
+func forwardHandler(fwd *model.ForwardAction, upstreams map[string]*Upstream, group *model.RouteGroup, routeID string) http.Handler {
+	var pinRing *destinationRing
+	if fwd.DestinationPinning != nil {
+		pinRing = buildDestinationRing(fwd.Backends)
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstream := pickUpstream(fwd, upstreams, r)
+		upstream := pickDestination(fwd, upstreams, r, routeID, pinRing, w)
 		if upstream == nil {
 			http.Error(w, "no upstream available", http.StatusBadGateway)
 			return
@@ -289,8 +296,18 @@ func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
 	}
 }
 
-// pickUpstream selects the right upstream based on balancing config and hash policy.
-func pickUpstream(fwd *model.ForwardAction, upstreams map[string]*Upstream, r *http.Request) *Upstream {
+// pickDestination selects a destination from the backends list.
+// Level 1: destination selection (weights or pinning).
+// Level 2 (endpoint selection within a destination) is handled by the
+// balancer inside ReverseProxy, not here.
+func pickDestination(
+	fwd *model.ForwardAction,
+	upstreams map[string]*Upstream,
+	r *http.Request,
+	routeID string,
+	pinRing *destinationRing,
+	w http.ResponseWriter,
+) *Upstream {
 	if len(fwd.Backends) == 0 {
 		return nil
 	}
@@ -303,30 +320,98 @@ func pickUpstream(fwd *model.ForwardAction, upstreams map[string]*Upstream, r *h
 	}
 
 	// Filter healthy backends.
+	healthy := filterHealthy(fwd.Backends, upstreams)
+	if len(healthy) == 0 {
+		return nil
+	}
+
+	// Destination pinning: use weighted consistent hash with session cookie.
+	if pinRing != nil && fwd.DestinationPinning != nil {
+		return pickPinned(fwd, upstreams, r, w, routeID, pinRing, healthy)
+	}
+
+	// Default: weighted random.
+	return SelectBackend(healthy, upstreams)
+}
+
+// pickPinned selects a destination using the weighted consistent hash ring
+// and a session cookie. If the client has no cookie, one is generated.
+func pickPinned(
+	fwd *model.ForwardAction,
+	upstreams map[string]*Upstream,
+	r *http.Request,
+	w http.ResponseWriter,
+	routeID string,
+	ring *destinationRing,
+	healthy []model.BackendRef,
+) *Upstream {
+	cfg := fwd.DestinationPinning
+	cookieName := cfg.CookieName
+	if cookieName == "" {
+		cookieName = "_rutoso_pin"
+	}
+
+	sid := ""
+	if c, err := r.Cookie(cookieName); err == nil {
+		sid = c.Value
+	}
+
+	if sid == "" {
+		sid = generateSessionID()
+		ttl := parseTTL(cfg.TTL, time.Hour)
+		http.SetCookie(w, &http.Cookie{
+			Name:     cookieName,
+			Value:    sid,
+			Path:     "/",
+			MaxAge:   int(ttl.Seconds()),
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+
+	hashKey := crc32.ChecksumIEEE([]byte(sid + ":" + routeID))
+
+	validSet := make(map[string]bool, len(healthy))
+	for _, b := range healthy {
+		validSet[b.DestinationID] = true
+	}
+
+	destID := ring.PickValid(hashKey, validSet)
+	if destID == "" {
+		return SelectBackend(healthy, upstreams)
+	}
+	return upstreams[destID]
+}
+
+// filterHealthy returns only backends whose upstream is healthy.
+func filterHealthy(backends []model.BackendRef, upstreams map[string]*Upstream) []model.BackendRef {
 	var healthy []model.BackendRef
-	for _, b := range fwd.Backends {
+	for _, b := range backends {
 		u, ok := upstreams[b.DestinationID]
 		if ok && isHealthy(u) {
 			healthy = append(healthy, b)
 		}
 	}
-	if len(healthy) == 0 {
-		return nil
-	}
+	return healthy
+}
 
-	// Use consistent hashing if destination is configured for it.
-	for _, b := range healthy {
-		u := upstreams[b.DestinationID]
-		if u != nil && u.Balancer != nil {
-			if len(fwd.HashPolicy) > 0 {
-				h := hashRequestWithPolicy(r, fwd.HashPolicy)
-				r.Header.Set("X-Rutoso-Hash", fmt.Sprintf("%d", h))
-			}
-			return u.Balancer.Pick(r, healthy, upstreams)
-		}
-	}
+// generateSessionID creates a random session identifier.
+func generateSessionID() string {
+	b := make([]byte, 16)
+	cryptorand.Read(b)
+	return fmt.Sprintf("%x", b)
+}
 
-	return SelectBackend(healthy, upstreams)
+// parseTTL parses a duration string with a fallback default.
+func parseTTL(s string, fallback time.Duration) time.Duration {
+	if s == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return fallback
+	}
+	return d
 }
 
 func isHealthy(u *Upstream) bool {

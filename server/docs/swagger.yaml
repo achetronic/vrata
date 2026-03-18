@@ -212,6 +212,21 @@ definitions:
         - $ref: '#/definitions/model.TLSOptions'
         description: TLS controls upstream TLS / mTLS configuration.
     type: object
+  model.DestinationPinning:
+    properties:
+      cookieName:
+        description: |-
+          CookieName is the name of the session cookie that identifies the client.
+          All routes sharing the same cookie name share the same session ID.
+          Default: "_rutoso_pin".
+        type: string
+      ttl:
+        description: |-
+          TTL is the lifetime of the session cookie. Accepts Go duration strings
+          (e.g. "1h", "24h"). When the cookie expires, the client goes through
+          weighted selection again. Default: "1h".
+        type: string
+    type: object
   model.DiscoveryType:
     enum:
     - kubernetes
@@ -416,6 +431,16 @@ definitions:
         items:
           $ref: '#/definitions/model.BackendRef'
         type: array
+      destinationPinning:
+        allOf:
+        - $ref: '#/definitions/model.DestinationPinning'
+        description: |-
+          DestinationPinning enables sticky destination selection for canary
+          deployments. When enabled, the first request uses weighted selection
+          to pick a destination; subsequent requests from the same client are
+          pinned to that destination via a session cookie and a weighted
+          consistent hash. All proxies compute the same result deterministically
+          from the snapshot — no shared state required.
       hashPolicy:
         description: |-
           HashPolicy controls how Rutoso computes the consistent-hash key for
@@ -439,7 +464,6 @@ definitions:
           MaxGRPCTimeout caps the timeout that a gRPC client can request via
           the grpc-timeout header. If the client asks for more, Rutoso clamps
           it to this value. Accepts Go duration strings (e.g. "30s").
-          Maps to RouteAction.max_grpc_timeout.
         type: string
       mirror:
         allOf:

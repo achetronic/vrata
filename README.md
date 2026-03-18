@@ -1,66 +1,41 @@
 # Rutoso
 
-Programmable HTTP reverse proxy with a REST API. You define routes, destinations, listeners, and middlewares through the API — Rutoso applies the configuration instantly without restarts. No Envoy, no NGINX, no external proxy. One binary.
+A programmable reverse proxy you control entirely through a REST API. Create routes, point them at upstreams, attach middlewares, and Rutoso reconfigures itself on the fly — no restarts, no config files to manage, no external proxy.
 
-## How it works
+One binary. Zero dependencies.
 
-```
-You → REST API (:8080) → Rutoso reconfigures itself
-Clients → Proxy listeners (:N) → Upstream destinations
-```
+## What can it do?
 
-Every change you make through the API is applied atomically. Active connections are not dropped. The data lives in a single bbolt file — no external database.
+→ **Routing** — path, headers, methods, query params, hostnames, gRPC, regex, and [CEL expressions](https://github.com/google/cel-go) for when static matchers aren't enough.
 
-## Architecture
+→ **Actions** — forward traffic to weighted backends, return redirects, or serve fixed responses. Forwarding supports retries with backoff, request timeouts, URL rewriting (prefix and regex), request mirroring, and WebSocket upgrades.
 
-```mermaid
-flowchart LR
-    User([You]) -->|REST API| Rutoso
-    C1([Client]) --> L1[Listener :3000]
-    C2([Client]) --> L2[Listener :4000]
+→ **Load balancing** — round robin, ring hash, maglev, least request, random. Health checks, circuit breakers, and outlier detection per destination.
 
-    subgraph Rutoso[Rutoso - single binary]
-        API[REST API :8080] --> GW[Gateway]
-        GW --> RT[Routing Table]
-        GW --> LM[Listener Manager]
-        RT --> MW[Middleware Chain]
-        MW --> LB[Balancer]
-        LB --> HC[Health Checker]
-        GW --> Store[(bbolt)]
-        K8s[k8s Watcher] -.->|EndpointSlice| GW
-    end
+→ **Middlewares** — CORS, JWT validation (RSA / EC / Ed25519), external authorization (HTTP and gRPC), external processing (bidirectional, with its own proto), header manipulation, rate limiting, and access logging. Create a middleware once, attach it to any route or group by ID.
 
-    L1 --> RT
-    L2 --> RT
-    LB --> U1[Upstream]
-    LB --> U2[Upstream]
-```
+→ **Versioned snapshots** — configuration changes don't go live until you say so. Capture a snapshot, activate it, and every connected proxy picks it up instantly. Bad deploy? Activate the previous snapshot and you're back.
 
-Swagger UI at `/api/v1/docs/` once running.
+→ **Kubernetes native** — discovers pod IPs via EndpointSlice watches. Also supports ExternalName Services. If there's no kubeconfig, the watcher disables itself silently.
 
-## Concepts
-
-**Destination** — an upstream target (host + port). Supports TLS, health checks, circuit breakers, load balancing (round robin, ring hash, maglev, least request, random), outlier detection, and Kubernetes service discovery.
-
-**Route** — defines what traffic looks like (path, headers, methods, query params) and what to do with it (forward, redirect, or direct response). Forwarding supports weighted backends, retries, timeouts, URL rewriting, request mirroring, and sticky sessions via hash policy.
-
-**Group** — organizes routes under a shared path prefix or regex, shared hostnames, and shared headers. Sets default retry policy for all routes. Optional — routes work standalone.
-
-**Listener** — an address:port where Rutoso accepts traffic. Supports TLS, access logs, server name, and request header size limits.
-
-**Middleware** — a reusable behaviour you attach to routes or groups: CORS, external authorization, header manipulation, rate limiting, JWT validation. Create once, reference by ID wherever needed.
+→ **Two modes** — run everything in one process (control plane + proxy) for development, or split the control plane from N proxy instances for production. Proxies connect via SSE and sync automatically.
 
 ## Quick start
 
+The repo ships with a `config.yaml` at the root with sensible defaults. Copy it and adjust if needed, or use it as-is:
+
 ```bash
-make run
+make build
+./bin/rutoso --config config.yaml
 ```
 
-Then in another terminal:
+That starts Rutoso in control plane mode: the REST API listens on `:8080` and proxied traffic goes through whatever listeners you create.
+
+Now configure it:
 
 ```bash
 # Create a listener on port 3000
-curl -X POST localhost:8080/api/v1/listeners \
+curl -s -X POST localhost:8080/api/v1/listeners \
   -H 'Content-Type: application/json' \
   -d '{"name":"main","port":3000}'
 
@@ -70,58 +45,115 @@ DEST=$(curl -s -X POST localhost:8080/api/v1/destinations \
   -d '{"name":"httpbin","host":"httpbin.org","port":80}' | jq -r .id)
 
 # Create a route
-curl -X POST localhost:8080/api/v1/routes \
+curl -s -X POST localhost:8080/api/v1/routes \
   -H 'Content-Type: application/json' \
-  -d '{"name":"test","match":{"pathPrefix":"/"},"forward":{"backends":[{"destinationId":"'$DEST'","weight":100}]}}'
+  -d "{\"name\":\"test\",\"match\":{\"pathPrefix\":\"/\"},\"forward\":{\"backends\":[{\"destinationId\":\"$DEST\",\"weight\":100}]}}"
 
-# Test it
+# Capture the config and push it live
+SNAP=$(curl -s -X POST localhost:8080/api/v1/snapshots \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"v1"}' | jq -r .id)
+curl -s -X POST localhost:8080/api/v1/snapshots/$SNAP/activate
+
+# Done — traffic flows
 curl localhost:3000/get
 ```
 
-## Build
+Swagger UI is available at `http://localhost:8080/api/v1/docs/`.
 
-```bash
-make build          # Binary: ./bin/rutoso
-make docker-build   # Docker image
-make test           # Run tests
+## Configuration
+
+Rutoso reads a YAML config file passed via `--config`. The repo includes [`config.yaml`](config.yaml) with all available options and commented defaults. Every string value supports `${ENV_VAR:-default}` substitution.
+
+```yaml
+# "controlplane" (default) — API + store + proxy in one process
+# "proxy" — connects to a remote control plane, no local API or store
+mode: "${RUTOSO_MODE:-controlplane}"
+
+server:
+  address: "${SERVER_ADDRESS:-:8080}"
+
+# Only used in proxy mode
+controlPlane:
+  address: "${CONTROLPLANE_ADDRESS:-}"
+  reconnectInterval: "5s"
+
+log:
+  format: "console"   # or "json"
+  level: "info"        # debug, info, warn, error
 ```
 
-## Run
+The persistent state lives in a single bbolt file. Pass `--store-path` to control where it goes (default: in-memory for development).
+
+## Build & test
+
+```bash
+make build          # Binary at ./bin/rutoso
+make test           # Unit + e2e tests
+make proto          # Regenerate protobuf Go code
+make docs           # Regenerate OpenAPI spec
+make docker-build   # Docker image
+```
+
+## Deploy
+
+**Single node** (default) — control plane + proxy in one process:
 
 ```bash
 ./bin/rutoso --config config.yaml --store-path /data/rutoso.db
 ```
 
-## Configuration
-
-`config.yaml` — all values support `${ENV_VAR:-default}`:
+**Multi node** — one control plane, N stateless proxies:
 
 ```yaml
-server:
-  address: "${SERVER_ADDRESS:-:8080}"
-log:
-  format: "${LOG_FORMAT:-console}"
-  level: "${LOG_LEVEL:-info}"
+# proxy.yaml
+mode: "proxy"
+controlPlane:
+  address: "http://control-plane:8080"
 ```
 
-## Deploy
+Proxies reconnect automatically on disconnect. They hold no state — fully disposable.
+
+**Docker:**
 
 ```bash
 docker run -d \
   -v ./config.yaml:/config.yaml \
   -v rutoso-data:/data \
-  -p 8080:8080 \
+  -p 8080:8080 -p 3000:3000 \
   achetronic/rutoso:latest \
   --config /config.yaml --store-path /data/rutoso.db
 ```
 
-Proxy listeners are created dynamically via the API. Expose whatever ports you need.
+## Extending Rutoso
 
-## Kubernetes discovery
+### External processor
 
-If Rutoso has a valid kubeconfig (in-cluster or ~/.kube/config), it watches EndpointSlice resources for destinations with `discovery.type: "kubernetes"`. Pod IPs are resolved directly — real pod-level load balancing without DNS.
+Rutoso defines its own gRPC protocol for bidirectional request/response processing at [`server/proto/extproc/v1/extproc.proto`](server/proto/extproc/v1/extproc.proto). Processors can also run in HTTP mode (JSON) with full feature parity. Write a processor in any language, point a middleware at it, and Rutoso sends every request phase through it.
 
-If no kubeconfig is available, the watcher is silently disabled.
+### External authorization
+
+Authorization services implement [`server/proto/extauthz/v1/extauthz.proto`](server/proto/extauthz/v1/extauthz.proto) (gRPC) or respond to plain HTTP check requests. Rutoso forwards configurable headers, evaluates the response, and either allows the request through or returns the denial to the client.
+
+## Contributing
+
+Contributions are welcome. The codebase is Go, standard library where possible, minimal dependencies.
+
+```bash
+git clone https://github.com/achetronic/rutoso.git
+cd rutoso
+make test
+```
+
+The project follows a few rules documented in [`.agents/CONVENTIONS.md`](.agents/CONVENTIONS.md):
+
+→ `net/http` only — no external routers
+→ `log/slog` only — no third-party loggers
+→ Errors bubble up — handlers decide what to do with them
+→ No manual `ResponseWriter` wrappers — use [`httpsnoop`](https://github.com/felixge/httpsnoop)
+→ A broken route never takes down other routes
+
+Architecture and technical decisions live in [`.agents/`](.agents/).
 
 ## License
 

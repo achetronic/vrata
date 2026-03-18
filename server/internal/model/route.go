@@ -95,9 +95,30 @@ type ForwardAction struct {
 	// MaxGRPCTimeout caps the timeout that a gRPC client can request via
 	// the grpc-timeout header. If the client asks for more, Rutoso clamps
 	// it to this value. Accepts Go duration strings (e.g. "30s").
-	// Maps to RouteAction.max_grpc_timeout.
 	MaxGRPCTimeout string `json:"maxGrpcTimeout,omitempty" yaml:"maxGrpcTimeout,omitempty"`
 
+	// DestinationPinning enables sticky destination selection for canary
+	// deployments. When enabled, the first request uses weighted selection
+	// to pick a destination; subsequent requests from the same client are
+	// pinned to that destination via a session cookie and a weighted
+	// consistent hash. All proxies compute the same result deterministically
+	// from the snapshot — no shared state required.
+	DestinationPinning *DestinationPinning `json:"destinationPinning,omitempty" yaml:"destinationPinning,omitempty"`
+}
+
+// DestinationPinning configures sticky destination selection. Once a client
+// is assigned to a destination, it stays there until the cookie expires or
+// the destination is removed from the backends list.
+type DestinationPinning struct {
+	// CookieName is the name of the session cookie that identifies the client.
+	// All routes sharing the same cookie name share the same session ID.
+	// Default: "_rutoso_pin".
+	CookieName string `json:"cookieName,omitempty" yaml:"cookieName,omitempty"`
+
+	// TTL is the lifetime of the session cookie. Accepts Go duration strings
+	// (e.g. "1h", "24h"). When the cookie expires, the client goes through
+	// weighted selection again. Default: "1h".
+	TTL string `json:"ttl,omitempty" yaml:"ttl,omitempty"`
 }
 
 // RouteTimeouts controls how long a request is allowed to take.
