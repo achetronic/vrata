@@ -19,8 +19,11 @@ SWAG_FLAGS  := --generalInfo main.go \
 .PHONY: build docs docker-build docker-push run clean test e2e e2e-cluster e2e-all proto
 
 KIND_CLUSTER   := rutoso-dev
-KIND_IMAGE     := rutoso:e2e-cluster
-K8S_MANIFESTS  := test/k8s/cluster.yaml
+KIND_IMAGE     := vrata:e2e-cluster
+HELM_RELEASE   := vrata-e2e
+HELM_NAMESPACE := vrata-e2e
+HELM_NODEPORT  := 31081
+HELM_VALUES    := $(HELM_CHART)/ci/kind-values.yaml
 KIND_NODE_IP   := $(shell kubectl --context kind-$(KIND_CLUSTER) get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null)
 
 # ─── Standard targets ─────────────────────────────────────────────────────────
@@ -80,39 +83,35 @@ e2e:
 
 ## e2e-cluster: run Raft cluster e2e tests against kind
 ##
-##   Requires: kind, kubectl, docker
+##   Requires: kind, kubectl, helm, docker
 ##   Cluster name: rutoso-dev (must exist)
-##
-##   This target:
-##     1. Verifies kind and kubectl are installed
-##     2. Verifies the cluster exists
-##     3. Builds the Docker image and loads it into kind
-##     4. Deploys the control plane StatefulSet (idempotent)
-##     5. Waits for all 3 pods to be Ready
-##     6. Runs the cluster e2e tests
 e2e-cluster: _check-kind build
 	@echo "→ Building cluster image..."
 	docker build -t $(KIND_IMAGE) .
-	@echo "→ Loading image into kind cluster $(KIND_CLUSTER)..."
+	@echo "→ Loading image into kind..."
 	kind load docker-image $(KIND_IMAGE) --name $(KIND_CLUSTER)
-	@echo "→ Applying cluster manifests..."
-	kubectl --context kind-$(KIND_CLUSTER) apply -f $(K8S_MANIFESTS)
-	@echo "→ Waiting for pods to be ready (up to 3 minutes)..."
-	kubectl --context kind-$(KIND_CLUSTER) -n cp-cluster-test \
-		wait --for=condition=Ready pod/cp-0 pod/cp-1 pod/cp-2 --timeout=180s
+	@echo "→ Installing Helm chart..."
+	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
+		--kube-context kind-$(KIND_CLUSTER) \
+		--namespace $(HELM_NAMESPACE) --create-namespace \
+		-f $(HELM_VALUES) --wait --timeout 3m
 	@echo "→ Running cluster e2e tests (KIND_NODE_IP=$(KIND_NODE_IP))..."
 	cd $(SERVER_DIR) && KIND_NODE_IP=$(KIND_NODE_IP) \
-		$(GO) test ./test/e2e/ -v -timeout 120s -count=1 -tags kind -run 'TestCluster_'
+		CLUSTER_NAMESPACE=$(HELM_NAMESPACE) \
+		HELM_RELEASE=$(HELM_RELEASE) \
+		CLUSTER_NODEPORT=$(HELM_NODEPORT) \
+		$(GO) test ./test/e2e/ -v -timeout 180s -count=1 -tags kind -run 'TestCluster_'
 
 ## e2e-all: run all e2e tests (proxy + cluster)
 e2e-all: e2e e2e-cluster
 
 ## _check-kind: verify kind and kubectl are installed and cluster exists (internal)
 _check-kind:
-	@which kind > /dev/null 2>&1 || (echo "ERROR: kind not found. Install: https://kind.sigs.k8s.io/docs/user/quick-start/#installation" && exit 1)
+	@which kind > /dev/null 2>&1 || (echo "ERROR: kind not found. Install: https://kind.sigs.k8s.io/" && exit 1)
 	@which kubectl > /dev/null 2>&1 || (echo "ERROR: kubectl not found." && exit 1)
+	@which helm > /dev/null 2>&1 || (echo "ERROR: helm not found. Install: https://helm.sh/" && exit 1)
 	@kind get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER)$$" || \
-		(echo "ERROR: kind cluster '$(KIND_CLUSTER)' not found. Create it first." && exit 1)
+		(echo "ERROR: kind cluster '$(KIND_CLUSTER)' not found." && exit 1)
 	@echo "✓ kind cluster $(KIND_CLUSTER) found"
 
 ## clean: remove build artifacts

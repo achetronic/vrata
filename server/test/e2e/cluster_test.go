@@ -32,7 +32,36 @@ func clusterNodeIP() string {
 }
 
 func clusterBaseURL() string {
-	return fmt.Sprintf("http://%s:31080/api/v1", clusterNodeIP())
+	port := os.Getenv("CLUSTER_NODEPORT")
+	if port == "" {
+		port = "31081"
+	}
+	return fmt.Sprintf("http://%s:%s/api/v1", clusterNodeIP(), port)
+}
+
+// clusterNamespace returns the Kubernetes namespace where the chart is installed.
+// Reads from CLUSTER_NAMESPACE env var, defaults to "vrata-e2e".
+func clusterNamespace() string {
+	if ns := os.Getenv("CLUSTER_NAMESPACE"); ns != "" {
+		return ns
+	}
+	return "vrata-e2e"
+}
+
+// clusterPods returns the pod names for the 3-node control plane StatefulSet.
+// The pod name prefix is derived from HELM_RELEASE and CHART_NAME env vars.
+// Defaults match the Makefile: release=vrata-e2e, chart=vrata → vrata-e2e-vrata-cp-{0,1,2}
+func clusterPods() []string {
+	release := os.Getenv("HELM_RELEASE")
+	if release == "" {
+		release = "vrata-e2e"
+	}
+	prefix := fmt.Sprintf("%s-vrata-cp", release)
+	return []string{
+		prefix + "-0",
+		prefix + "-1",
+		prefix + "-2",
+	}
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -101,7 +130,7 @@ func portForward(t *testing.T, pod string) (string, func()) {
 	t.Helper()
 	localPort := freeTestPort(t)
 	cmd := exec.Command("kubectl", "--context", "kind-rutoso-dev",
-		"-n", "cp-cluster-test", "port-forward", pod,
+		"-n", clusterNamespace(), "port-forward", pod,
 		fmt.Sprintf("%d:8080", localPort))
 	cmd.Stdout = nil
 	cmd.Stderr = nil
@@ -224,7 +253,7 @@ func TestCluster_AllNodesHaveSameData(t *testing.T) {
 
 	waitForReplication(t)
 
-	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+	for _, pod := range clusterPods() {
 		podBase, cleanup := portForward(t, pod)
 		defer cleanup()
 
@@ -275,7 +304,7 @@ func TestCluster_SnapshotIdenticalAcrossNodes(t *testing.T) {
 	waitForReplication(t)
 
 	var snapshots []string
-	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+	for _, pod := range clusterPods() {
 		podBase, cleanup := portForward(t, pod)
 		defer cleanup()
 
@@ -305,14 +334,14 @@ func TestCluster_WriteOnFollowerReplicates(t *testing.T) {
 
 	// Port-forward to each node.
 	bases := make(map[string]string)
-	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+	for _, pod := range clusterPods() {
 		podBase, cleanup := portForward(t, pod)
 		defer cleanup()
 		bases[pod] = podBase
 	}
 
 	// Write to cp-2 (likely a follower).
-	code, mw := clusterPost(t, bases["cp-2"], "/middlewares", map[string]any{
+	code, mw := clusterPost(t, bases[clusterPods()[2]], "/middlewares", map[string]any{
 		"name": "cluster-follower-write", "type": "headers",
 		"headers": map[string]any{
 			"requestHeadersToAdd": []map[string]any{{"key": "X-Cluster", "value": "true"}},
@@ -342,7 +371,7 @@ func TestCluster_ConcurrentWrites(t *testing.T) {
 	base := clusterBaseURL()
 
 	bases := make(map[string]string)
-	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+	for _, pod := range clusterPods() {
 		podBase, cleanup := portForward(t, pod)
 		defer cleanup()
 		bases[pod] = podBase
@@ -352,7 +381,7 @@ func TestCluster_ConcurrentWrites(t *testing.T) {
 	var mu sync.Mutex
 	var routeIDs []string
 
-	pods := []string{"cp-0", "cp-1", "cp-2"}
+	pods := clusterPods()
 	for i := 0; i < 9; i++ {
 		pod := pods[i%3]
 		idx := i
@@ -407,7 +436,7 @@ func TestCluster_SSEStreamServesActiveSnapshot(t *testing.T) {
 
 	waitForReplication(t)
 
-	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+	for _, pod := range clusterPods() {
 		podBase, cleanup := portForward(t, pod)
 		defer cleanup()
 
@@ -445,7 +474,7 @@ func TestCluster_SSEStreamServesActiveSnapshot(t *testing.T) {
 func TestCluster_ConfigDump(t *testing.T) {
 	waitClusterHealthy(t)
 
-	for _, pod := range []string{"cp-0", "cp-1", "cp-2"} {
+	for _, pod := range clusterPods() {
 		podBase, cleanup := portForward(t, pod)
 		defer cleanup()
 

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vrata
+description: Programmable reverse proxy with REST API, versioned snapshots, and Raft HA
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

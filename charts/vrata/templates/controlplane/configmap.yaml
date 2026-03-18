@@ -1,0 +1,31 @@
+{{- if .Values.controlPlane.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vrata.cpName" . }}
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    mode: "controlplane"
+    server:
+      address: ":{{ .Values.controlPlane.service.port }}"
+    {{- if and .Values.controlPlane.cluster.enabled (gt (int .Values.controlPlane.replicas) 1) }}
+    cluster:
+      nodeId: "${POD_NAME}"
+      bindAddress: ":{{ .Values.controlPlane.cluster.raftPort }}"
+      advertiseAddress: "${POD_IP}:{{ .Values.controlPlane.cluster.raftPort }}"
+      dataDir: "{{ .Values.controlPlane.cluster.dataDir }}"
+      peers:
+        {{- $cpName := include "vrata.cpName" . }}
+        {{- $raftPort := .Values.controlPlane.cluster.raftPort }}
+        {{- $svcName := printf "%s-headless" $cpName }}
+        {{- $ns := .Release.Namespace }}
+        {{- range $i := until (int .Values.controlPlane.replicas) }}
+        - "{{ $cpName }}-{{ $i }}={{ $cpName }}-{{ $i }}.{{ $svcName }}.{{ $ns }}.svc.cluster.local:{{ $raftPort }}"
+        {{- end }}
+    {{- end }}
+    log:
+      format: "{{ .Values.controlPlane.log.format }}"
+      level: "{{ .Values.controlPlane.log.level }}"
+{{- end }}

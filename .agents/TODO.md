@@ -10,6 +10,15 @@ _(nothing)_
 - [ ] Add authentication to the REST API
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
 
+### Proxy fleets — single control plane, multiple fleets
+A single control plane should be able to manage multiple independent proxy
+fleets, each with its own routing config. A fleet identifier (e.g. a label
+or a path parameter) distinguishes which config a proxy receives when it
+connects via SSE. This allows one control plane cluster to serve staging,
+production, and canary fleets without separate deployments.
+
+This is ASAP after the rename.
+
 ### Rename: Rutoso → Vrata
 Full project rename. Vrata means "door" / "gate" in Slavic languages.
 
