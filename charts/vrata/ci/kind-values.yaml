@@ -1,0 +1,32 @@
+# Values for e2e cluster tests in kind.
+image:
+  repository: vrata
+  tag: e2e-cluster
+  pullPolicy: Never
+
+controlPlane:
+  enabled: true
+  replicas: 3
+  persistence:
+    enabled: true
+    size: 100Mi
+  service:
+    type: NodePort
+    port: 8080
+    nodePort: 31081
+  config:
+    controlPlane:
+      address: ":8080"
+      storePath: "/data"
+      raft:
+        nodeId: "${POD_NAME}"
+        bindAddress: ":7000"
+        advertiseAddress: "${POD_IP}:7000"
+        discovery:
+          dns: "e2e-vrata-cp-headless.vrata-e2e.svc.cluster.local"
+    log:
+      format: json
+      level: info
+
+proxy:
+  enabled: false
