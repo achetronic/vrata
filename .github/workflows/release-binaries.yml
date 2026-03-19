@@ -1,0 +1,80 @@
+name: Release Binaries
+
+on:
+  release:
+    types: [published]
+
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Semver tag to publish (e.g. v1.0.0). Artifacts are uploaded to this release."
+        required: true
+        type: string
+      from_main:
+        description: "Build from main branch instead of the release tag."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+
+    steps:
+      - name: Determine version and checkout ref
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "version=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+            echo "checkout_ref=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+            if [ "${{ inputs.from_main }}" = "true" ]; then
+              echo "checkout_ref=main" >> "$GITHUB_OUTPUT"
+            else
+              echo "checkout_ref=${{ inputs.ref }}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.checkout_ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          cd server
+          go build -ldflags="-s -w -X main.version=${VERSION}" \
+            -o "../vrata-${{ matrix.goos }}-${{ matrix.goarch }}" \
+            ./cmd/vrata
+
+      - name: Upload binary to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.version }}
+          files: vrata-${{ matrix.goos }}-${{ matrix.goarch }}
