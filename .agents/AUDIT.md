@@ -8,20 +8,20 @@
 
 ## Critical — Code behavior or hard convention violations
 
-| #   | File                           | Issue                                                                                 | Status                            |
-| --- | ------------------------------ | ------------------------------------------------------------------------------------- | --------------------------------- |
-| 1   | `proxy/handler.go`             | `discardResponseWriter` manual ResponseWriter — replaced with `httptest.NewRecorder`  | **FIXED**                         |
-| 2   | `proxy/handler.go`             | `_ = store.Set(...)` session store error discarded — now logs via `slog.Warn`         | **FIXED**                         |
-| 3   | `proxy/pool.go`                | `_ = dp.SessionStore.Set(...)` same issue — now logs via `slog.Warn`                  | **FIXED**                         |
-| 4   | `proxy/outlier.go`             | Ticker hardcoded 10s ignoring `Interval` config — ticker changed to 1s resolution     | **FIXED**                         |
-| 5   | `proxy/circuit.go`             | `openDuration` and `failureThreshold` now configurable via `CircuitBreakerOptions`    | **FIXED**                         |
-| 6   | `proxy/handler.go`             | `unwrapHTTPTransport` dead code — removed                                             | **FIXED**                         |
-| 7   | `proxy/pool.go`                | `roundRobinCounter` dead code — removed                                               | **FIXED**                         |
-| 8   | `proxy/middlewares/extproc.go` | `interceptResponseWriter` replaced with `httpsnoop.Wrap` hooks                        | **FIXED**                         |
-| 9   | `api/handlers/sync.go`         | `http.Error` in API handler — replaced with `respond.Error`                           | **FIXED**                         |
-| 10  | `api/router.go`                | `http.Error` with raw `err.Error()` — replaced with `respond.Error` with safe message | **FIXED**                         |
-| 11  | `model/destination.go`         | `DestinationTimeouts.Request` wired as fallback in forwardHandler                     | **FIXED**                         |
-| 12  | `proxy/metrics.go`             | `_ = sizeBuckets` dead code — removed                                                 | **FIXED**                         |
+| #   | File                           | Issue                                                                                 | Status    |
+| --- | ------------------------------ | ------------------------------------------------------------------------------------- | --------- |
+| 1   | `proxy/handler.go`             | `discardResponseWriter` manual ResponseWriter — replaced with `httptest.NewRecorder`  | **FIXED** |
+| 2   | `proxy/handler.go`             | `_ = store.Set(...)` session store error discarded — now logs via `slog.Warn`         | **FIXED** |
+| 3   | `proxy/pool.go`                | `_ = dp.SessionStore.Set(...)` same issue — now logs via `slog.Warn`                  | **FIXED** |
+| 4   | `proxy/outlier.go`             | Ticker hardcoded 10s ignoring `Interval` config — ticker changed to 1s resolution     | **FIXED** |
+| 5   | `proxy/circuit.go`             | `openDuration` and `failureThreshold` now configurable via `CircuitBreakerOptions`    | **FIXED** |
+| 6   | `proxy/handler.go`             | `unwrapHTTPTransport` dead code — removed                                             | **FIXED** |
+| 7   | `proxy/pool.go`                | `roundRobinCounter` dead code — removed                                               | **FIXED** |
+| 8   | `proxy/middlewares/extproc.go` | `interceptResponseWriter` replaced with `httpsnoop.Wrap` hooks                        | **FIXED** |
+| 9   | `api/handlers/sync.go`         | `http.Error` in API handler — replaced with `respond.Error`                           | **FIXED** |
+| 10  | `api/router.go`                | `http.Error` with raw `err.Error()` — replaced with `respond.Error` with safe message | **FIXED** |
+| 11  | `model/destination.go`         | `DestinationTimeouts.Request` wired as fallback in forwardHandler                     | **FIXED** |
+| 12  | `proxy/metrics.go`             | `_ = sizeBuckets` dead code — removed                                                 | **FIXED** |
 
 **All 12 critical findings fixed**
 

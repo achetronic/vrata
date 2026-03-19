@@ -284,6 +284,7 @@ Do not reference destinations by name; always use the ID field.
 
 The Envoy cluster discovery type (`EDS`, `STATIC`, `STRICT_DNS`) is derived automatically
 by the xDS builder from the Destination's `host` and `options.discovery` fields:
+
 - `options.discovery.type == "kubernetes"` → EDS (endpoint pushed by k8s watcher)
 - `host` is a bare IPv4/IPv6 address → STATIC
 - `host` is an FQDN → STRICT_DNS
@@ -328,6 +329,7 @@ Do not remove the `Destination` entity and revert to inline backends.
 
 The Envoy cluster discovery type (EDS / STATIC / STRICT_DNS) is derived
 automatically by the xDS builder from the `Destination` fields:
+
 - `options.discovery.type == "kubernetes"` → EDS
 - `host` is a bare IP address → STATIC
 - `host` is an FQDN → STRICT_DNS
@@ -355,6 +357,7 @@ not of `ForwardAction`. The LB algorithm (`RING_HASH`, `MAGLEV`) and its
 or `endpointBalancing.maglev.hashPolicy`.
 
 **Reasoning**: There are two levels of load balancing:
+
 - **Level 1 (destination selection)**: configured on the Route via
   `ForwardAction.DestinationBalancing`. Algorithms: `WEIGHTED_RANDOM` (default)
   or `WEIGHTED_CONSISTENT_HASH` (cookie-based pinning).
@@ -408,6 +411,7 @@ package — the xDS builder receives the FQDN as-is and passes it to Envoy.
 **Status**: Implemented
 
 A `Route` operates in exactly one of three modes, determined by which field is set:
+
 - `backends` — forward traffic to one or more upstream `Destination` entities.
 - `redirect` — return an HTTP redirect (3xx) to the client.
 - `directResponse` — return a fixed HTTP response without contacting any upstream.
@@ -576,6 +580,7 @@ proto would be a leaky subset that frustrates more than it helps. A clean
 Vrata-native proto sets honest expectations and allows better naming.
 
 Key design points:
+
 - Headers are `repeated HeaderPair` (key+value pairs), not maps, to preserve
   duplicate headers (Set-Cookie, etc.)
 - HTTP and gRPC modes with full feature parity
@@ -618,8 +623,10 @@ Load balancing is split into two independent levels, each configured on the
 resource that owns it:
 
 ### Level 1 — Destination selection (Route)
+
 `ForwardAction.DestinationBalancing` controls which Destination receives each
 request. Algorithms:
+
 - `WEIGHTED_RANDOM` (default) — no stickiness
 - `WEIGHTED_CONSISTENT_HASH` — cookie-based pinning via consistent hash ring.
   Disruption proportional to weight changes (not zero).
@@ -628,6 +635,7 @@ request. Algorithms:
   Falls back to `WEIGHTED_CONSISTENT_HASH` when no session store is configured.
 
 Algorithm-specific parameters live in a nested struct named after the algorithm:
+
 - `weightedConsistentHash: { cookie: { name, ttl } }`
 - `sticky: { cookie: { name, ttl } }`
 
@@ -635,8 +643,10 @@ Default cookie: `_vrata_destination_pin`. Hash (WCH): `crc32(sessionID + routeID
 Session store key (STICKY): `vrata:sticky:{sid}:{routeID}`.
 
 ### Level 2 — Endpoint selection (Destination)
+
 `Destination.Options.EndpointBalancing` controls which endpoint (pod) within
 a Destination receives each request. Algorithms:
+
 - `ROUND_ROBIN` (default), `RANDOM`, `LEAST_REQUEST` — no stickiness
 - `RING_HASH`, `MAGLEV` — consistent hash with `hashPolicy`
 
@@ -644,6 +654,7 @@ Hash policies use per-destination isolation: `crc32(value + destinationID)`.
 Default endpoint cookie: `_vrata_endpoint_pin`.
 
 ### Cookie isolation
+
 - Level 1 cookie: user-chosen name, hash includes `routeID` → routes don't
   interfere even with the same cookie name
 - Level 2 cookie: user-chosen name, hash includes `destinationID` → destinations
@@ -692,6 +703,7 @@ proxy connects to a Kubernetes Service that load-balances across replicas
 — it does not need to know which node is the Raft leader.
 
 Architecture:
+
 - Every control plane node runs an embedded Raft participant.
 - One node is the leader (elected automatically). Only the leader commits
   writes to the replicated log.
@@ -709,6 +721,7 @@ Architecture:
   to the local bbolt.
 
 Scaling:
+
 - 3 nodes is the recommended production setup (tolerates 1 failure).
 - 5 nodes is the maximum practical size (tolerates 2 failures).
 - Beyond 5, write latency increases without meaningful benefit — each write
@@ -716,6 +729,7 @@ Scaling:
 - Reads scale linearly with nodes — each serves from local bbolt.
 
 Future: read replicas (non-voting learners)
+
 - If more than 5 nodes are needed (unlikely for a config control plane),
   Raft supports non-voting learners that receive the replicated log but
   do not participate in quorum. They can serve reads and SSE streams
@@ -749,6 +763,7 @@ not as a middleware in the middleware chain. Each listener has its own isolated
 
 The `MetricsCollector` is a global collector injected via Dependencies, not a
 request-scoped middleware. It receives callbacks from every instrumented component:
+
 - `Router.ServeHTTP` records route-level metrics (requests, duration, size, inflight)
 - `recordEndpointResult` records destination and endpoint metrics
 - `wrapWithMetrics` wraps each middleware with timing/rejection tracking
@@ -757,6 +772,7 @@ request-scoped middleware. It receives callbacks from every instrumented compone
 - A background goroutine scrapes gauges (health, circuit breaker state)
 
 The `collect` section controls which metric dimensions are active:
+
 - `route` (default: true), `destination` (default: true), `endpoint` (default: false),
   `middleware` (default: true), `listener` (default: true)
 - `endpoint` defaults to false because it has high cardinality in large deployments
@@ -822,6 +838,7 @@ those are business logic decisions, not infrastructure failures.
 **Status**: Implemented
 
 The top-level config sections are named after the mode they configure:
+
 - `controlPlane: { address, storePath, raft: {...} }` — settings for the control plane process
 - `proxy: { controlPlaneUrl, reconnectInterval }` — settings for proxy-mode instances
 
@@ -834,6 +851,7 @@ read `controlPlane:`. If you're running as `mode: "proxy"`, you read `proxy:`.
 
 The `--store-path` CLI flag was removed. `controlPlane.storePath` is the root
 directory for all control plane state (default: `"/data"`). Vrata derives:
+
 - `<storePath>/vrata.db` — bbolt database
 - `<storePath>/raft/` — Raft logs and snapshots (when Raft is enabled)
 
@@ -861,32 +879,32 @@ timeout across listeners, destinations, and middlewares must follow these names.
 
 ### Listener timeouts (`listener.timeouts`)
 
-| Semantic name          | Go field              | Default | Description                                                                     |
-|------------------------|-----------------------|---------|---------------------------------------------------------------------------------|
-| `clientHeader`         | `Server.ReadHeaderTimeout` | 10s     | Time for the client to send all request headers                                 |
-| `clientRequest`        | `Server.ReadTimeout`       | 60s     | Time to receive the complete client request (headers + body)                    |
-| `clientResponse`       | `Server.WriteTimeout`      | 60s     | Time to send the complete response to the client                                |
-| `idleBetweenRequests`  | `Server.IdleTimeout`       | 120s    | How long a connection stays open between one request and the next from the same client |
+| Semantic name         | Go field                   | Default | Description                                                                            |
+| --------------------- | -------------------------- | ------- | -------------------------------------------------------------------------------------- |
+| `clientHeader`        | `Server.ReadHeaderTimeout` | 10s     | Time for the client to send all request headers                                        |
+| `clientRequest`       | `Server.ReadTimeout`       | 60s     | Time to receive the complete client request (headers + body)                           |
+| `clientResponse`      | `Server.WriteTimeout`      | 60s     | Time to send the complete response to the client                                       |
+| `idleBetweenRequests` | `Server.IdleTimeout`       | 120s    | How long a connection stays open between one request and the next from the same client |
 
 ### Destination timeouts (`destination.options.timeouts`)
 
-| Semantic name          | Go field                          | Default | Description                                                                     |
-|------------------------|-----------------------------------|---------|---------------------------------------------------------------------------------|
-| `request`              | `Client.Timeout`                  | 30s     | Total budget for the entire HTTP call (connect + TLS + send + wait + receive)   |
-| `connect`              | `Dialer.Timeout`                  | 5s      | Establish TCP connection with the endpoint                                      |
-| `dualStackFallback`    | `Dialer.FallbackDelay`            | 300ms   | How long to wait before trying the other IP family in parallel (IPv4↔IPv6)      |
-| `tlsHandshake`         | `Transport.TLSHandshakeTimeout`   | 5s      | Complete the TLS handshake after TCP connect                                    |
-| `responseHeader`       | `Transport.ResponseHeaderTimeout` | 10s     | Wait for the upstream to send the first byte of response headers                |
-| `expectContinue`       | `Transport.ExpectContinueTimeout` | 1s      | Wait for 100-Continue before sending the request body                           |
-| `idleConnection`       | `Transport.IdleConnTimeout`       | 90s     | How long to keep a reusable connection idle before closing it                   |
+| Semantic name       | Go field                          | Default | Description                                                                   |
+| ------------------- | --------------------------------- | ------- | ----------------------------------------------------------------------------- |
+| `request`           | `Client.Timeout`                  | 30s     | Total budget for the entire HTTP call (connect + TLS + send + wait + receive) |
+| `connect`           | `Dialer.Timeout`                  | 5s      | Establish TCP connection with the endpoint                                    |
+| `dualStackFallback` | `Dialer.FallbackDelay`            | 300ms   | How long to wait before trying the other IP family in parallel (IPv4↔IPv6)   |
+| `tlsHandshake`      | `Transport.TLSHandshakeTimeout`   | 5s      | Complete the TLS handshake after TCP connect                                  |
+| `responseHeader`    | `Transport.ResponseHeaderTimeout` | 10s     | Wait for the upstream to send the first byte of response headers              |
+| `expectContinue`    | `Transport.ExpectContinueTimeout` | 1s      | Wait for 100-Continue before sending the request body                         |
+| `idleConnection`    | `Transport.IdleConnTimeout`       | 90s     | How long to keep a reusable connection idle before closing it                 |
 
 ### Middleware timeouts (per-middleware field)
 
-| Middleware | Field                  | Default | Description                                                              |
-|------------|------------------------|---------|--------------------------------------------------------------------------|
-| ExtAuthz   | `decisionTimeout`      | 5s      | Total time for the auth service to return allow/deny                     |
-| ExtProc    | `phaseTimeout`         | 200ms   | Time for the processor to respond to each phase message                  |
-| JWT        | `jwksRetrievalTimeout` | 10s     | Time to download the JWKS document from the remote endpoint              |
+| Middleware | Field                  | Default | Description                                                 |
+| ---------- | ---------------------- | ------- | ----------------------------------------------------------- |
+| ExtAuthz   | `decisionTimeout`      | 5s      | Total time for the auth service to return allow/deny        |
+| ExtProc    | `phaseTimeout`         | 200ms   | Time for the processor to respond to each phase message     |
+| JWT        | `jwksRetrievalTimeout` | 10s     | Time to download the JWKS document from the remote endpoint |
 
 ### Relationship between layers
 

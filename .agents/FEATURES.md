@@ -1,7 +1,7 @@
 # Feature Coverage Report — Vrata
 
-Generated: 2026-03-18 (rev 6 — all issues resolved, full audit clean)
-Method: Line-by-line source audit + unit tests + e2e tests against live cluster
+Generated: 2026-03-19
+Method: Line-by-line source audit + unit tests + e2e tests
 
 ## API CRUD
 
@@ -57,59 +57,59 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 ## Forward Action Features
 
-| Feature                                                 | Status | Tests                 |
-| ------------------------------------------------------- | ------ | --------------------- |
-| Weighted destination selection (WEIGHTED_RANDOM)         | 100%   | Unit + E2E (15k req)  |
-| Destination balancing (WEIGHTED_CONSISTENT_HASH)         | 100%   | Unit (7) + E2E (26k)  |
-| Destination balancing (STICKY + Redis)                   | 100%   | Unit (5) + E2E (20k)  |
-| Endpoint balancing (RR, Random, LeastReq, RingHash, Maglev, Sticky) | 100% | Unit + E2E (61k req) |
-| Path rewrite (prefix)                                   | 100%   | E2E                   |
-| Path rewrite (regex, cached)                            | 100%   | E2E                   |
-| Host rewrite                                            | 100%   | Unit                  |
-| Retry with backoff + perAttemptTimeout                  | 100%   | Unit + E2E            |
-| Request timeout                                         | 100%   | E2E                   |
-| Idle timeout (safe unwrap)                              | 100%   | Unit                  |
-| Request mirror (body cloned)                            | 100%   | E2E                   |
-| Hash policy (ring hash, maglev)                         | 100%   | Unit                  |
-| Max gRPC timeout (microsecond precision)                | 100%   | Unit                  |
-| WebSocket upgrade                                       | 100%   | E2E                   |
-| IncludeAttemptCount (set per retry)                     | 100%   | Unit                  |
-| LeastRequest balancer (Done wired)                      | 100%   | Unit                  |
+| Feature                                                             | Status | Tests                |
+| ------------------------------------------------------------------- | ------ | -------------------- |
+| Weighted destination selection (WEIGHTED_RANDOM)                    | 100%   | Unit + E2E (15k req) |
+| Destination balancing (WEIGHTED_CONSISTENT_HASH)                    | 100%   | Unit (7) + E2E (26k) |
+| Destination balancing (STICKY + Redis)                              | 100%   | Unit (5) + E2E (20k) |
+| Endpoint balancing (RR, Random, LeastReq, RingHash, Maglev, Sticky) | 100%   | Unit + E2E (61k req) |
+| Path rewrite (prefix)                                               | 100%   | E2E                  |
+| Path rewrite (regex, cached)                                        | 100%   | E2E                  |
+| Host rewrite                                                        | 100%   | Unit                 |
+| Retry with backoff + perAttemptTimeout                              | 100%   | Unit + E2E           |
+| Request timeout                                                     | 100%   | E2E                  |
+| Idle timeout (safe unwrap)                                          | 100%   | Unit                 |
+| Request mirror (body cloned)                                        | 100%   | E2E                  |
+| Hash policy (ring hash, maglev)                                     | 100%   | Unit                 |
+| Max gRPC timeout (microsecond precision)                            | 100%   | Unit                 |
+| WebSocket upgrade                                                   | 100%   | E2E                  |
+| IncludeAttemptCount (set per retry)                                 | 100%   | Unit                 |
+| LeastRequest balancer (Done wired)                                  | 100%   | Unit                 |
 
 ## Error Handling (onError)
 
-| Feature | Status | Tests |
-|---|---|---|
-| JSON default error responses (all proxy errors) | 100% | Unit + E2E |
-| onError rules with type filtering | 100% | Unit (20) + E2E (6) |
-| onError directResponse action | 100% | Unit + E2E |
-| onError redirect action | 100% | Unit + E2E |
-| onError forward action with X-Vrata-Error-* headers | 100% | Unit + E2E |
-| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep) | 100% | Unit (8) |
-| Wildcard: infrastructure | 100% | Unit |
-| Wildcard: all | 100% | Unit + E2E |
-| No match falls back to default JSON | 100% | Unit + E2E |
+| Feature                                                                                      | Status | Tests               |
+| -------------------------------------------------------------------------------------------- | ------ | ------------------- |
+| JSON default error responses (all proxy errors)                                              | 100%   | Unit + E2E          |
+| onError rules with type filtering                                                            | 100%   | Unit (20) + E2E (6) |
+| onError directResponse action                                                                | 100%   | Unit + E2E          |
+| onError redirect action                                                                      | 100%   | Unit + E2E          |
+| onError forward action with X-Vrata-Error-\* headers                                         | 100%   | Unit + E2E          |
+| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep) | 100%   | Unit (8)            |
+| Wildcard: infrastructure                                                                     | 100%   | Unit                |
+| Wildcard: all                                                                                | 100%   | Unit + E2E          |
+| No match falls back to default JSON                                                          | 100%   | Unit + E2E          |
 
 ## Middlewares
 
-| Feature                                                           | Status | Tests               |
-| ----------------------------------------------------------------- | ------ | ------------------- |
-| CORS (wildcard `*`, 204 preflight)                                | 100%   | Unit + E2E          |
-| Headers (httpsnoop)                                               | 100%   | Unit + E2E          |
-| Access Log (httpsnoop, original path preserved)                   | 100%   | Unit + E2E          |
-| Rate Limit (eviction + stop channel)                              | 100%   | Unit + E2E          |
-| JWT (RSA/RS256-512 + EC P1363 + Ed25519, JWKS, flat config)       | 100%   | Unit (14) + E2E (2) |
-| JWT assertClaims (CEL against decoded payload)                    | 100%   | Unit + E2E          |
-| JWT claimToHeaders (CEL expressions for nested/array claims)      | 100%   | Unit + E2E          |
-| ExtAuthz (HTTP + gRPC modes)                                      | 100%   | Unit (10) + E2E     |
-| ExtProc HTTP (buffered + bufferedPartial + streamed)              | 100%   | Unit (19) + E2E (2) |
-| ExtProc gRPC                                                      | 100%   | Unit                |
-| Middleware chain ordering                                         | 100%   | Unit                |
-| Middleware skipWhen (CEL condition to skip)                        | 100%   | E2E (3)             |
-| Middleware onlyWhen (CEL condition to activate)                    | 100%   | E2E (3)             |
-| Middleware disable per-route                                      | 100%   | Unit + E2E          |
-| Middleware override merge                                         | 100%   | Unit                |
-| Cleanup on table swap (JWT refresh, rate limiter)                 | 100%   | Code review         |
+| Feature                                                      | Status | Tests               |
+| ------------------------------------------------------------ | ------ | ------------------- |
+| CORS (wildcard `*`, 204 preflight)                           | 100%   | Unit + E2E          |
+| Headers (httpsnoop)                                          | 100%   | Unit + E2E          |
+| Access Log (httpsnoop, original path preserved)              | 100%   | Unit + E2E          |
+| Rate Limit (eviction + stop channel)                         | 100%   | Unit + E2E          |
+| JWT (RSA/RS256-512 + EC P1363 + Ed25519, JWKS, flat config)  | 100%   | Unit (14) + E2E (2) |
+| JWT assertClaims (CEL against decoded payload)               | 100%   | Unit + E2E          |
+| JWT claimToHeaders (CEL expressions for nested/array claims) | 100%   | Unit + E2E          |
+| ExtAuthz (HTTP + gRPC modes)                                 | 100%   | Unit (10) + E2E     |
+| ExtProc HTTP (buffered + bufferedPartial + streamed)         | 100%   | Unit (19) + E2E (2) |
+| ExtProc gRPC                                                 | 100%   | Unit                |
+| Middleware chain ordering                                    | 100%   | Unit                |
+| Middleware skipWhen (CEL condition to skip)                  | 100%   | E2E (3)             |
+| Middleware onlyWhen (CEL condition to activate)              | 100%   | E2E (3)             |
+| Middleware disable per-route                                 | 100%   | Unit + E2E          |
+| Middleware override merge                                    | 100%   | Unit                |
+| Cleanup on table swap (JWT refresh, rate limiter)            | 100%   | Code review         |
 
 ## Proxy Infrastructure
 
@@ -126,19 +126,19 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 ## Prometheus Metrics
 
-| Feature | Status | Tests |
-|---|---|---|
-| Per-listener metrics config (path, collect, histograms) | 100% | Unit + E2E |
-| Route metrics (requests, duration, size, inflight, retries, mirrors) | 100% | Unit + E2E |
-| Destination metrics (requests, duration, inflight, circuit breaker) | 100% | Unit + E2E |
-| Endpoint metrics (requests, duration, healthy, consecutive 5xx) | 100% | Unit + E2E |
-| Middleware metrics (duration, passed, rejections) | 100% | Unit + E2E |
-| Listener metrics (connections, active, TLS errors) | 100% | Unit |
-| Endpoint disabled by default (high cardinality opt-in) | 100% | Unit + E2E |
-| Custom scrape endpoint path | 100% | E2E |
-| Isolated prometheus.Registry per listener | 100% | Unit |
-| Gauge scraper goroutine (health, circuit, 5xx) | 100% | Unit |
-| Context-based collector injection (zero overhead when disabled) | 100% | Unit |
+| Feature                                                              | Status | Tests      |
+| -------------------------------------------------------------------- | ------ | ---------- |
+| Per-listener metrics config (path, collect, histograms)              | 100%   | Unit + E2E |
+| Route metrics (requests, duration, size, inflight, retries, mirrors) | 100%   | Unit + E2E |
+| Destination metrics (requests, duration, inflight, circuit breaker)  | 100%   | Unit + E2E |
+| Endpoint metrics (requests, duration, healthy, consecutive 5xx)      | 100%   | Unit + E2E |
+| Middleware metrics (duration, passed, rejections)                    | 100%   | Unit + E2E |
+| Listener metrics (connections, active, TLS errors)                   | 100%   | Unit       |
+| Endpoint disabled by default (high cardinality opt-in)               | 100%   | Unit + E2E |
+| Custom scrape endpoint path                                          | 100%   | E2E        |
+| Isolated prometheus.Registry per listener                            | 100%   | Unit       |
+| Gauge scraper goroutine (health, circuit, 5xx)                       | 100%   | Unit       |
+| Context-based collector injection (zero overhead when disabled)      | 100%   | Unit       |
 
 ## Kubernetes Discovery
 
@@ -152,21 +152,21 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 ## HA Cluster (Raft)
 
-| Feature | Status | Tests |
-|---|---|---|
-| Raft FSM (apply commands to bolt) | 100% | Unit (7 command types + unknown + invalid) |
-| Raft snapshot/restore (Dump + Restore) | 100% | Unit + integration |
-| Static peer discovery | 100% | Unit |
-| DNS peer discovery (k8s headless Service) | 100% | E2E (kind) |
-| Bootstrap with retry (k8s cold start) | 100% | E2E (kind) |
-| Advertise address (pod IP in k8s) | 100% | E2E (kind) |
-| Write-forwarding (follower → leader) | 100% | E2E (kind) |
-| Single-node cluster | 100% | Unit |
-| 3-node replication | 100% | Unit + E2E |
-| Resource cleanup on shutdown | 100% | Code review |
-| Internal apply endpoint (private IP only) | 100% | Unit (5 tests) |
-| Raft store wrapper (reads local, writes Raft) | 100% | Unit + E2E |
-| Cluster config validation | 100% | Unit (4 tests) |
+| Feature                                       | Status | Tests                                      |
+| --------------------------------------------- | ------ | ------------------------------------------ |
+| Raft FSM (apply commands to bolt)             | 100%   | Unit (7 command types + unknown + invalid) |
+| Raft snapshot/restore (Dump + Restore)        | 100%   | Unit + integration                         |
+| Static peer discovery                         | 100%   | Unit                                       |
+| DNS peer discovery (k8s headless Service)     | 100%   | E2E (kind)                                 |
+| Bootstrap with retry (k8s cold start)         | 100%   | E2E (kind)                                 |
+| Advertise address (pod IP in k8s)             | 100%   | E2E (kind)                                 |
+| Write-forwarding (follower → leader)          | 100%   | E2E (kind)                                 |
+| Single-node cluster                           | 100%   | Unit                                       |
+| 3-node replication                            | 100%   | Unit + E2E                                 |
+| Resource cleanup on shutdown                  | 100%   | Code review                                |
+| Internal apply endpoint (private IP only)     | 100%   | Unit (5 tests)                             |
+| Raft store wrapper (reads local, writes Raft) | 100%   | Unit + E2E                                 |
+| Cluster config validation                     | 100%   | Unit (4 tests)                             |
 
 ## Store
 
@@ -188,62 +188,28 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 
 ## Test Summary
 
-| Suite                  | Tests   | Passing |
-| ---------------------- | ------- | ------- |
-| Model                  | 3       | 3       |
-| Store (bolt + memory)  | 9       | 9       |
-| API handlers           | 34      | 34      |
-| API middleware         | 3       | 3       |
-| Respond                | 2       | 2       |
-| Config                 | 12      | 12      |
-| Gateway                | 2       | 2       |
-| K8s watcher            | 4       | 4       |
-| Session store (Redis)  | 5       | 5       |
-| Proxy (router+pinning+balancer+pool+metrics) | 30 | 30 |
-| CEL eval               | 11      | 11      |
-| Proxy middlewares      | 60      | 60      |
-| Raft (FSM, cluster, peers) | 7   | 7       |
-| Sync client            | 2       | 2       |
-| E2E (proxy, live)      | 73      | 73      |
-| E2E (metrics)          | 5       | 5       |
-| E2E (cluster, kind)    | 8       | 8       |
-| **Total**              | **270** | **270** |
-
-## Bugs Fixed Across All Audits
-
-| Bug                                                      | Severity | Fix                                         |
-| -------------------------------------------------------- | -------- | ------------------------------------------- |
-| JWT ECDSA uses ASN.1 but JWT uses R\|\|S                 | Critical | P1363→ASN.1 DER conversion                  |
-| JWT RSA always SHA-256                                   | Critical | Alg-aware hash selection (RS256/384/512)    |
-| Interpolate/accesslog infinite loop via header injection | Critical | Position tracking prevents re-matching      |
-| Retry off-by-one extra request                           | Critical | Removed unreachable fallthrough RoundTrip   |
-| Retry cancelAttempt before body consumed                 | Critical | defer cancel, not immediate                 |
-| JWT no signature verification                            | Critical | RSA/EC/Ed25519 verification with JWKS       |
-| Circuit breaker never opens                              | Critical | RecordFailure on 5xx                        |
-| Outlier detection dead code                              | Critical | Wired via Upstream.OnResponse               |
-| Idle timeout + retry = panic                             | Critical | unwrapHTTPTransport chain                   |
-| Ring hash / maglev Build + Pick wired                    | High     | Build() in BuildTable, PickByHash in handler |
-| Rate limiter memory leak + goroutine leak                | High     | Eviction + stop channel + cleanup on swap   |
-| JWT refresh goroutine leak                               | High     | close() channel + cleanup on swap           |
-| LeastRequest Done never called                           | High     | Wired via interface check in forwardHandler |
-| Router regex compiled per-request (ReDoS)                | High     | Pre-compiled in compileRoute                |
-| Circuit half-open unlimited requests                     | High     | Atomic counter limits to 1                  |
-| Retry returns closed body                                | High     | Re-structured loop control flow             |
-| Mirror uses consumed body                                | High     | Clone body + request.Clone                  |
-| ResponseWriter breaks Flusher                            | High     | httpsnoop everywhere                        |
-| Access log shows rewritten path                          | Medium   | Capture originalPath before next            |
-| discardResponseWriter Header() new map each call         | Medium   | Persistent header map                       |
-| Handlers use context.Background()                        | Medium   | Changed to r.Context()                      |
-| ExtAuthz ignores request body                            | Medium   | Body forwarded when IncludeBody=true        |
-| SelectBackend all-zero weights                           | Medium   | Uniform random                              |
-| Health check ignores thresholds                          | Medium   | Consecutive counters + per-dest interval    |
-| Listener ignores TLS changes                             | Medium   | sameListener compares TLS fields            |
-| CORS no wildcard origin                                  | Medium   | `*` origin supported                        |
-| CORS preflight 200                                       | Medium   | Changed to 204                              |
-| gRPC timeout sub-ms truncation                           | Low      | Microsecond unit                            |
-| IncludeAttemptCount hardcoded                            | Low      | Set per retry attempt                       |
-| HTTP/2 no ALPN                                           | Low      | NextProtos includes "h2"                    |
-| k8s OnChange nil dereference                             | Low      | notifyChange helper with nil guard          |
+| Suite                                                              | Tests   | Passing |
+| ------------------------------------------------------------------ | ------- | ------- |
+| Model                                                              | 3       | 3       |
+| Store (bolt + memory)                                              | 9       | 9       |
+| API handlers                                                       | 34      | 34      |
+| API middleware                                                     | 3       | 3       |
+| Respond                                                            | 2       | 2       |
+| Config                                                             | 14      | 14      |
+| Gateway                                                            | 2       | 2       |
+| K8s watcher                                                        | 4       | 4       |
+| Session store (Redis)                                              | 5       | 5       |
+| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 54      | 54      |
+| CEL eval                                                           | 11      | 11      |
+| Proxy middlewares                                                  | 60      | 60      |
+| Raft (FSM, cluster, peers)                                         | 7       | 7       |
+| Sync client                                                        | 2       | 2       |
+| **Unit total**                                                     | **226** | **226** |
+| E2E (proxy, live)                                                  | 73      | 73      |
+| E2E (metrics)                                                      | 5       | 5       |
+| E2E (onError)                                                      | 6       | 6       |
+| E2E (cluster, kind)                                                | 8       | 8       |
+| **E2E total**                                                      | **92**  | **92**  |
 
 ## Known Remaining Issues
 

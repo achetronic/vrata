@@ -3,10 +3,12 @@
 ## In Progress
 
 ### Comprehensive timeout configuration
+
 All timeouts across listeners, destinations, and middlewares must be
 configurable with semantic names. See DECISIONS.md for the naming convention.
 
 **Listener timeouts** — add `timeouts` to `model.Listener`:
+
 - [x] `clientHeader` (default 10s) — `Server.ReadHeaderTimeout`
 - [x] `clientRequest` (default 60s) — `Server.ReadTimeout`
 - [x] `clientResponse` (default 60s) — `Server.WriteTimeout`
@@ -17,6 +19,7 @@ configurable with semantic names. See DECISIONS.md for the naming convention.
 - [ ] Update docs/features.md
 
 **Destination timeouts** — add `timeouts` to `model.DestinationOptions`, replace `connectTimeout`:
+
 - [x] `request` (default 30s) — `Client.Timeout`
 - [x] `connect` (default 5s) — `Dialer.Timeout` (replaces `options.connectTimeout`)
 - [x] `dualStackFallback` (default 300ms) — `Dialer.FallbackDelay`
@@ -31,6 +34,7 @@ configurable with semantic names. See DECISIONS.md for the naming convention.
 - [ ] Update docs/features.md
 
 **Middleware timeout renames**:
+
 - [x] `extAuthz.timeout` → `extAuthz.decisionTimeout`
 - [x] `extProc.timeout` → `extProc.phaseTimeout`
 - [x] Add `jwt.jwksRetrievalTimeout` (default 10s, currently hardcoded)
@@ -39,21 +43,25 @@ configurable with semantic names. See DECISIONS.md for the naming convention.
 - [ ] Update docs/features.md
 
 **Route cleanup**:
+
 - [x] Remove `forward.timeouts.idle` (moved to destination)
 - [x] Keep `forward.timeouts.request` as the external watchdog
 
 ## Pending
 
 ### Housekeeping
+
 - [ ] Add authentication to the REST API
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
 
 ### Deferred from audit
+
 - [ ] **Circuit breaker configurability** — add `OpenDuration` and `FailureThreshold` fields to `CircuitBreakerOptions` model. Currently hardcoded to 30s and 5. Wire in `proxy/circuit.go`.
 - [ ] **ExtProc interceptResponseWriter → httpsnoop** — `proxy/middlewares/extproc.go` manually implements `http.ResponseWriter` for response interception. Needs refactor to use `httpsnoop.Wrap` to preserve optional interfaces.
 - [ ] **DestinationTimeouts.Request wiring** — model field exists but is not wired. `httputil.ReverseProxy` doesn't use `http.Client`, so `Client.Timeout` can't be set directly. Design options: (a) wrap Transport with context deadline, (b) apply in forwardHandler as fallback when route has no `forward.timeouts.request`.
 
 ### Proxy fleets — single control plane, multiple fleets
+
 A single control plane should be able to manage multiple independent proxy
 fleets, each with its own routing config. A fleet identifier (e.g. a label
 or a path parameter) distinguishes which config a proxy receives when it
@@ -65,7 +73,7 @@ This is ASAP.
 ## Done
 
 - [x] **Prometheus metrics** — 22 metrics across 5 dimensions, per-listener, isolated registries
-- [x] **onError fallback routes** — typed error matching, forward/redirect/directResponse actions, X-Vrata-Error-* headers
+- [x] **onError fallback routes** — typed error matching, forward/redirect/directResponse actions, X-Vrata-Error-\* headers
 - [x] **JSON error responses** — all proxy errors return `{"error":"..."}` with Content-Type: application/json
 - [x] **Middleware JSON errors** — JWT and rate limit errors now return JSON instead of text/plain
 - [x] **Config restructure** — `server:` → `controlPlane:`, `controlPlane:` → `proxy:`, `cluster:` → `controlPlane.raft:`, unified `storePath`

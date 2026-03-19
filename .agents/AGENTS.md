@@ -1,126 +1,123 @@
-# AGENTS.md - Vrata
+# AGENTS.md — Vrata
 
-Vrata is an API-first Envoy control plane. It exposes a REST API to manage route groups
-and individual routes, computes Envoy configuration from those resources, and pushes it
-live to any number of connected Envoy proxies via xDS — no restarts, no downtime.
-The goal is to eventually sit behind a UI, a CLI, or any other client.
+Vrata is a programmable HTTP reverse proxy. It exposes a REST API to manage
+routes, destinations, listeners, and middlewares, and applies changes live
+to connected proxy instances via SSE — no restarts, no downtime.
 
 ## Project Overview
 
-- **What**: A highly-available Envoy control plane with a clean REST API.
-- **Why**: Manage thousands of routes across many Envoy instances without ever touching
-  a config file or reloading a proxy.
-- **Who**: Platform/infra teams that run Envoy as an API gateway at scale.
+- **What**: A programmable reverse proxy with a clean REST API.
+- **Why**: Manage routes, traffic splits, auth, rate limiting, and observability
+  across proxy fleets without touching config files or restarting anything.
+- **Who**: Platform/infra teams that run HTTP gateways at scale.
 
 ## Architecture
 
 ```
 server/
-├── cmd/
-│   └── vrata/
-│       └── main.go          # Entry point. Parses --config, wires dependencies, starts servers.
+├── cmd/vrata/main.go           # Entry point. Parses --config, wires dependencies, starts servers.
 ├── internal/
-│   ├── config/              # Config loading (YAML + os.ExpandEnv), struct definitions.
-│   ├── api/                 # HTTP REST API (net/http). Handlers, middleware, router setup.
-│   │   ├── handlers/        # One file per resource: groups, routes.
-│   │   └── middleware/      # Logging, error recovery, (future) auth.
-│   ├── store/               # State persistence layer. Interface + implementations.
-│   ├── model/               # Domain types: RouteGroup, Route, Backend, MatchRule, etc.
-│   ├── xds/                 # xDS server (gRPC). Snapshot builder + cache management.
-│   └── gateway/             # Orchestrator: receives store events, rebuilds xDS snapshots.
+│   ├── config/                 # Config loading (YAML + os.ExpandEnv), struct definitions.
+│   ├── api/                    # HTTP REST API (net/http). Handlers, middleware, router setup.
+│   │   ├── handlers/           # One file per resource: routes, groups, destinations, etc.
+│   │   ├── middleware/         # Logging, error recovery.
+│   │   └── respond/            # JSON response helpers.
+│   ├── store/                  # State persistence layer. Interface + implementations (bolt, memory, raftstore).
+│   ├── model/                  # Domain types: Route, RouteGroup, Destination, Listener, Middleware, Snapshot.
+│   ├── proxy/                  # Native HTTP reverse proxy. Router, handlers, balancers, circuit breaker, health, outlier, metrics.
+│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog.
+│   │   └── celeval/            # CEL expression compiler and evaluator.
+│   ├── gateway/                # Orchestrator: receives store events, rebuilds proxy routing table.
+│   ├── raft/                   # Raft consensus for HA control plane (hashicorp/raft).
+│   ├── k8s/                    # Kubernetes EndpointSlice + ExternalName watcher.
+│   ├── sync/                   # SSE client for proxy-mode instances.
+│   └── session/                # Session store interface + Redis implementation.
+├── proto/                      # gRPC protobuf definitions (extproc, extauthz).
+├── test/e2e/                   # End-to-end tests.
+├── docs/                       # Generated OpenAPI spec (swag-go v2).
+├── charts/vrata/               # Helm chart.
 ├── Dockerfile
 ├── Makefile
-├── go.mod
-└── go.sum
+└── config.yaml
 ```
 
 ## Key Components
 
-| Component | Description | Location |
-|-----------|-------------|----------|
-| Config loader | Reads `--config` YAML, expands env vars via `os.ExpandEnv` | `internal/config/` |
-| REST API | `net/http`-based router, Swagger via swag-go v2 | `internal/api/` |
-| Domain model | `RouteGroup`, `Route`, `Backend`, `MatchRule` structs | `internal/model/` |
-| Store | Pluggable persistence interface; initial impl TBD | `internal/store/` |
-| xDS server | Envoy control plane via `go-control-plane`; pushes snapshots | `internal/xds/` |
-| Gateway | Glue layer: watches store, recomputes snapshots, notifies xDS | `internal/gateway/` |
-
-## External Integrations
-
-- **Envoy proxies** — connect to Vrata's gRPC xDS endpoint on startup.
-  Vrata is their source of truth for listeners, clusters, routes, and endpoints.
-- **go-control-plane** — official Envoy xDS library for Go (`github.com/envoyproxy/go-control-plane`).
+| Component     | Description                                                                        | Location            |
+| ------------- | ---------------------------------------------------------------------------------- | ------------------- |
+| Config loader | Reads `--config` YAML, expands env vars via `os.ExpandEnv`                         | `internal/config/`  |
+| REST API      | `net/http`-based router, Swagger via swag-go v2                                    | `internal/api/`     |
+| Domain model  | Route, RouteGroup, Destination, Listener, Middleware, Snapshot                     | `internal/model/`   |
+| Store         | Pluggable persistence; bolt (production), memory (testing), raftstore (HA)         | `internal/store/`   |
+| Proxy         | Native HTTP reverse proxy with routing, balancing, retry, rewrite, mirror, metrics | `internal/proxy/`   |
+| Gateway       | Watches store events, rebuilds routing table, reconciles listeners                 | `internal/gateway/` |
+| Raft          | Embedded hashicorp/raft for HA control plane                                       | `internal/raft/`    |
+| K8s watcher   | EndpointSlice + ExternalName discovery                                             | `internal/k8s/`     |
+| Sync client   | SSE client for proxy-mode instances                                                | `internal/sync/`    |
+| Session store | Redis-backed sticky session persistence                                            | `internal/session/` |
 
 ## HTTP Endpoints (REST API)
 
 All documented via OpenAPI 3.1 generated by swag-go v2. Run `make docs` to regenerate.
 Base path: `/api/v1`
 
-Main resource groups:
-- `GET/POST /route-groups` — list and create route groups
-- `GET/PUT/DELETE /route-groups/:id` — manage a specific group
-- `GET/POST /route-groups/:id/routes` — list and create routes within a group
-- `GET/PUT/DELETE /route-groups/:id/routes/:routeId` — manage a specific route
+Main resources:
+
+- `GET/POST /routes` — list and create routes
+- `GET/PUT/DELETE /routes/:id` — manage a specific route
+- `GET/POST /groups` — list and create route groups
+- `GET/PUT/DELETE /groups/:id` — manage a specific group
+- `GET/POST /destinations` — list and create destinations
+- `GET/PUT/DELETE /destinations/:id` — manage a specific destination
+- `GET/POST /listeners` — list and create listeners
+- `GET/PUT/DELETE /listeners/:id` — manage a specific listener
+- `GET/POST /middlewares` — list and create middlewares
+- `GET/PUT/DELETE /middlewares/:id` — manage a specific middleware
+- `GET/POST /snapshots` — list and create versioned snapshots
+- `GET/DELETE /snapshots/:id` — manage a specific snapshot
+- `POST /snapshots/:id/activate` — activate a snapshot (push to proxies)
+- `GET /sync/snapshot` — SSE stream of active snapshot (proxy mode)
+- `POST /sync/raft` — Raft write-forwarding (internal, private IPs only)
+- `GET /debug/config` — dump live configuration
 
 ## Code Patterns
 
 - **DRY, KISS, elegant** — the guiding principle for every function and struct.
-- **Dependencies struct** — inject shared deps (store, xds cache, logger, config) explicitly
-  into handlers and services via a `Dependencies` struct. No globals.
-- **Error bubbling** — functions return errors up the call stack. Errors are only handled
-  (logged + turned into HTTP responses) at handler level. Never swallow errors silently.
-- **User-facing errors** — HTTP error responses are human-readable JSON, never raw Go errors.
-- **All functions and structs documented** — every exported (and relevant unexported) symbol
-  gets a Go doc comment. swag-go annotations on all handler functions.
-- **slog for logging** — structured logging with console (text) and JSON modes, switchable
-  via config. No other logging library.
-- **Config via YAML + env** — `--config path/to/config.yaml`; all string values support
-  `${ENV_VAR}` substitution via `os.ExpandEnv` before unmarshalling.
-- **net/http only** — no Gin, no Echo, no external router unless there is a concrete,
-  justified reason.
-
-## Design Philosophy
-
-Simple enough to understand in one sitting, robust enough to run in production.
-Every abstraction earns its place. If something can be done with the stdlib, it is.
+- **Dependencies struct** — inject shared deps explicitly. No globals.
+- **Error bubbling** — functions return errors up the call stack.
+- **User-facing errors** — HTTP error responses are human-readable JSON.
+- **All functions and structs documented** — Go doc comments on all exported symbols.
+- **slog for logging** — structured logging with console and JSON modes.
+- **Config via YAML + env** — `${ENV_VAR}` substitution in all string values.
+- **net/http only** — no external router unless justified.
+- **httpsnoop for ResponseWriter interception** — never create manual wrappers.
+- **Cleanup on table swap** — middlewares with goroutines return stop functions.
 
 ## Build & Run
 
 ```bash
 make build          # Compile binary to ./bin/vrata
 make run            # Run locally against config.yaml
-make run-dev        # Run locally; xDS endpoint reachable from external Envoys (e.g. in k8s via port-forward or NodePort)
 make docker-build   # Build Docker image
-make docker-push    # Push Docker image
-make docs           # Regenerate OpenAPI spec via swag-go v2
+make docs           # Regenerate OpenAPI spec
+make test           # Run unit tests
+make e2e            # Run proxy e2e tests
+make e2e-cluster    # Run Raft cluster e2e tests in kind
+make proto          # Regenerate protobuf code
 ```
 
 ## Dependencies
 
-| Library | Purpose |
-|---------|---------|
-| `github.com/envoyproxy/go-control-plane` | xDS server implementation (official) |
-| `github.com/swaggo/swag` v2 | OpenAPI 3.1 spec generation from annotations |
-| `gopkg.in/yaml.v3` | Config file parsing |
-| `log/slog` (stdlib) | Structured logging |
-| `net/http` (stdlib) | REST API server |
-| `github.com/prometheus/client_golang` | Prometheus metrics collection and exposition |
-
-## Gotchas
-
-1. **xDS node IDs matter** — each Envoy must be configured with a unique `node.id` that matches
-   what Vrata uses to key snapshots. If two Envoys share an ID they get the same config.
-2. **Snapshot version must increment** — go-control-plane rejects snapshots with the same version
-   as the previous one. Always bump the version on every change, even if the content is identical.
-3. **os.ExpandEnv runs before YAML unmarshalling** — the raw YAML bytes are expanded first,
-   then parsed. This means env vars inside YAML comments are also expanded (harmless, but notable).
-4. **Duplicate route detection is in-process** — on every write, the store checks for conflicting
-   match rules (path + method + hostname + headers) within the same group. This check must be
-   atomic with the write to avoid races under concurrent requests.
-5. **HA requires distributed state** — a single Vrata instance is stateful. Running multiple
-   replicas without a shared/replicated store will cause split-brain. See DECISIONS.md.
-6. **swag-go v2 annotation format differs from v1** — do not mix annotation styles. Always
-   use the v2 format (`@Success`, `@Param`, etc. with OpenAPI 3.1 compatible types).
-7. **run-dev xDS reachability** — for local development with Envoys in Kubernetes, the xDS
-   gRPC port must be externally reachable (NodePort, LoadBalancer, or telepresence). The
-   `run-dev` Makefile target should handle or document this setup.
+| Library                               | Purpose                          |
+| ------------------------------------- | -------------------------------- |
+| `gopkg.in/yaml.v3`                    | Config file parsing              |
+| `log/slog` (stdlib)                   | Structured logging               |
+| `net/http` (stdlib)                   | REST API server + proxy          |
+| `github.com/prometheus/client_golang` | Prometheus metrics               |
+| `github.com/felixge/httpsnoop`        | ResponseWriter interception      |
+| `github.com/hashicorp/raft`           | Embedded Raft consensus          |
+| `github.com/google/cel-go`            | CEL expression evaluation        |
+| `github.com/redis/go-redis/v9`        | Redis client for sticky sessions |
+| `github.com/swaggo/swag/v2`           | OpenAPI 3.1 spec generation      |
+| `go.etcd.io/bbolt`                    | Embedded key-value store         |
+| `k8s.io/client-go`                    | Kubernetes API client            |

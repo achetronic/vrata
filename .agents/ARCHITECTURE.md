@@ -1,156 +1,157 @@
-# Architecture - Vrata
+# Architecture — Vrata
 
 ## Overview
 
-Vrata is a control plane for Envoy proxies. It exposes a REST API that lets operators
-define route groups and routes with rich matching rules, and translates that configuration
-into xDS resources that are pushed live to connected Envoy instances via gRPC streaming.
+Vrata is a programmable HTTP reverse proxy with a REST API. It has two modes:
 
-The system is designed to be horizontally scalable. Multiple Vrata replicas can run
-simultaneously, sharing state through a pluggable persistence layer. Every change to the
-store triggers a snapshot rebuild that is pushed to all connected Envoys without requiring
-a proxy restart.
+- **Control plane** — exposes the REST API, stores configuration in bbolt,
+  and pushes active snapshots to connected proxies via SSE. Optionally runs
+  with Raft consensus for HA (3-5 nodes).
+- **Proxy** — stateless, connects to a control plane via SSE, receives
+  configuration snapshots, and routes traffic. Horizontally scalable.
 
-Vrata intentionally has no UI of its own. It is the backend layer. A UI, a CLI, or any
-other client talks to the REST API.
+In development, a single process runs both modes. In production, the control
+plane runs as a StatefulSet and proxies as a Deployment.
 
 ## Components
 
 ### cmd/vrata
+
 Entry point. Responsible for:
+
 - Parsing the `--config` flag and loading configuration.
-- Instantiating all dependencies (store, xDS cache, logger).
-- Starting the REST API server and the xDS gRPC server.
+- Instantiating all dependencies (store, gateway, proxy router, listeners).
+- Starting the REST API server and the proxy gateway.
 - Handling OS signals for graceful shutdown.
 
 ### internal/config
-Loads and validates the `config.yaml` file. Applies `os.ExpandEnv` to the raw YAML
-bytes before unmarshalling so that any `${ENV_VAR}` references are resolved. Owns the
-`Config` struct that all other components receive at startup.
+
+Loads and validates the `config.yaml` file. Applies `os.ExpandEnv` to the raw
+YAML bytes before unmarshalling so that `${ENV_VAR}` references are resolved.
 
 ### internal/model
+
 Pure domain types. No business logic, no I/O. Key types:
 
-- **RouteGroup** — a named collection of routes with shared attributes (prefix, headers,
-  hostnames). Acts as a namespace and a policy umbrella for its children.
-- **Route** — a single routing rule inside a group. Defines match criteria (path, method,
-  headers, query params) and one or more weighted backends for traffic splitting.
-- **Backend** — a destination: host, port, protocol, and weight (for canary/A-B splits).
-- **MatchRule** — the combination of fields that uniquely identifies a route within a group.
-  Used for duplicate detection.
+- **Route** — matching rules + action (forward/redirect/directResponse) + onError fallbacks.
+- **RouteGroup** — a named collection of routes with shared matchers.
+- **Destination** — an upstream target with endpoints, timeouts, TLS, balancing, circuit breaker, health checks, outlier detection.
+- **Listener** — a network entry point with optional TLS, HTTP/2, metrics.
+- **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog.
+- **Snapshot** — immutable point-in-time capture of all configuration.
 
 ### internal/store
-Pluggable persistence interface. All reads and writes go through this interface; components
-never touch storage directly.
 
-```go
-type Store interface {
-    GetGroups(ctx context.Context) ([]model.RouteGroup, error)
-    GetGroup(ctx context.Context, id string) (model.RouteGroup, error)
-    CreateGroup(ctx context.Context, g model.RouteGroup) error
-    UpdateGroup(ctx context.Context, g model.RouteGroup) error
-    DeleteGroup(ctx context.Context, id string) error
+Pluggable persistence interface. Implementations:
 
-    GetRoutes(ctx context.Context, groupID string) ([]model.Route, error)
-    GetRoute(ctx context.Context, groupID, routeID string) (model.Route, error)
-    CreateRoute(ctx context.Context, r model.Route) error
-    UpdateRoute(ctx context.Context, r model.Route) error
-    DeleteRoute(ctx context.Context, groupID, routeID string) error
-
-    Subscribe(ctx context.Context) (<-chan StoreEvent, error)
-}
-```
-
-The `Subscribe` method allows the gateway layer to react to changes in real time.
-Initial implementation TBD (see DECISIONS.md). Requirements: simple backup, HA-capable
-replication across Vrata replicas.
+- **bolt** — bbolt embedded KV store (production).
+- **memory** — in-memory (testing).
+- **raftstore** — Raft wrapper that reads locally and writes through the Raft log.
 
 ### internal/api
+
 REST API built on `net/http`. Structured as:
+
 - **router** — registers all routes, applies middleware chain.
-- **handlers/** — one handler file per resource (groups, routes). Each handler is a
-  method on a struct that holds a `Dependencies` reference.
-- **middleware/** — logging (request/response), panic recovery, (future) authentication.
+- **handlers/** — one handler file per resource.
+- **middleware/** — request logging (httpsnoop), panic recovery.
+- **respond/** — JSON response helpers.
 
-All handlers are annotated for swag-go v2 to generate the OpenAPI 3.1 spec.
+### internal/proxy
 
-### internal/xds
-gRPC server implementing the xDS protocol via `go-control-plane`. Owns:
-- The snapshot cache (one snapshot per Envoy node ID).
-- The snapshot builder that translates `model.RouteGroup` + `model.Route` objects into
-  Envoy `Listener`, `RouteConfiguration`, `Cluster`, and `ClusterLoadAssignment` resources.
-- The version counter (monotonically incrementing, required by xDS protocol).
+The native HTTP reverse proxy. Core files:
+
+- **router.go** — atomic routing table swap, request matching, metrics injection.
+- **table.go** — compiles routes, groups, destinations into a RoutingTable.
+- **handler.go** — forward/redirect/directResponse handlers, onError evaluation, middleware chain.
+- **endpoint.go** — creates Endpoints with Transport (all 7 destination timeouts wired).
+- **pool.go** — DestinationPool with balancer, circuit breaker, session store.
+- **balancer.go** — RoundRobin, Random, LeastRequest, RingHash, Maglev.
+- **pinning.go** — weighted consistent hash ring for destination pinning.
+- **retry.go** — retryTransport with backoff, per-attempt timeout, onRetry callback.
+- **listener.go** — ListenerManager (start/stop/reconcile HTTP servers, metrics, timeouts).
+- **circuit.go** — CircuitBreaker (configurable threshold and open duration).
+- **health.go** — HealthChecker (active HTTP probes with thresholds).
+- **outlier.go** — OutlierDetector (ejects endpoints by consecutive errors).
+- **errors.go** — ProxyError classification, onError rule evaluation, JSON error responses.
+- **metrics.go** — MetricsCollector (22 Prometheus metrics, per-listener registry).
+- **session.go** — SessionStore interface for sticky sessions.
+
+### internal/proxy/middlewares
+
+One file per middleware type. All use `httpsnoop` for response interception.
+Each middleware that launches goroutines returns a stop function for cleanup on table swap.
+
+### internal/proxy/celeval
+
+CEL expression compiler and evaluator for route matching, skipWhen/onlyWhen, and JWT assertClaims.
 
 ### internal/gateway
-The orchestrator. Subscribes to store events and, on any change, triggers a full snapshot
-rebuild and pushes the new snapshot to the xDS cache. This is the only component that
-couples the store and the xDS server together.
+
+Orchestrator. Subscribes to store events, rebuilds the routing table, swaps it atomically, reconciles listeners, updates health checker and outlier detector.
+
+### internal/raft
+
+Embedded Raft consensus via hashicorp/raft. FSM backed by bbolt. Peer discovery via static list or DNS. Write-forwarding from followers to leader.
+
+### internal/k8s
+
+Kubernetes EndpointSlice and ExternalName Service watcher. Resolves pod IPs for destinations with `discovery.type: "kubernetes"`.
+
+### internal/sync
+
+SSE client for proxy-mode instances. Connects to `GET /api/v1/sync/snapshot`, receives versioned snapshots, applies them atomically.
+
+### internal/session
+
+Session store interface and Redis implementation for STICKY balancing.
 
 ## Data Flow
 
 ```
-Client (UI / CLI / curl)
+Operator (API calls)
         │
         ▼
   REST API (net/http)
-        │  validates, checks duplicates, writes
+        │  validates, writes
         ▼
-     Store  ──────────────────────────────────────────┐
-        │  publishes StoreEvent                        │
-        ▼                                             │
-    Gateway                                    (backup / HA sync)
-        │  rebuilds snapshot                          │
-        ▼                                         Other Vrata
-   xDS Server                                     replicas
-        │  streams updated snapshot
+     Store (bbolt) ───── Raft log (HA) ───── Other CP nodes
+        │  publishes StoreEvent
         ▼
-  Envoy proxies (0..N)
+    Gateway
+        │  rebuilds routing table
+        ▼
+   Proxy Router ←── Listeners (0..N ports)
+        │                    ↑
+        │              Users connect here
+        ▼
+  Destinations (upstream services)
 ```
 
-## Boundaries and Interfaces
-
-| Component | Exposes | Consumes |
-|-----------|---------|----------|
-| config | `Config` struct | YAML file + env vars |
-| model | domain types | nothing |
-| store | `Store` interface | persistence backend |
-| api | HTTP endpoints | Store interface |
-| xds | gRPC xDS endpoint | model types |
-| gateway | internal only | Store.Subscribe, xds cache |
+In proxy mode, the Gateway is replaced by the SSE sync client which receives
+snapshots from the control plane and applies them.
 
 ## Folder Structure
 
 ```
 server/
-├── cmd/
-│   └── vrata/
-│       └── main.go               # Wiring, startup, signal handling
+├── cmd/vrata/main.go
 ├── internal/
-│   ├── config/
-│   │   └── config.go             # Config struct, Load() function
-│   ├── model/
-│   │   ├── group.go              # RouteGroup, MatchRule
-│   │   └── route.go              # Route, Backend
-│   ├── store/
-│   │   ├── store.go              # Store interface + StoreEvent type
-│   │   └── memory/               # In-memory implementation (initial / testing)
-│   │       └── memory.go
-│   ├── api/
-│   │   ├── router.go             # Route registration, middleware chain
-│   │   ├── handlers/
-│   │   │   ├── groups.go         # CRUD for RouteGroups
-│   │   │   └── routes.go         # CRUD for Routes within a group
-│   │   └── middleware/
-│   │       ├── logger.go         # Request logging via slog
-│   │       └── recovery.go       # Panic recovery → 500 JSON response
-│   ├── xds/
-│   │   ├── server.go             # gRPC server setup
-│   │   ├── cache.go              # Snapshot cache wrapper
-│   │   └── builder.go            # model → Envoy xDS resources translation
-│   └── gateway/
-│       └── gateway.go            # Store subscriber + snapshot push orchestrator
-├── docs/                         # Generated by swag-go v2 (do not edit manually)
+│   ├── config/config.go
+│   ├── model/                  # Pure domain types
+│   ├── store/                  # Store interface + bolt + memory + raftstore
+│   ├── api/                    # REST API (handlers, middleware, respond, router)
+│   ├── proxy/                  # Native HTTP proxy
+│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog
+│   │   └── celeval/            # CEL expression evaluation
+│   ├── gateway/gateway.go      # Store → proxy bridge
+│   ├── raft/                   # Raft consensus (FSM, node, peer discovery)
+│   ├── k8s/watcher.go          # Kubernetes endpoint discovery
+│   ├── sync/client.go          # SSE sync client (proxy mode)
+│   └── session/                # Session store interface + Redis
+├── proto/                      # gRPC proto definitions (extproc, extauthz)
+├── test/e2e/                   # End-to-end tests
+├── docs/                       # Generated OpenAPI spec
 ├── Dockerfile
-├── Makefile
-└── config.example.yaml
+└── go.mod
 ```

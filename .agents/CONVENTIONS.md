@@ -10,7 +10,7 @@
   built with everything else. This applies to CEL compilation, regex compilation, middleware
   construction, and any per-entity processing. One bad config must not be fatal to the
   entire proxy.
-- **Explicit dependency injection** — shared dependencies (store, xDS cache, logger, config)
+- **Explicit dependency injection** — shared dependencies (store, proxy router, logger, config)
   are passed via a `Dependencies` struct. No package-level globals, no `init()` side effects.
 - **Error bubbling** — functions return errors to their caller. Only handler-level code
   (and `main`) handles errors by logging and/or converting them to responses. Never discard
@@ -28,8 +28,6 @@
 - **Atomic duplicate detection** — route uniqueness checks (match rule collision within a
   group) must be performed atomically with the write inside the store. Never check then write
   as separate steps.
-- **xDS snapshot version always increments** — every snapshot pushed to go-control-plane
-  must have a version strictly greater than the previous one. Use a monotonic counter.
 - **English everywhere** — code, comments, commit messages, variable names, doc strings,
   Makefile targets. No exceptions.
 
@@ -92,7 +90,7 @@
 
 ## Testing
 
-See TODO.md. Tests are planned but not yet written.
+226 unit tests + 92 e2e tests. See FEATURES.md for full breakdown.
 
 ## Configuration
 
@@ -102,4 +100,4 @@ See TODO.md. Tests are planned but not yet written.
   for all runtime configuration.
 - Config is passed to components at startup via the `Dependencies` struct. Components must not
   read environment variables directly at runtime.
-- `config.example.yaml` in the repo root documents every available key with inline comments.
+- `config.yaml` in the repo root documents every available key with inline comments.
