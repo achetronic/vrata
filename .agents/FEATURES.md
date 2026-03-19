@@ -110,6 +110,22 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | TLS downstream                                          | 100%   | Unit       |
 | HTTP/2 (ALPN configured)                                | 100%   | Unit       |
 
+## Prometheus Metrics
+
+| Feature | Status | Tests |
+|---|---|---|
+| Per-listener metrics config (path, collect, histograms) | 100% | Unit + E2E |
+| Route metrics (requests, duration, size, inflight, retries, mirrors) | 100% | Unit + E2E |
+| Destination metrics (requests, duration, inflight, circuit breaker) | 100% | Unit + E2E |
+| Endpoint metrics (requests, duration, healthy, consecutive 5xx) | 100% | Unit + E2E |
+| Middleware metrics (duration, passed, rejections) | 100% | Unit + E2E |
+| Listener metrics (connections, active, TLS errors) | 100% | Unit |
+| Endpoint disabled by default (high cardinality opt-in) | 100% | Unit + E2E |
+| Custom scrape endpoint path | 100% | E2E |
+| Isolated prometheus.Registry per listener | 100% | Unit |
+| Gauge scraper goroutine (health, circuit, 5xx) | 100% | Unit |
+| Context-based collector injection (zero overhead when disabled) | 100% | Unit |
+
 ## Kubernetes Discovery
 
 | Feature                | Status | Tests       |
@@ -169,14 +185,15 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Gateway                | 2       | 2       |
 | K8s watcher            | 4       | 4       |
 | Session store (Redis)  | 5       | 5       |
-| Proxy (router+pinning+balancer+pool) | 21 | 21 |
+| Proxy (router+pinning+balancer+pool+metrics) | 30 | 30 |
 | CEL eval               | 11      | 11      |
 | Proxy middlewares      | 60      | 60      |
 | Raft (FSM, cluster, peers) | 7   | 7       |
 | Sync client            | 2       | 2       |
 | E2E (proxy, live)      | 73      | 73      |
+| E2E (metrics)          | 5       | 5       |
 | E2E (cluster, kind)    | 8       | 8       |
-| **Total**              | **256** | **256** |
+| **Total**              | **270** | **270** |
 
 ## Bugs Fixed Across All Audits
 

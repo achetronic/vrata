@@ -38,6 +38,7 @@ Vrata is a programmable HTTP reverse proxy with a REST API. You create listeners
   - [External Processor (ExtProc)](#external-processor)
   - [Access Log](#access-log)
 - [Middleware Overrides](#middleware-overrides)
+- [Metrics](#metrics)
 
 ---
 
@@ -1293,3 +1294,133 @@ The `request` object available in `skipWhen`/`onlyWhen` expressions:
 | `jwtProvider` | string   | Select specific JWT provider by name      |
 | `headers`     | object   | Override header manipulation config       |
 | `extProc`     | object   | Override ExtProc settings                 |
+
+---
+
+## Metrics
+
+Prometheus metrics are configured per-listener. When the `metrics` field is present on a listener, Vrata collects request/response metrics and serves a Prometheus scrape endpoint on that listener.
+
+```json
+{
+  "name": "production",
+  "port": 8443,
+  "tls": { "certPath": "/certs/tls.crt", "keyPath": "/certs/tls.key" },
+  "metrics": {
+    "path": "/metrics",
+    "collect": {
+      "route": true,
+      "destination": true,
+      "endpoint": false,
+      "middleware": true,
+      "listener": true
+    },
+    "histograms": {
+      "durationBuckets": [
+        0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
+      ],
+      "sizeBuckets": [100, 1000, 10000, 100000, 1000000]
+    }
+  }
+}
+```
+
+Minimal (all defaults):
+
+```json
+{
+  "name": "main",
+  "port": 3000,
+  "metrics": {}
+}
+```
+
+This enables all default dimensions (route, destination, middleware, listener) with endpoint disabled, serves at `/metrics`, and uses default histogram buckets.
+
+### Configuration
+
+| Field                | Type   | Default      | Description                                     |
+| -------------------- | ------ | ------------ | ----------------------------------------------- |
+| `metrics`            | object | `null`       | Presence activates metrics. `null` = no metrics |
+| `metrics.path`       | string | `"/metrics"` | Scrape endpoint path                            |
+| `metrics.collect`    | object | see below    | Which dimensions are collected                  |
+| `metrics.histograms` | object | see below    | Histogram bucket tuning                         |
+
+### Collect dimensions
+
+| Field                 | Type | Default | Description                                                                                     |
+| --------------------- | ---- | ------- | ----------------------------------------------------------------------------------------------- |
+| `collect.route`       | bool | `true`  | Per-route request counters, latency, size, retries, mirrors, inflight                           |
+| `collect.destination` | bool | `true`  | Per-destination request counters, latency, inflight, circuit breaker state                      |
+| `collect.endpoint`    | bool | `false` | Per-endpoint (pod) counters, latency, health, consecutive errors. **High cardinality — opt-in** |
+| `collect.middleware`  | bool | `true`  | Per-middleware duration, pass/reject counters                                                   |
+| `collect.listener`    | bool | `true`  | Per-listener connection counters, TLS errors                                                    |
+
+### Histogram tuning
+
+| Field                        | Type    | Default                                                     | Description                                     |
+| ---------------------------- | ------- | ----------------------------------------------------------- | ----------------------------------------------- |
+| `histograms.durationBuckets` | float[] | `[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]` | Duration histogram bucket boundaries (seconds)  |
+| `histograms.sizeBuckets`     | float[] | `[100, 1000, 10000, 100000, 1000000]`                       | Request/response size bucket boundaries (bytes) |
+
+### Exposed metrics
+
+**Route** (`collect.route: true`):
+
+| Metric                             | Type      | Labels                                                    |
+| ---------------------------------- | --------- | --------------------------------------------------------- |
+| `vrata_route_requests_total`       | counter   | `route`, `group`, `method`, `status_code`, `status_class` |
+| `vrata_route_duration_seconds`     | histogram | `route`, `group`, `method`                                |
+| `vrata_route_request_bytes_total`  | counter   | `route`, `group`                                          |
+| `vrata_route_response_bytes_total` | counter   | `route`, `group`                                          |
+| `vrata_route_inflight_requests`    | gauge     | `route`, `group`                                          |
+| `vrata_route_retries_total`        | counter   | `route`, `group`, `attempt`                               |
+| `vrata_mirror_requests_total`      | counter   | `route`, `destination`                                    |
+
+**Destination** (`collect.destination: true`):
+
+| Metric                                    | Type      | Labels                                       |
+| ----------------------------------------- | --------- | -------------------------------------------- |
+| `vrata_destination_requests_total`        | counter   | `destination`, `status_code`, `status_class` |
+| `vrata_destination_duration_seconds`      | histogram | `destination`                                |
+| `vrata_destination_inflight_requests`     | gauge     | `destination`                                |
+| `vrata_destination_circuit_breaker_state` | gauge     | `destination`                                |
+
+**Endpoint** (`collect.endpoint: true`):
+
+| Metric                            | Type      | Labels                                                   |
+| --------------------------------- | --------- | -------------------------------------------------------- |
+| `vrata_endpoint_requests_total`   | counter   | `destination`, `endpoint`, `status_code`, `status_class` |
+| `vrata_endpoint_duration_seconds` | histogram | `destination`, `endpoint`                                |
+| `vrata_endpoint_healthy`          | gauge     | `destination`, `endpoint`                                |
+| `vrata_endpoint_consecutive_5xx`  | gauge     | `destination`, `endpoint`                                |
+
+**Middleware** (`collect.middleware: true`):
+
+| Metric                              | Type      | Labels                              |
+| ----------------------------------- | --------- | ----------------------------------- |
+| `vrata_middleware_duration_seconds` | histogram | `middleware`, `type`                |
+| `vrata_middleware_rejections_total` | counter   | `middleware`, `type`, `status_code` |
+| `vrata_middleware_passed_total`     | counter   | `middleware`, `type`                |
+
+**Listener** (`collect.listener: true`):
+
+| Metric                                      | Type    | Labels                |
+| ------------------------------------------- | ------- | --------------------- |
+| `vrata_listener_connections_total`          | counter | `listener`, `address` |
+| `vrata_listener_active_connections`         | gauge   | `listener`, `address` |
+| `vrata_listener_tls_handshake_errors_total` | counter | `listener`, `address` |
+
+### Architecture
+
+Metrics are not a middleware. They are infrastructure-level instrumentation:
+
+- Each listener with `metrics` gets its own isolated `prometheus.Registry`
+- Route metrics are recorded in `Router.ServeHTTP` via `httpsnoop`
+- Destination/endpoint metrics are recorded in `recordEndpointResult`
+- Middleware timing is recorded by an automatic wrapper around each middleware
+- Retry and mirror counters are recorded inline in `forwardHandler`
+- Health, circuit breaker, and consecutive error gauges are scraped every 5 seconds by a background goroutine
+- The scrape endpoint is served on the listener itself at the configured path
+
+All metrics are collected for all routes — there is no per-entity disable. Control cardinality with the `collect` toggles, especially `endpoint` (disabled by default).
