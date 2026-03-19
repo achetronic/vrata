@@ -150,6 +150,14 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	// Reconcile listeners.
 	gw.deps.ListenerManager.Reconcile(listeners)
 
+	// Update metrics collectors with the new pool snapshot and wire them
+	// into the router so ServeHTTP can record per-route metrics.
+	mcs := gw.deps.ListenerManager.MetricsCollectors()
+	for _, mc := range mcs {
+		mc.UpdatePools(table.Pools())
+	}
+	gw.deps.Router.SetMetricsCollectors(mcs)
+
 	gw.deps.Logger.Info("gateway: config applied",
 		slog.Int("listeners", len(listeners)),
 		slog.Int("routes", len(routes)),

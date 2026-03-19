@@ -104,6 +104,7 @@ make docs           # Regenerate OpenAPI spec via swag-go v2
 | `gopkg.in/yaml.v3` | Config file parsing |
 | `log/slog` (stdlib) | Structured logging |
 | `net/http` (stdlib) | REST API server |
+| `github.com/prometheus/client_golang` | Prometheus metrics collection and exposition |
 
 ## Gotchas
 

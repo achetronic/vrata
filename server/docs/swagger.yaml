@@ -798,6 +798,12 @@ definitions:
           kilobytes. Requests exceeding this limit receive a 431 response.
           Default: 0 (no limit).
         type: integer
+      metrics:
+        allOf:
+        - $ref: '#/definitions/model.ListenerMetrics'
+        description: |-
+          Metrics enables Prometheus metrics collection for traffic on this
+          listener. When nil, no metrics are collected.
       name:
         description: Name is a human-readable label for the listener.
         type: string
@@ -815,6 +821,27 @@ definitions:
         description: |-
           TLS holds optional TLS termination configuration.
           When nil, the listener operates in plaintext mode.
+    type: object
+  model.ListenerMetrics:
+    properties:
+      collect:
+        allOf:
+        - $ref: '#/definitions/model.MetricsCollectConfig'
+        description: |-
+          Collect controls which metric dimensions are collected. Each field
+          defaults to true when the entire Collect struct is nil, except
+          Endpoint which defaults to false (high cardinality, opt-in).
+      histograms:
+        allOf:
+        - $ref: '#/definitions/model.MetricsHistogramConfig'
+        description: |-
+          Histograms tunes histogram bucket boundaries. When nil, sensible
+          defaults are used.
+      path:
+        description: |-
+          Path is the HTTP path where the Prometheus scrape endpoint is served
+          on this listener. Default: "/metrics".
+        type: string
     type: object
   model.ListenerTLS:
     properties:
@@ -913,6 +940,51 @@ definitions:
         description: QueryParams are query parameter matchers that must all match.
         items:
           $ref: '#/definitions/model.QueryParamMatcher'
+        type: array
+    type: object
+  model.MetricsCollectConfig:
+    properties:
+      destination:
+        description: |-
+          Destination enables per-destination metrics (requests, duration,
+          inflight). Default: true.
+        type: boolean
+      endpoint:
+        description: |-
+          Endpoint enables per-endpoint metrics (requests, duration, health,
+          consecutive errors). Default: false (high cardinality).
+        type: boolean
+      listener:
+        description: |-
+          Listener enables listener-level metrics (connections, TLS errors).
+          Default: true.
+        type: boolean
+      middleware:
+        description: |-
+          Middleware enables per-middleware metrics (duration, rejections,
+          passed count). Default: true.
+        type: boolean
+      route:
+        description: |-
+          Route enables per-route metrics (requests, duration, retries, mirrors,
+          inflight, request/response size). Default: true.
+        type: boolean
+    type: object
+  model.MetricsHistogramConfig:
+    properties:
+      durationBuckets:
+        description: |-
+          DurationBuckets are the upper bounds (in seconds) for duration
+          histograms. Default: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10].
+        items:
+          type: number
+        type: array
+      sizeBuckets:
+        description: |-
+          SizeBuckets are the upper bounds (in bytes) for request/response
+          size histograms. Default: [100, 1000, 10000, 100000, 1000000].
+        items:
+          type: number
         type: array
     type: object
   model.Middleware:

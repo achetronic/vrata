@@ -737,3 +737,42 @@ than 5 voting nodes. Do not bypass Raft for writes — all mutations must
 go through the replicated log.
 
 ---
+
+## Prometheus metrics as a per-listener feature, not a middleware
+
+**Date**: 2026-03-19
+**Status**: Implemented
+
+Metrics collection is configured on the `Listener` entity via the `metrics` field,
+not as a middleware in the middleware chain. Each listener has its own isolated
+`prometheus.Registry` and serves its own `/metrics` scrape endpoint.
+
+The `MetricsCollector` is a global collector injected via Dependencies, not a
+request-scoped middleware. It receives callbacks from every instrumented component:
+- `Router.ServeHTTP` records route-level metrics (requests, duration, size, inflight)
+- `recordEndpointResult` records destination and endpoint metrics
+- `wrapWithMetrics` wraps each middleware with timing/rejection tracking
+- `retryTransport.RoundTrip` records retry attempts
+- `mirrorRequest` records mirror events
+- A background goroutine scrapes gauges (health, circuit breaker state)
+
+The `collect` section controls which metric dimensions are active:
+- `route` (default: true), `destination` (default: true), `endpoint` (default: false),
+  `middleware` (default: true), `listener` (default: true)
+- `endpoint` defaults to false because it has high cardinality in large deployments
+
+All metrics are collected for all routes — there is no per-entity toggle. The
+computational cost of recording (~400ns per request) is negligible compared to
+the complexity of per-entity disable logic.
+
+**Reasoning**: A middleware in the request chain only sees request/response at
+its position — it cannot see which destination was selected, which endpoint
+responded, how many retries occurred, or the circuit breaker state. Metrics
+need transversal visibility across the entire proxy pipeline. Configuring on
+the Listener is consistent with TLS, HTTP/2, and other entry-point settings.
+
+**Do not**: Model metrics as a Middleware entity. Do not add per-route or
+per-destination metric disable toggles. Do not use the global Prometheus
+registry — each listener gets its own isolated registry.
+
+---

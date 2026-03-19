@@ -4,10 +4,15 @@
 package proxy
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/felixge/httpsnoop"
 
 	"github.com/achetronic/vrata/internal/model"
 	"github.com/achetronic/vrata/internal/proxy/celeval"
@@ -16,7 +21,9 @@ import (
 // Router holds the current routing table and dispatches incoming requests
 // to the appropriate handler. The table is swapped atomically on config reload.
 type Router struct {
-	table atomic.Pointer[RoutingTable]
+	table      atomic.Pointer[RoutingTable]
+	metricsMu  sync.RWMutex
+	collectors []*MetricsCollector
 }
 
 // RoutingTable is an immutable snapshot of the current proxy configuration.
@@ -85,6 +92,23 @@ func (r *Router) SwapTable(t *RoutingTable) {
 	}
 }
 
+type metricsCtxKey struct{}
+
+// metricsFromCtx extracts MetricsCollectors from a request context.
+func metricsFromCtx(ctx context.Context) []*MetricsCollector {
+	if v, ok := ctx.Value(metricsCtxKey{}).([]*MetricsCollector); ok {
+		return v
+	}
+	return nil
+}
+
+// SetMetricsCollectors replaces the set of active metrics collectors.
+func (r *Router) SetMetricsCollectors(mcs []*MetricsCollector) {
+	r.metricsMu.Lock()
+	r.collectors = mcs
+	r.metricsMu.Unlock()
+}
+
 // ServeHTTP dispatches the request to the matching route.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	t := r.table.Load()
@@ -92,7 +116,41 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	for i := range t.routes {
 		cr := &t.routes[i]
 		if cr.match(req) {
-			cr.handler.ServeHTTP(w, req)
+			r.metricsMu.RLock()
+			collectors := r.collectors
+			r.metricsMu.RUnlock()
+
+			if len(collectors) == 0 {
+				cr.handler.ServeHTTP(w, req)
+				return
+			}
+
+			routeName := cr.model.Name
+			groupName := ""
+			if cr.group != nil {
+				groupName = cr.group.Name
+			}
+
+			for _, mc := range collectors {
+				mc.RouteInflightInc(routeName, groupName)
+			}
+
+			reqSize := req.ContentLength
+			if reqSize < 0 {
+				reqSize = 0
+			}
+
+			ctx := context.WithValue(req.Context(), metricsCtxKey{}, collectors)
+			req = req.WithContext(ctx)
+
+			start := time.Now()
+			m := httpsnoop.CaptureMetrics(cr.handler, w, req)
+			dur := time.Since(start)
+
+			for _, mc := range collectors {
+				mc.RouteInflightDec(routeName, groupName)
+				mc.RecordRoute(routeName, groupName, req.Method, m.Code, dur, reqSize, int64(m.Written))
+			}
 			return
 		}
 	}

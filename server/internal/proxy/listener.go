@@ -26,6 +26,7 @@ type ListenerManager struct {
 type managedServer struct {
 	listener model.Listener
 	server   *http.Server
+	metrics  *MetricsCollector
 	cancel   context.CancelFunc
 	done     chan struct{}
 }
@@ -58,6 +59,9 @@ func (lm *ListenerManager) Reconcile(listeners []model.Listener) {
 				slog.String("id", id),
 				slog.String("name", ms.listener.Name),
 			)
+			if ms.metrics != nil {
+				ms.metrics.Stop()
+			}
 			ms.cancel()
 			<-ms.done
 			delete(lm.servers, id)
@@ -77,6 +81,9 @@ func (lm *ListenerManager) Reconcile(listeners []model.Listener) {
 				slog.String("id", id),
 				slog.String("name", l.Name),
 			)
+			if existing.metrics != nil {
+				existing.metrics.Stop()
+			}
 			existing.cancel()
 			<-existing.done
 			delete(lm.servers, id)
@@ -149,12 +156,33 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 		})
 	}
 
+	// Metrics collector.
+	var mc *MetricsCollector
+	if l.Metrics != nil {
+		mc = NewMetricsCollector(l.Metrics)
+		mc.Start()
+
+		metricsPath := l.Metrics.ResolvedPath()
+		routerHandler := srv.Handler
+		mux := http.NewServeMux()
+		mux.Handle(metricsPath, mc.Handler())
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			routerHandler.ServeHTTP(w, r)
+		})
+		srv.Handler = mux
+
+		lm.logger.Info("proxy: metrics enabled",
+			slog.String("id", l.ID),
+			slog.String("path", metricsPath),
+		)
+	}
 
 	done := make(chan struct{})
 
 	lm.servers[l.ID] = &managedServer{
 		listener: l,
 		server:   srv,
+		metrics:  mc,
 		cancel:   cancel,
 		done:     done,
 	}
@@ -192,12 +220,30 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 	}()
 }
 
+// MetricsCollectors returns all active metrics collectors across managed
+// listeners. Used by the gateway to update pool references after a rebuild.
+func (lm *ListenerManager) MetricsCollectors() []*MetricsCollector {
+	lm.mu.Lock()
+	defer lm.mu.Unlock()
+	var out []*MetricsCollector
+	for _, ms := range lm.servers {
+		if ms.metrics != nil {
+			out = append(out, ms.metrics)
+		}
+	}
+	return out
+}
+
 // Shutdown gracefully stops all listeners.
 func (lm *ListenerManager) Shutdown() {
+
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
 
 	for id, ms := range lm.servers {
+		if ms.metrics != nil {
+			ms.metrics.Stop()
+		}
 		ms.cancel()
 		<-ms.done
 		delete(lm.servers, id)
@@ -211,7 +257,10 @@ func sameListener(a, b model.Listener) bool {
 		a.MaxRequestHeadersKB != b.MaxRequestHeadersKB {
 		return false
 	}
-	return sameTLS(a.TLS, b.TLS)
+	if !sameTLS(a.TLS, b.TLS) {
+		return false
+	}
+	return sameMetrics(a.Metrics, b.Metrics)
 }
 
 // sameTLS compares two TLS configs for equality.
@@ -226,4 +275,15 @@ func sameTLS(a, b *model.ListenerTLS) bool {
 		a.KeyPath == b.KeyPath &&
 		a.MinVersion == b.MinVersion &&
 		a.MaxVersion == b.MaxVersion
+}
+
+// sameMetrics compares two metrics configs for equality.
+func sameMetrics(a, b *model.ListenerMetrics) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.ResolvedPath() == b.ResolvedPath()
 }

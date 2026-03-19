@@ -40,7 +40,7 @@ func buildRouteHandler(
 	case route.Redirect != nil:
 		handler = redirectHandler(route.Redirect)
 	case route.Forward != nil:
-		handler = forwardHandler(route.Forward, pools, group, route.ID, sessStore)
+		handler = forwardHandler(route.Forward, pools, group, route.ID, route.Name, sessStore)
 	default:
 		handler = http.NotFoundHandler()
 	}
@@ -74,6 +74,8 @@ func buildRouteHandler(
 			m = wrapWithConditions(m, ov)
 		}
 
+		m = wrapWithMetrics(m, mw.Name, string(mw.Type))
+
 		mws = append(mws, m)
 	}
 
@@ -96,6 +98,31 @@ func resolveOverride(mwID string, route model.Route, group *model.RouteGroup) *m
 		}
 	}
 	return nil
+}
+
+// wrapWithMetrics wraps a middleware with timing and rejection tracking.
+// It records duration, pass/reject status into any MetricsCollectors present
+// on the request context.
+func wrapWithMetrics(m middlewares.Middleware, name, mwType string) middlewares.Middleware {
+	return func(next http.Handler) http.Handler {
+		inner := m(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			collectors := metricsFromCtx(r.Context())
+			if len(collectors) == 0 {
+				inner.ServeHTTP(w, r)
+				return
+			}
+
+			start := time.Now()
+			captured := httpsnoop.CaptureMetrics(inner, w, r)
+			dur := time.Since(start)
+
+			passed := captured.Code < 400 || captured.Code == 0
+			for _, mc := range collectors {
+				mc.RecordMiddleware(name, mwType, dur, captured.Code, passed)
+			}
+		})
+	}
 }
 
 // wrapWithConditions wraps a middleware with skipWhen/onlyWhen CEL evaluation.
@@ -265,12 +292,22 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 }
 
 // forwardHandler creates a handler that proxies to upstream destinations.
-func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool, group *model.RouteGroup, routeID string, sessStore SessionStore) http.Handler {
+func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool, group *model.RouteGroup, routeID string, routeName string, sessStore SessionStore) http.Handler {
 	var pinRing *destinationRing
 	if fwd.DestinationBalancing != nil &&
 		(fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash ||
 			fwd.DestinationBalancing.Algorithm == model.DestinationLBSticky) {
 		pinRing = buildDestinationRing(fwd.Destinations)
+	}
+
+	groupName := ""
+	if group != nil {
+		groupName = group.Name
+	}
+	retryCallback := func(req *http.Request, attempt int) {
+		for _, mc := range metricsFromCtx(req.Context()) {
+			mc.RecordRetry(routeName, groupName, attempt)
+		}
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -308,20 +345,36 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 
 		proxy := pool.ReverseProxyFor(endpoint)
 
+		// Metrics: destination inflight tracking.
+		destID := pool.Destination.ID
+		collectors := metricsFromCtx(r.Context())
+		for _, mc := range collectors {
+			mc.DestInflightInc(destID)
+		}
+		defer func() {
+			for _, mc := range collectors {
+				mc.DestInflightDec(destID)
+			}
+		}()
+		upstreamStart := time.Now()
+
 		if fwd.Retry != nil {
-			proxy.Transport = newRetryTransport(proxy.Transport, fwd.Retry)
+			proxy.Transport = newRetryTransport(proxy.Transport, fwd.Retry, retryCallback)
 		}
 		if fwd.Rewrite != nil {
 			applyRewrite(r, fwd.Rewrite)
 		}
 		if fwd.Mirror != nil {
 			mirrorRequest(r, fwd.Mirror, pools)
+			for _, mc := range collectors {
+				mc.RecordMirror(routeID, fwd.Mirror.DestinationID)
+			}
 		}
 		if group != nil && group.IncludeAttemptCount {
 			r.Header.Set("X-Request-Attempt-Count", "1")
 		}
 		if fwd.Retry == nil && group != nil && group.RetryDefault != nil {
-			proxy.Transport = newRetryTransport(proxy.Transport, group.RetryDefault)
+			proxy.Transport = newRetryTransport(proxy.Transport, group.RetryDefault, retryCallback)
 		}
 		if fwd.MaxGRPCTimeout != "" {
 			if maxDur, err := time.ParseDuration(fwd.MaxGRPCTimeout); err == nil {
@@ -355,17 +408,17 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 		if fwd.Timeouts != nil && fwd.Timeouts.Request != "" {
 			if d, err := time.ParseDuration(fwd.Timeouts.Request); err == nil {
 				http.TimeoutHandler(proxy, d, "request timeout").ServeHTTP(wrappedW, r)
-				recordEndpointResult(endpoint, pool, capturedStatus)
+				recordEndpointResult(endpoint, pool, capturedStatus, collectors, time.Since(upstreamStart))
 				return
 			}
 		}
 
 		proxy.ServeHTTP(wrappedW, r)
-		recordEndpointResult(endpoint, pool, capturedStatus)
+		recordEndpointResult(endpoint, pool, capturedStatus, collectors, time.Since(upstreamStart))
 	})
 }
 
-func recordEndpointResult(ep *Endpoint, pool *DestinationPool, status int) {
+func recordEndpointResult(ep *Endpoint, pool *DestinationPool, status int, collectors []*MetricsCollector, upstreamDur time.Duration) {
 	if pool.CircuitBreaker != nil {
 		if status >= 500 {
 			pool.CircuitBreaker.RecordFailure()
@@ -375,6 +428,13 @@ func recordEndpointResult(ep *Endpoint, pool *DestinationPool, status int) {
 	}
 	if ep.OnResponse != nil {
 		ep.OnResponse(pool.Destination.ID, status)
+	}
+
+	destID := pool.Destination.ID
+	epID := ep.ID
+	for _, mc := range collectors {
+		mc.RecordDestination(destID, status, upstreamDur)
+		mc.RecordEndpoint(destID, epID, status, upstreamDur)
 	}
 }
 

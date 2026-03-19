@@ -16,14 +16,15 @@ import (
 type retryTransport struct {
 	inner   http.RoundTripper
 	retry   *model.RouteRetry
+	onRetry func(req *http.Request, attempt int)
 }
 
 // newRetryTransport wraps a transport with retry behaviour.
-func newRetryTransport(inner http.RoundTripper, retry *model.RouteRetry) http.RoundTripper {
+func newRetryTransport(inner http.RoundTripper, retry *model.RouteRetry, onRetry func(*http.Request, int)) http.RoundTripper {
 	if retry == nil || retry.Attempts == 0 {
 		return inner
 	}
-	return &retryTransport{inner: inner, retry: retry}
+	return &retryTransport{inner: inner, retry: retry, onRetry: onRetry}
 }
 
 // Unwrap returns the underlying transport for safe type unwrapping.
@@ -69,6 +70,9 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 && rt.onRetry != nil {
+			rt.onRetry(req, attempt)
+		}
 		if bodyBytes != nil {
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}

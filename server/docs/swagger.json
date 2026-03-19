@@ -2306,6 +2306,14 @@
                     "description": "MaxRequestHeadersKB limits the total size of request headers in\nkilobytes. Requests exceeding this limit receive a 431 response.\nDefault: 0 (no limit).",
                     "type": "integer"
                 },
+                "metrics": {
+                    "description": "Metrics enables Prometheus metrics collection for traffic on this\nlistener. When nil, no metrics are collected.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ListenerMetrics"
+                        }
+                    ]
+                },
                 "name": {
                     "description": "Name is a human-readable label for the listener.",
                     "type": "string"
@@ -2325,6 +2333,31 @@
                             "$ref": "#/definitions/model.ListenerTLS"
                         }
                     ]
+                }
+            }
+        },
+        "model.ListenerMetrics": {
+            "type": "object",
+            "properties": {
+                "collect": {
+                    "description": "Collect controls which metric dimensions are collected. Each field\ndefaults to true when the entire Collect struct is nil, except\nEndpoint which defaults to false (high cardinality, opt-in).",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.MetricsCollectConfig"
+                        }
+                    ]
+                },
+                "histograms": {
+                    "description": "Histograms tunes histogram bucket boundaries. When nil, sensible\ndefaults are used.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.MetricsHistogramConfig"
+                        }
+                    ]
+                },
+                "path": {
+                    "description": "Path is the HTTP path where the Prometheus scrape endpoint is served\non this listener. Default: \"/metrics\".",
+                    "type": "string"
                 }
             }
         },
@@ -2414,6 +2447,50 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.QueryParamMatcher"
+                    }
+                }
+            }
+        },
+        "model.MetricsCollectConfig": {
+            "type": "object",
+            "properties": {
+                "destination": {
+                    "description": "Destination enables per-destination metrics (requests, duration,\ninflight). Default: true.",
+                    "type": "boolean"
+                },
+                "endpoint": {
+                    "description": "Endpoint enables per-endpoint metrics (requests, duration, health,\nconsecutive errors). Default: false (high cardinality).",
+                    "type": "boolean"
+                },
+                "listener": {
+                    "description": "Listener enables listener-level metrics (connections, TLS errors).\nDefault: true.",
+                    "type": "boolean"
+                },
+                "middleware": {
+                    "description": "Middleware enables per-middleware metrics (duration, rejections,\npassed count). Default: true.",
+                    "type": "boolean"
+                },
+                "route": {
+                    "description": "Route enables per-route metrics (requests, duration, retries, mirrors,\ninflight, request/response size). Default: true.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.MetricsHistogramConfig": {
+            "type": "object",
+            "properties": {
+                "durationBuckets": {
+                    "description": "DurationBuckets are the upper bounds (in seconds) for duration\nhistograms. Default: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10].",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "sizeBuckets": {
+                    "description": "SizeBuckets are the upper bounds (in bytes) for request/response\nsize histograms. Default: [100, 1000, 10000, 100000, 1000000].",
+                    "type": "array",
+                    "items": {
+                        "type": "number"
                     }
                 }
             }
