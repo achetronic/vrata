@@ -218,7 +218,7 @@ func TestJWTClaimToHeaders(t *testing.T) {
 				Issuer:     "iss",
 				JWKsInline: jwks,
 				ClaimToHeaders: []model.JWTClaimHeader{
-					{Claim: "sub", Header: "X-User-ID"},
+					{Expr: "claims.sub", Header: "X-User-ID"},
 				},
 		
 	}

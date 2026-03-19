@@ -110,6 +110,50 @@ func (p *ClaimsProgram) Eval(claims map[string]any) bool {
 	return ok && result
 }
 
+// ClaimsStringProgram is a pre-compiled CEL program that extracts a string
+// value from JWT claims. Used by claimToHeaders.
+type ClaimsStringProgram struct {
+	program cel.Program
+}
+
+// CompileClaimsString parses a CEL expression that receives a `claims` map
+// and returns any value (converted to string at eval time).
+func CompileClaimsString(expr string) (*ClaimsStringProgram, error) {
+	env, err := cel.NewEnv(
+		cel.Variable("claims", cel.MapType(cel.StringType, cel.DynType)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating CEL env: %w", err)
+	}
+
+	ast, issues := env.Compile(expr)
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("compiling CEL expression: %w", issues.Err())
+	}
+
+	prg, err := env.Program(ast)
+	if err != nil {
+		return nil, fmt.Errorf("creating CEL program: %w", err)
+	}
+
+	return &ClaimsStringProgram{program: prg}, nil
+}
+
+// Eval evaluates the expression against the claims and returns the result as a string.
+// Returns empty string on error or nil result.
+func (p *ClaimsStringProgram) Eval(claims map[string]any) string {
+	vars := map[string]any{
+		"claims": claims,
+	}
+
+	out, _, err := p.program.Eval(vars)
+	if err != nil {
+		return ""
+	}
+
+	return fmt.Sprintf("%v", out.Value())
+}
+
 // buildRequestMap creates a map representation of the HTTP request for CEL.
 func buildRequestMap(r *http.Request) map[string]any {
 	headers := make(map[string]any, len(r.Header))

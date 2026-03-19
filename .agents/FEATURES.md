@@ -84,12 +84,16 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Headers (httpsnoop)                                               | 100%   | Unit + E2E          |
 | Access Log (httpsnoop, original path preserved)                   | 100%   | Unit + E2E          |
 | Rate Limit (eviction + stop channel)                              | 100%   | Unit + E2E          |
-| JWT (RSA/RS256-512 + EC P1363 + Ed25519, JWKS, refresh with stop) | 100%   | Unit (13) + E2E (2) |
+| JWT (RSA/RS256-512 + EC P1363 + Ed25519, JWKS, flat config)       | 100%   | Unit (14) + E2E (2) |
+| JWT assertClaims (CEL against decoded payload)                    | 100%   | Unit + E2E          |
+| JWT claimToHeaders (CEL expressions for nested/array claims)      | 100%   | Unit + E2E          |
 | ExtAuthz (HTTP + gRPC modes)                                      | 100%   | Unit (10) + E2E     |
 | ExtProc HTTP (buffered + bufferedPartial + streamed)              | 100%   | Unit (19) + E2E (2) |
 | ExtProc gRPC                                                      | 100%   | Unit                |
 | Middleware chain ordering                                         | 100%   | Unit                |
-| Middleware disable per-route                                      | 100%   | Unit                |
+| Middleware skipWhen (CEL condition to skip)                        | 100%   | E2E (3)             |
+| Middleware onlyWhen (CEL condition to activate)                    | 100%   | E2E (3)             |
+| Middleware disable per-route                                      | 100%   | Unit + E2E          |
 | Middleware override merge                                         | 100%   | Unit                |
 | Cleanup on table swap (JWT refresh, rate limiter)                 | 100%   | Code review         |
 

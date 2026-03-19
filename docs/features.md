@@ -897,8 +897,8 @@ Validates JWT tokens in the `Authorization` header. Each JWT middleware validate
     "jwksDestinationId": "auth0-server",
     "forwardJwt": true,
     "claimToHeaders": [
-      { "claim": "sub", "header": "X-User-ID" },
-      { "claim": "email", "header": "X-User-Email" }
+      { "expr": "claims.sub", "header": "X-User-ID" },
+      { "expr": "claims.user.email", "header": "X-User-Email" }
     ],
     "assertClaims": [
       "claims.role in ['admin', 'editor']",
@@ -912,25 +912,39 @@ Supports RSA (RS256/384/512), ECDSA (ES256/384/512), and Ed25519. JWKS keys are 
 
 #### Fields
 
-| Field | Type | Description |
-|---|---|---|
-| `issuer` | string | **Required**. Expected `iss` claim |
-| `audiences` | string[] | Expected `aud` values. Empty = skip audience check |
-| `jwksUri` | string | URL path to fetch JWKS from (via a Destination) |
-| `jwksDestinationId` | string | Destination ID hosting the JWKS endpoint |
-| `jwksInline` | string | Literal JWKS JSON document (for testing or static keys) |
-| `forwardJwt` | bool | Forward the `Authorization` header to the upstream |
-| `claimToHeaders` | array | Map claims to upstream request headers |
-| `assertClaims` | string[] | CEL expressions evaluated against decoded claims |
+| Field               | Type     | Description                                             |
+| ------------------- | -------- | ------------------------------------------------------- |
+| `issuer`            | string   | **Required**. Expected `iss` claim                      |
+| `audiences`         | string[] | Expected `aud` values. Empty = skip audience check      |
+| `jwksUri`           | string   | URL path to fetch JWKS from (via a Destination)         |
+| `jwksDestinationId` | string   | Destination ID hosting the JWKS endpoint                |
+| `jwksInline`        | string   | Literal JWKS JSON document (for testing or static keys) |
+| `forwardJwt`        | bool     | Forward the `Authorization` header to the upstream      |
+| `claimToHeaders`    | array    | Map claims to upstream request headers                  |
+| `assertClaims`      | string[] | CEL expressions evaluated against decoded claims        |
 
 Only one of `jwksUri` + `jwksDestinationId` or `jwksInline` is needed.
 
 #### claimToHeaders
 
-| Field | Type | Description |
-|---|---|---|
-| `claim` | string | JWT claim name (e.g. `sub`, `email`, `roles`) |
-| `header` | string | Request header to inject the claim value into |
+Each entry is a CEL expression evaluated against the decoded `claims` map. The result is injected as a request header forwarded to the upstream. Supports nested access, array indexing, and CEL functions.
+
+| Field    | Type   | Description                                                   |
+| -------- | ------ | ------------------------------------------------------------- |
+| `expr`   | string | CEL expression against `claims` map. Must return a value      |
+| `header` | string | Request header name that receives the expression result       |
+
+```json
+{
+  "claimToHeaders": [
+    { "expr": "claims.sub", "header": "X-User-ID" },
+    { "expr": "claims.user.id", "header": "X-Internal-ID" },
+    { "expr": "claims.roles[0]", "header": "X-Primary-Role" },
+    { "expr": "claims.orgs.map(o, o.name).join(',')", "header": "X-Orgs" },
+    { "expr": "string(claims.user.tier)", "header": "X-Tier" }
+  ]
+}
+```
 
 #### assertClaims
 
@@ -946,12 +960,12 @@ CEL expressions evaluated against the decoded JWT payload after signature verifi
 }
 ```
 
-| Detail | Value |
-|---|---|
-| Input variable | `claims` — the decoded JWT payload as a map |
-| All must pass | Yes (AND semantics) |
-| Failure response | 403 Forbidden |
-| Compile time | At middleware build (not per-request) |
+| Detail           | Value                                       |
+| ---------------- | ------------------------------------------- |
+| Input variable   | `claims` — the decoded JWT payload as a map |
+| All must pass    | Yes (AND semantics)                         |
+| Failure response | 403 Forbidden                               |
+| Compile time     | At middleware build (not per-request)       |
 
 #### JWKS sources
 
@@ -1225,7 +1239,9 @@ Only run the middleware when a CEL condition matches. The middleware is **inacti
 {
   "middlewareOverrides": {
     "fraud-check-id": {
-      "onlyWhen": ["request.method == 'POST' && request.path.startsWith('/api/payments')"]
+      "onlyWhen": [
+        "request.method == 'POST' && request.path.startsWith('/api/payments')"
+      ]
     }
   }
 }
@@ -1257,23 +1273,23 @@ Two middlewares in the chain. In normal flow, ExtAuthz runs and JWT is skipped. 
 
 The `request` object available in `skipWhen`/`onlyWhen` expressions:
 
-| Field | Type | Example |
-|---|---|---|
-| `request.method` | string | `"GET"`, `"POST"` |
-| `request.path` | string | `"/api/v1/users"` |
-| `request.host` | string | `"api.example.com"` |
-| `request.scheme` | string | `"https"` |
-| `request.headers` | map | `request.headers["authorization"]` |
-| `request.queryParams` | map | `request.queryParams["token"]` |
-| `request.clientIp` | string | `"10.0.0.1"` |
+| Field                 | Type   | Example                            |
+| --------------------- | ------ | ---------------------------------- |
+| `request.method`      | string | `"GET"`, `"POST"`                  |
+| `request.path`        | string | `"/api/v1/users"`                  |
+| `request.host`        | string | `"api.example.com"`                |
+| `request.scheme`      | string | `"https"`                          |
+| `request.headers`     | map    | `request.headers["authorization"]` |
+| `request.queryParams` | map    | `request.queryParams["token"]`     |
+| `request.clientIp`    | string | `"10.0.0.1"`                       |
 
 ### Override fields reference
 
-| Field | Type | Description |
-|---|---|---|
-| `disabled` | bool | Completely disable the middleware |
-| `skipWhen` | string[] | CEL expressions — skip if any matches |
-| `onlyWhen` | string[] | CEL expressions — run only if one matches |
-| `jwtProvider` | string | Select specific JWT provider by name |
-| `headers` | object | Override header manipulation config |
-| `extProc` | object | Override ExtProc settings |
+| Field         | Type     | Description                               |
+| ------------- | -------- | ----------------------------------------- |
+| `disabled`    | bool     | Completely disable the middleware         |
+| `skipWhen`    | string[] | CEL expressions — skip if any matches     |
+| `onlyWhen`    | string[] | CEL expressions — run only if one matches |
+| `jwtProvider` | string   | Select specific JWT provider by name      |
+| `headers`     | object   | Override header manipulation config       |
+| `extProc`     | object   | Override ExtProc settings                 |

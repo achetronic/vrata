@@ -41,11 +41,10 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 	}
 
 	v := &jwtValidator{
-		issuer:         cfg.Issuer,
-		audiences:      cfg.Audiences,
-		forward:        cfg.ForwardJWT,
-		claimToHeaders: cfg.ClaimToHeaders,
-		stop:           make(chan struct{}),
+		issuer:    cfg.Issuer,
+		audiences: cfg.Audiences,
+		forward:   cfg.ForwardJWT,
+		stop:      make(chan struct{}),
 	}
 
 	if cfg.JWKsInline != "" {
@@ -77,6 +76,24 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 			continue
 		}
 		claimsPrograms = append(claimsPrograms, prg)
+	}
+
+	// Pre-compile claimToHeaders CEL expressions.
+	type compiledClaimHeader struct {
+		program *celeval.ClaimsStringProgram
+		header  string
+	}
+	var claimHeaders []compiledClaimHeader
+	for _, cth := range cfg.ClaimToHeaders {
+		prg, err := celeval.CompileClaimsString(cth.Expr)
+		if err != nil {
+			slog.Error("jwt: invalid claimToHeaders expression, skipping",
+				slog.String("expr", cth.Expr),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		claimHeaders = append(claimHeaders, compiledClaimHeader{program: prg, header: cth.Header})
 	}
 
 	mw := Middleware(func(next http.Handler) http.Handler {
@@ -128,9 +145,9 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 				return
 			}
 
-			for _, cth := range v.claimToHeaders {
-				if val, ok := claims[cth.Claim]; ok {
-					r.Header.Set(cth.Header, fmt.Sprintf("%v", val))
+			for _, ch := range claimHeaders {
+				if val := ch.program.Eval(claims); val != "" {
+					r.Header.Set(ch.header, val)
 				}
 			}
 			if !v.forward {
@@ -162,11 +179,10 @@ type jwtHeader struct {
 }
 
 type jwtValidator struct {
-	issuer         string
-	audiences      []string
-	forward        bool
-	claimToHeaders []model.JWTClaimHeader
-	keys           []verifierKey
+	issuer    string
+	audiences []string
+	forward   bool
+	keys      []verifierKey
 	jwksURL        string
 	transport      http.RoundTripper
 	mu             sync.RWMutex

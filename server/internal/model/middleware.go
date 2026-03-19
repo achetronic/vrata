@@ -154,12 +154,17 @@ type JWTConfig struct {
 	AssertClaims []string `json:"assertClaims,omitempty" yaml:"assertClaims,omitempty"`
 }
 
-// JWTClaimHeader maps a JWT claim to a request header forwarded upstream.
+// JWTClaimHeader extracts a value from the JWT claims using a CEL expression
+// and injects it as a request header forwarded upstream.
 type JWTClaimHeader struct {
-	// Claim is the JWT claim name (e.g. "sub", "email").
-	Claim string `json:"claim" yaml:"claim"`
+	// Expr is a CEL expression evaluated against the decoded `claims` map.
+	// Must return a string value. Supports nested access, array indexing,
+	// and CEL built-in functions.
+	// Examples: "claims.sub", "claims.user.id", "claims.roles[0]",
+	//           "claims.orgs.map(o, o.name).join(',')"
+	Expr string `json:"expr" yaml:"expr"`
 
-	// Header is the request header name that receives the claim value.
+	// Header is the request header name that receives the expression result.
 	Header string `json:"header" yaml:"header"`
 }
 
