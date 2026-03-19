@@ -158,7 +158,7 @@ func buildCircuitBreaker(d model.Destination) *CircuitBreaker {
 		return nil
 	}
 	cb := d.Options.CircuitBreaker
-	return NewCircuitBreaker(cb.MaxConnections, cb.MaxPendingRequests, cb.MaxRequests, cb.MaxRetries)
+	return NewCircuitBreaker(cb.MaxConnections, cb.MaxPendingRequests, cb.MaxRequests, cb.MaxRetries, cb.FailureThreshold, cb.OpenDuration)
 }
 
 // buildTLSConfig creates a tls.Config from Destination TLS options.

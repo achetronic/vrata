@@ -410,16 +410,29 @@ func forwardHandler(fwd *model.ForwardAction, onError []model.OnErrorRule, pools
 			},
 		})
 
+		// Request timeout: route takes precedence, destination is the fallback.
+		var requestTimeout time.Duration
 		if fwd.Timeouts != nil && fwd.Timeouts.Request != "" {
 			if d, err := time.ParseDuration(fwd.Timeouts.Request); err == nil {
-				http.TimeoutHandler(proxy, d, "").ServeHTTP(wrappedW, r)
-				if !headerWritten && transportErr != nil {
-					pe := &ProxyError{Type: model.ProxyErrTimeout, Status: http.StatusGatewayTimeout, Destination: destID, Endpoint: endpoint.ID, Message: "request timeout"}
-					handleProxyError(w, r, pe, onError, pools, sessStore)
-				}
-				recordEndpointResult(endpoint, pool, capturedStatus, collectors, time.Since(upstreamStart))
-				return
+				requestTimeout = d
 			}
+		}
+		if requestTimeout == 0 && pool.Destination.Options != nil &&
+			pool.Destination.Options.Timeouts != nil &&
+			pool.Destination.Options.Timeouts.Request != "" {
+			if d, err := time.ParseDuration(pool.Destination.Options.Timeouts.Request); err == nil {
+				requestTimeout = d
+			}
+		}
+
+		if requestTimeout > 0 {
+			http.TimeoutHandler(proxy, requestTimeout, "").ServeHTTP(wrappedW, r)
+			if !headerWritten && transportErr != nil {
+				pe := &ProxyError{Type: model.ProxyErrTimeout, Status: http.StatusGatewayTimeout, Destination: destID, Endpoint: endpoint.ID, Message: "request timeout"}
+				handleProxyError(w, r, pe, onError, pools, sessStore)
+			}
+			recordEndpointResult(endpoint, pool, capturedStatus, collectors, time.Since(upstreamStart))
+			return
 		}
 
 		proxy.ServeHTTP(wrappedW, r)

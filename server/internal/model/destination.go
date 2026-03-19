@@ -324,7 +324,8 @@ type TLSOptions struct {
 	MaxVersion string `json:"maxVersion,omitempty"`
 }
 
-// CircuitBreakerOptions limits in-flight traffic to the upstream.
+// CircuitBreakerOptions limits in-flight traffic to the upstream and
+// controls when the circuit opens after consecutive failures.
 type CircuitBreakerOptions struct {
 	// MaxConnections is the maximum number of concurrent TCP connections.
 	MaxConnections uint32 `json:"maxConnections,omitempty"`
@@ -337,6 +338,14 @@ type CircuitBreakerOptions struct {
 
 	// MaxRetries is the maximum number of concurrent retries.
 	MaxRetries uint32 `json:"maxRetries,omitempty"`
+
+	// FailureThreshold is the number of consecutive failures required to
+	// open the circuit. Default: 5.
+	FailureThreshold uint32 `json:"failureThreshold,omitempty"`
+
+	// OpenDuration is how long the circuit stays open before transitioning
+	// to half-open and allowing a single probe request. Default: "30s".
+	OpenDuration string `json:"openDuration,omitempty"`
 }
 
 // HealthCheckOptions configures active HTTP health checking.

@@ -30,6 +30,7 @@ type CircuitBreaker struct {
 	maxPendingRequests uint32
 	maxRequests        uint32
 	maxRetries         uint32
+	failureThreshold   int64
 
 	activeConnections atomic.Int64
 	activeRequests    atomic.Int64
@@ -43,7 +44,9 @@ type CircuitBreaker struct {
 }
 
 // NewCircuitBreaker creates a circuit breaker with the given thresholds.
-func NewCircuitBreaker(maxConn, maxPending, maxReq, maxRetry uint32) *CircuitBreaker {
+// failureThreshold is the number of consecutive failures to open the circuit (0 = default 5).
+// openDuration is how long the circuit stays open ("" or invalid = default 30s).
+func NewCircuitBreaker(maxConn, maxPending, maxReq, maxRetry, failThreshold uint32, openDur string) *CircuitBreaker {
 	if maxConn == 0 {
 		maxConn = 1024
 	}
@@ -56,12 +59,23 @@ func NewCircuitBreaker(maxConn, maxPending, maxReq, maxRetry uint32) *CircuitBre
 	if maxRetry == 0 {
 		maxRetry = 3
 	}
+	ft := int64(defaultFailureThreshold)
+	if failThreshold > 0 {
+		ft = int64(failThreshold)
+	}
+	od := defaultOpenDuration
+	if openDur != "" {
+		if d, err := time.ParseDuration(openDur); err == nil {
+			od = d
+		}
+	}
 	return &CircuitBreaker{
 		maxConnections:     maxConn,
 		maxPendingRequests: maxPending,
 		maxRequests:        maxReq,
 		maxRetries:         maxRetry,
-		openDuration:       defaultOpenDuration,
+		failureThreshold:   ft,
+		openDuration:       od,
 	}
 }
 
@@ -105,7 +119,7 @@ func (cb *CircuitBreaker) RecordSuccess() {
 // RecordFailure marks a failed request. Opens the circuit after consecutive failures.
 func (cb *CircuitBreaker) RecordFailure() {
 	failures := cb.consecutiveFailures.Add(1)
-	if failures >= defaultFailureThreshold {
+	if failures >= cb.failureThreshold {
 		cb.state.Store(int32(CircuitOpen))
 		cb.mu.Lock()
 		cb.lastFailure = time.Now()

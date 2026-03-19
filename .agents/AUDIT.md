@@ -14,16 +14,16 @@
 | 2   | `proxy/handler.go`             | `_ = store.Set(...)` session store error discarded — now logs via `slog.Warn`         | **FIXED**                         |
 | 3   | `proxy/pool.go`                | `_ = dp.SessionStore.Set(...)` same issue — now logs via `slog.Warn`                  | **FIXED**                         |
 | 4   | `proxy/outlier.go`             | Ticker hardcoded 10s ignoring `Interval` config — ticker changed to 1s resolution     | **FIXED**                         |
-| 5   | `proxy/circuit.go`             | `openDuration` (30s) and `failureThreshold` (5) hardcoded, not configurable           | **DEFERRED** — tracked in TODO.md |
+| 5   | `proxy/circuit.go`             | `openDuration` and `failureThreshold` now configurable via `CircuitBreakerOptions`    | **FIXED**                         |
 | 6   | `proxy/handler.go`             | `unwrapHTTPTransport` dead code — removed                                             | **FIXED**                         |
 | 7   | `proxy/pool.go`                | `roundRobinCounter` dead code — removed                                               | **FIXED**                         |
 | 8   | `proxy/middlewares/extproc.go` | `interceptResponseWriter` manual ResponseWriter                                       | **DEFERRED** — tracked in TODO.md |
 | 9   | `api/handlers/sync.go`         | `http.Error` in API handler — replaced with `respond.Error`                           | **FIXED**                         |
 | 10  | `api/router.go`                | `http.Error` with raw `err.Error()` — replaced with `respond.Error` with safe message | **FIXED**                         |
-| 11  | `model/destination.go`         | `DestinationTimeouts.Request` not wired to `http.Client.Timeout`                      | **DEFERRED** — tracked in TODO.md |
+| 11  | `model/destination.go`         | `DestinationTimeouts.Request` wired as fallback in forwardHandler                     | **FIXED**                         |
 | 12  | `proxy/metrics.go`             | `_ = sizeBuckets` dead code — removed                                                 | **FIXED**                         |
 
-**9 fixed, 3 deferred (tracked in TODO.md)**
+**11 fixed, 1 deferred (ExtProc interceptResponseWriter — tracked in TODO.md)**
 
 ---
 
@@ -87,10 +87,10 @@
 
 | Severity  | Total   | Fixed  | Deferred | Acceptable                   |
 | --------- | ------- | ------ | -------- | ---------------------------- |
-| Critical  | 12      | 9      | 3        | 0                            |
+| Critical  | 12      | 11     | 1        | 0                            |
 | High      | 48      | 48     | 0        | 0                            |
-| Medium    | 28+     | 20+    | 0        | 8 (partial coverage via e2e) |
+| Medium    | 28+     | 22+    | 0        | 6 (partial coverage via e2e) |
 | Low       | 15      | 8      | 0        | 7                            |
-| **Total** | **103** | **85** | **3**    | **15**                       |
+| **Total** | **103** | **89** | **1**    | **13**                       |
 
-**Tests**: 224 unit tests passing, 0 failures. Build + vet clean.
+**Tests**: 226 unit tests passing, 0 failures. Build + vet clean.

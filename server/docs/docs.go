@@ -1464,6 +1464,10 @@ const docTemplate = `{
         "model.CircuitBreakerOptions": {
             "type": "object",
             "properties": {
+                "failureThreshold": {
+                    "description": "FailureThreshold is the number of consecutive failures required to\nopen the circuit. Default: 5.",
+                    "type": "integer"
+                },
                 "maxConnections": {
                     "description": "MaxConnections is the maximum number of concurrent TCP connections.",
                     "type": "integer"
@@ -1479,6 +1483,10 @@ const docTemplate = `{
                 "maxRetries": {
                     "description": "MaxRetries is the maximum number of concurrent retries.",
                     "type": "integer"
+                },
+                "openDuration": {
+                    "description": "OpenDuration is how long the circuit stays open before transitioning\nto half-open and allowing a single probe request. Default: \"30s\".",
+                    "type": "string"
                 }
             }
         },
