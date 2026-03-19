@@ -213,17 +213,15 @@ type StickyOptions struct {
 	Cookie *DestinationPinCookie `json:"cookie,omitempty" yaml:"cookie,omitempty"`
 }
 
-// RouteTimeouts controls how long a request is allowed to take.
+// RouteTimeouts controls how long a request is allowed to take at the
+// route level. This is the outermost watchdog — if the total time exceeds
+// the limit, Vrata cuts the request regardless of what the destination
+// timeouts allow.
 type RouteTimeouts struct {
 	// Request is the total time the entire request may take from the moment
 	// Vrata receives the first byte from the client until the response is
 	// fully sent. Accepts Go duration strings (e.g. "30s", "1m").
 	Request string `json:"request,omitempty" yaml:"request,omitempty"`
-
-	// Idle is the maximum time a connection may remain open with no data
-	// flowing. Accepts Go duration strings. Useful for long-lived streaming
-	// connections that may stall.
-	Idle string `json:"idle,omitempty" yaml:"idle,omitempty"`
 }
 
 // RetryCondition is a semantic name for a class of upstream failures that

@@ -849,3 +849,88 @@ add a separate `dataDir` for Raft. Do not use `address` for a URL field. Do not
 add CLI flags for settings that belong in the config file.
 
 ---
+
+## Timeout naming convention: semantic names mapped to Go fields
+
+**Date**: 2026-03-19
+**Status**: Decided — not yet implemented
+
+All configurable timeouts use semantic names that describe what the user is
+waiting for, not Go struct field names. The mapping is authoritative — every
+timeout across listeners, destinations, and middlewares must follow these names.
+
+### Listener timeouts (`listener.timeouts`)
+
+| Semantic name          | Go field              | Default | Description                                                                     |
+|------------------------|-----------------------|---------|---------------------------------------------------------------------------------|
+| `clientHeader`         | `Server.ReadHeaderTimeout` | 10s     | Time for the client to send all request headers                                 |
+| `clientRequest`        | `Server.ReadTimeout`       | 60s     | Time to receive the complete client request (headers + body)                    |
+| `clientResponse`       | `Server.WriteTimeout`      | 60s     | Time to send the complete response to the client                                |
+| `idleBetweenRequests`  | `Server.IdleTimeout`       | 120s    | How long a connection stays open between one request and the next from the same client |
+
+### Destination timeouts (`destination.options.timeouts`)
+
+| Semantic name          | Go field                          | Default | Description                                                                     |
+|------------------------|-----------------------------------|---------|---------------------------------------------------------------------------------|
+| `request`              | `Client.Timeout`                  | 30s     | Total budget for the entire HTTP call (connect + TLS + send + wait + receive)   |
+| `connect`              | `Dialer.Timeout`                  | 5s      | Establish TCP connection with the endpoint                                      |
+| `dualStackFallback`    | `Dialer.FallbackDelay`            | 300ms   | How long to wait before trying the other IP family in parallel (IPv4↔IPv6)      |
+| `tlsHandshake`         | `Transport.TLSHandshakeTimeout`   | 5s      | Complete the TLS handshake after TCP connect                                    |
+| `responseHeader`       | `Transport.ResponseHeaderTimeout` | 10s     | Wait for the upstream to send the first byte of response headers                |
+| `expectContinue`       | `Transport.ExpectContinueTimeout` | 1s      | Wait for 100-Continue before sending the request body                           |
+| `idleConnection`       | `Transport.IdleConnTimeout`       | 90s     | How long to keep a reusable connection idle before closing it                   |
+
+### Middleware timeouts (per-middleware field)
+
+| Middleware | Field                  | Default | Description                                                              |
+|------------|------------------------|---------|--------------------------------------------------------------------------|
+| ExtAuthz   | `decisionTimeout`      | 5s      | Total time for the auth service to return allow/deny                     |
+| ExtProc    | `phaseTimeout`         | 200ms   | Time for the processor to respond to each phase message                  |
+| JWT        | `jwksRetrievalTimeout` | 10s     | Time to download the JWKS document from the remote endpoint              |
+
+### Relationship between layers
+
+```
+Client ──── Listener ──── Vrata ──── Destination ──── Upstream
+
+  clientHeader ──────────┐
+  clientRequest ─────────┤ listener.timeouts
+  clientResponse ────────┤
+  idleBetweenRequests ───┘
+                              │
+                       forward.timeouts.request (route — external watchdog)
+                              │
+                              ├─ request ──────────────┐
+                              ├─ connect               │
+                              ├─ dualStackFallback     │
+                              ├─ tlsHandshake          ├─ destination.options.timeouts
+                              ├─ responseHeader        │
+                              ├─ expectContinue        │
+                              └─ idleConnection ───────┘
+```
+
+`forward.timeouts.request` on the route is the outermost watchdog (http.TimeoutHandler).
+`destination.options.timeouts.request` is the http.Client ceiling.
+Partial destination timeouts live inside both. The most restrictive always wins.
+
+Middleware timeouts (`decisionTimeout`, `phaseTimeout`, `jwksRetrievalTimeout`)
+are total budgets for their specific call, encompassing the destination timeouts
+of the service they connect to.
+
+### Migration
+
+- `destination.options.connectTimeout` (old flat field) is replaced by
+  `destination.options.timeouts.connect`.
+- `forward.timeouts.idle` (old route field) is replaced by
+  `destination.options.timeouts.idleConnection`.
+- `forward.timeouts.request` stays on the route — it is an external watchdog,
+  not a destination property.
+- `extAuthz.timeout` is renamed to `extAuthz.decisionTimeout`.
+- `extProc.timeout` is renamed to `extProc.phaseTimeout`.
+
+**Do not**: Use Go field names in the API. Do not invent new timeout names
+without adding them to this table. Do not put connection-level timeouts on
+routes — they belong on the destination. The route only controls the external
+watchdog (`forward.timeouts.request`).
+
+---

@@ -37,6 +37,35 @@ type Listener struct {
 	// Metrics enables Prometheus metrics collection for traffic on this
 	// listener. When nil, no metrics are collected.
 	Metrics *ListenerMetrics `json:"metrics,omitempty" yaml:"metrics,omitempty"`
+
+	// Timeouts controls how long the listener waits at each stage of the
+	// client connection lifecycle. When nil, sensible defaults are used.
+	Timeouts *ListenerTimeouts `json:"timeouts,omitempty" yaml:"timeouts,omitempty"`
+}
+
+// ListenerTimeouts configures timeout durations for client connections.
+// All fields accept Go duration strings (e.g. "10s", "1m").
+type ListenerTimeouts struct {
+	// ClientHeader is the maximum time for the client to send all request
+	// headers. Protects against slowloris attacks.
+	// Default: "10s".
+	ClientHeader string `json:"clientHeader,omitempty" yaml:"clientHeader,omitempty"`
+
+	// ClientRequest is the maximum time to receive the complete request
+	// from the client, including headers and body. Set higher for routes
+	// that accept large uploads.
+	// Default: "60s".
+	ClientRequest string `json:"clientRequest,omitempty" yaml:"clientRequest,omitempty"`
+
+	// ClientResponse is the maximum time to send the complete response
+	// back to the client. Set higher for streaming or large responses.
+	// Default: "60s".
+	ClientResponse string `json:"clientResponse,omitempty" yaml:"clientResponse,omitempty"`
+
+	// IdleBetweenRequests is how long a keep-alive connection stays open
+	// between one request and the next from the same client.
+	// Default: "120s".
+	IdleBetweenRequests string `json:"idleBetweenRequests,omitempty" yaml:"idleBetweenRequests,omitempty"`
 }
 
 // ListenerMetrics configures Prometheus metrics collection on a Listener.

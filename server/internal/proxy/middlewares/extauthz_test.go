@@ -82,7 +82,7 @@ func TestExtAuthzDeny(t *testing.T) {
 func TestExtAuthzFailureModeAllow(t *testing.T) {
 	cfg := &model.ExtAuthzConfig{
 		DestinationID:    "authz-1",
-		Timeout:          "50ms",
+		DecisionTimeout:  "50ms",
 		FailureModeAllow: true,
 	}
 
@@ -107,7 +107,7 @@ func TestExtAuthzFailureModeAllow(t *testing.T) {
 func TestExtAuthzFailureModeClose(t *testing.T) {
 	cfg := &model.ExtAuthzConfig{
 		DestinationID:    "authz-1",
-		Timeout:          "50ms",
+		DecisionTimeout:  "50ms",
 		FailureModeAllow: false,
 	}
 
@@ -309,7 +309,7 @@ func TestExtAuthzGRPCFailureModeAllow(t *testing.T) {
 	cfg := &model.ExtAuthzConfig{
 		DestinationID:    "authz-1",
 		Mode:             "grpc",
-		Timeout:          "50ms",
+		DecisionTimeout:  "50ms",
 		FailureModeAllow: true,
 	}
 	services := map[string]Service{"authz-1": {BaseURL: "http://127.0.0.1:1"}}

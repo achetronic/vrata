@@ -396,13 +396,6 @@ func forwardHandler(fwd *model.ForwardAction, onError []model.OnErrorRule, pools
 				}
 			}
 		}
-		if fwd.Timeouts != nil && fwd.Timeouts.Idle != "" {
-			if d, err := time.ParseDuration(fwd.Timeouts.Idle); err == nil {
-				if t, ok := unwrapHTTPTransport(proxy.Transport); ok {
-					t.IdleConnTimeout = d
-				}
-			}
-		}
 
 		capturedStatus := 0
 		headerWritten := false

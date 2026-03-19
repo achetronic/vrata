@@ -91,9 +91,9 @@ func (d Destination) ResolvedEndpoints() []Endpoint {
 
 // DestinationOptions holds advanced configuration for a Destination.
 type DestinationOptions struct {
-	// ConnectTimeout is the timeout for establishing a new TCP connection.
-	// Accepts Go duration strings (e.g. "3s", "500ms"). Default: 5s.
-	ConnectTimeout string `json:"connectTimeout,omitempty"`
+	// Timeouts controls how long each stage of the connection to this
+	// upstream is allowed to take. When nil, sensible defaults are used.
+	Timeouts *DestinationTimeouts `json:"timeouts,omitempty"`
 
 	// TLS controls upstream TLS / mTLS configuration.
 	TLS *TLSOptions `json:"tls,omitempty"`
@@ -124,6 +124,43 @@ type DestinationOptions struct {
 	// MaxRequestsPerConnection drains a connection after this many requests.
 	// 0 means unlimited.
 	MaxRequestsPerConnection uint32 `json:"maxRequestsPerConnection,omitempty"`
+}
+
+// DestinationTimeouts configures timeout durations for connections to an
+// upstream destination. All fields accept Go duration strings (e.g. "5s", "200ms").
+type DestinationTimeouts struct {
+	// Request is the total budget for the entire HTTP call to this
+	// destination — connect, TLS, send request, wait, receive response.
+	// The absolute ceiling. Default: "30s".
+	Request string `json:"request,omitempty"`
+
+	// Connect is the maximum time to establish a TCP connection with
+	// the endpoint. Default: "5s".
+	Connect string `json:"connect,omitempty"`
+
+	// DualStackFallback is how long to wait before trying the other IP
+	// family in parallel (IPv4↔IPv6, RFC 6555 Happy Eyeballs).
+	// Default: "300ms".
+	DualStackFallback string `json:"dualStackFallback,omitempty"`
+
+	// TLSHandshake is the maximum time to complete the TLS handshake
+	// after the TCP connection is established. Default: "5s".
+	TLSHandshake string `json:"tlsHandshake,omitempty"`
+
+	// ResponseHeader is the maximum time to wait for the upstream to
+	// send the first byte of the response headers after the request
+	// has been fully sent. Default: "10s".
+	ResponseHeader string `json:"responseHeader,omitempty"`
+
+	// ExpectContinue is the maximum time to wait for the upstream's
+	// 100-Continue response before sending the request body. Only
+	// applies to requests with Expect: 100-continue. Default: "1s".
+	ExpectContinue string `json:"expectContinue,omitempty"`
+
+	// IdleConnection is how long a reusable connection to this
+	// destination stays idle in the pool before being closed.
+	// Default: "90s".
+	IdleConnection string `json:"idleConnection,omitempty"`
 }
 
 // EndpointBalancing controls how Vrata selects an endpoint within a Destination.

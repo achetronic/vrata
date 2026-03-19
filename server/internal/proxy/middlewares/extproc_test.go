@@ -43,7 +43,7 @@ func newExtProcCfg(processorURL string) *model.ExtProcConfig {
 	return &model.ExtProcConfig{
 		DestinationID: "proc-1",
 		Mode:          "http",
-		Timeout:       "2s",
+		PhaseTimeout:   "2s",
 	}
 }
 
@@ -190,7 +190,7 @@ func TestExtProcAllowOnError(t *testing.T) {
 	cfg := &model.ExtProcConfig{
 		DestinationID: "proc-1",
 		Mode:          "http",
-		Timeout:       "50ms",
+		PhaseTimeout:   "50ms",
 		AllowOnError:  true,
 	}
 	services := map[string]Service{
@@ -213,7 +213,7 @@ func TestExtProcFailClosed(t *testing.T) {
 	cfg := &model.ExtProcConfig{
 		DestinationID: "proc-1",
 		Mode:          "http",
-		Timeout:       "50ms",
+		PhaseTimeout:   "50ms",
 		AllowOnError:  false,
 		StatusOnError: 503,
 	}

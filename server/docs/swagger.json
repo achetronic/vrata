@@ -1581,10 +1581,6 @@
                         }
                     ]
                 },
-                "connectTimeout": {
-                    "description": "ConnectTimeout is the timeout for establishing a new TCP connection.\nAccepts Go duration strings (e.g. \"3s\", \"500ms\"). Default: 5s.",
-                    "type": "string"
-                },
                 "discovery": {
                     "description": "Discovery enables dynamic endpoint resolution.\nWhen nil, Vrata connects directly to host:port.",
                     "allOf": [
@@ -1625,6 +1621,14 @@
                         }
                     ]
                 },
+                "timeouts": {
+                    "description": "Timeouts controls how long each stage of the connection to this\nupstream is allowed to take. When nil, sensible defaults are used.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.DestinationTimeouts"
+                        }
+                    ]
+                },
                 "tls": {
                     "description": "TLS controls upstream TLS / mTLS configuration.",
                     "allOf": [
@@ -1658,6 +1662,39 @@
                 "weight": {
                     "description": "Weight controls the proportion of traffic. Must sum to 100 across\ndestinations when more than one is defined.",
                     "type": "integer"
+                }
+            }
+        },
+        "model.DestinationTimeouts": {
+            "type": "object",
+            "properties": {
+                "connect": {
+                    "description": "Connect is the maximum time to establish a TCP connection with\nthe endpoint. Default: \"5s\".",
+                    "type": "string"
+                },
+                "dualStackFallback": {
+                    "description": "DualStackFallback is how long to wait before trying the other IP\nfamily in parallel (IPv4↔IPv6, RFC 6555 Happy Eyeballs).\nDefault: \"300ms\".",
+                    "type": "string"
+                },
+                "expectContinue": {
+                    "description": "ExpectContinue is the maximum time to wait for the upstream's\n100-Continue response before sending the request body. Only\napplies to requests with Expect: 100-continue. Default: \"1s\".",
+                    "type": "string"
+                },
+                "idleConnection": {
+                    "description": "IdleConnection is how long a reusable connection to this\ndestination stays idle in the pool before being closed.\nDefault: \"90s\".",
+                    "type": "string"
+                },
+                "request": {
+                    "description": "Request is the total budget for the entire HTTP call to this\ndestination — connect, TLS, send request, wait, receive response.\nThe absolute ceiling. Default: \"30s\".",
+                    "type": "string"
+                },
+                "responseHeader": {
+                    "description": "ResponseHeader is the maximum time to wait for the upstream to\nsend the first byte of the response headers after the request\nhas been fully sent. Default: \"10s\".",
+                    "type": "string"
+                },
+                "tlsHandshake": {
+                    "description": "TLSHandshake is the maximum time to complete the TLS handshake\nafter the TCP connection is established. Default: \"5s\".",
+                    "type": "string"
                 }
             }
         },
@@ -1776,6 +1813,10 @@
         "model.ExtAuthzConfig": {
             "type": "object",
             "properties": {
+                "decisionTimeout": {
+                    "description": "DecisionTimeout is the maximum time for the authorization service to\nreturn an allow/deny decision. Covers the entire call including\nconnect, TLS, and response. Default: \"5s\".",
+                    "type": "string"
+                },
                 "destinationId": {
                     "description": "DestinationID references the Destination that hosts the authz service.",
                     "type": "string"
@@ -1818,10 +1859,6 @@
                 },
                 "path": {
                     "description": "Path is the authorization endpoint path (e.g. \"/oauth2/auth\").",
-                    "type": "string"
-                },
-                "timeout": {
-                    "description": "Timeout is the check request deadline (e.g. \"5s\").",
                     "type": "string"
                 }
             }
@@ -1916,6 +1953,10 @@
                         }
                     ]
                 },
+                "phaseTimeout": {
+                    "description": "PhaseTimeout is the maximum time for the processor to respond to each\nphase message. If the processor does not respond within this duration,\nthe phase is treated as a failure (subject to AllowOnError).\nDefault: \"200ms\".",
+                    "type": "string"
+                },
                 "phases": {
                     "description": "Phases controls which parts of the HTTP transaction are sent to the\nprocessor. If nil, only request and response headers are sent.",
                     "allOf": [
@@ -1927,10 +1968,6 @@
                 "statusOnError": {
                     "description": "StatusOnError is the HTTP status code returned to the client when\nthe processor fails and AllowOnError is false. Default: 500.",
                     "type": "integer"
-                },
-                "timeout": {
-                    "description": "Timeout is the per-message deadline (e.g. \"200ms\", \"2s\").\nIf the processor does not respond within this duration, the phase\nis treated as a failure (subject to AllowOnError). Default: \"200ms\".",
-                    "type": "string"
                 }
             }
         },
@@ -2265,15 +2302,19 @@
                     "type": "string"
                 },
                 "jwksDestinationId": {
-                    "description": "JWKsDestinationID references the Destination that hosts the JWKS endpoint.\nRequired when JWKsURI is set.",
+                    "description": "JWKsDestinationID references the Destination that hosts the JWKS endpoint.\nRequired when JWKsPath is set.",
                     "type": "string"
                 },
                 "jwksInline": {
-                    "description": "JWKsInline is a literal JSON Web Key Set document.\nMutually exclusive with JWKsURI.",
+                    "description": "JWKsInline is a literal JSON Web Key Set document.\nMutually exclusive with JWKsPath.",
                     "type": "string"
                 },
-                "jwksUri": {
-                    "description": "JWKsURI is the URL path from which the JSON Web Key Set is fetched.\nWhen set, JWKsDestinationID must also be set.\nMutually exclusive with JWKsInline.",
+                "jwksPath": {
+                    "description": "JWKsPath is the HTTP path on the destination from which the JSON Web\nKey Set is fetched (e.g. \"/.well-known/jwks.json\").\nWhen set, JWKsDestinationID must also be set.\nMutually exclusive with JWKsInline.",
+                    "type": "string"
+                },
+                "jwksRetrievalTimeout": {
+                    "description": "JWKsRetrievalTimeout is the maximum time to download the JWKS\ndocument from the remote endpoint. Only applies when JWKsPath is set.\nDefault: \"10s\".",
                     "type": "string"
                 }
             }
@@ -2325,6 +2366,14 @@
                 "serverName": {
                     "description": "ServerName sets the \"Server\" response header.\nWhen empty, no Server header is added.",
                     "type": "string"
+                },
+                "timeouts": {
+                    "description": "Timeouts controls how long the listener waits at each stage of the\nclient connection lifecycle. When nil, sensible defaults are used.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ListenerTimeouts"
+                        }
+                    ]
                 },
                 "tls": {
                     "description": "TLS holds optional TLS termination configuration.\nWhen nil, the listener operates in plaintext mode.",
@@ -2378,6 +2427,27 @@
                 },
                 "minVersion": {
                     "description": "MinVersion is the minimum TLS protocol version to accept.\nAccepted values: \"TLSv1_0\", \"TLSv1_1\", \"TLSv1_2\", \"TLSv1_3\".\nDefaults to \"TLSv1_2\" if empty.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.ListenerTimeouts": {
+            "type": "object",
+            "properties": {
+                "clientHeader": {
+                    "description": "ClientHeader is the maximum time for the client to send all request\nheaders. Protects against slowloris attacks.\nDefault: \"10s\".",
+                    "type": "string"
+                },
+                "clientRequest": {
+                    "description": "ClientRequest is the maximum time to receive the complete request\nfrom the client, including headers and body. Set higher for routes\nthat accept large uploads.\nDefault: \"60s\".",
+                    "type": "string"
+                },
+                "clientResponse": {
+                    "description": "ClientResponse is the maximum time to send the complete response\nback to the client. Set higher for streaming or large responses.\nDefault: \"60s\".",
+                    "type": "string"
+                },
+                "idleBetweenRequests": {
+                    "description": "IdleBetweenRequests is how long a keep-alive connection stays open\nbetween one request and the next from the same client.\nDefault: \"120s\".",
                     "type": "string"
                 }
             }
@@ -3134,10 +3204,6 @@
         "model.RouteTimeouts": {
             "type": "object",
             "properties": {
-                "idle": {
-                    "description": "Idle is the maximum time a connection may remain open with no data\nflowing. Accepts Go duration strings. Useful for long-lived streaming\nconnections that may stall.",
-                    "type": "string"
-                },
                 "request": {
                     "description": "Request is the total time the entire request may take from the moment\nVrata receives the first byte from the client until the response is\nfully sent. Accepts Go duration strings (e.g. \"30s\", \"1m\").",
                     "type": "string"

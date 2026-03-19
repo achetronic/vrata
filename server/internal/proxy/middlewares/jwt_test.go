@@ -300,7 +300,7 @@ func TestJWTRemoteJWKS(t *testing.T) {
 	cfg := &model.JWTConfig{
 		
 				Issuer:            "iss",
-				JWKsURI:           "/.well-known/jwks.json",
+				JWKsPath:           "/.well-known/jwks.json",
 				JWKsDestinationID: "jwks-svc",
 		
 	}

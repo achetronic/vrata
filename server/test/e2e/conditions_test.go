@@ -190,7 +190,7 @@ func TestE2E_JWT_AssertClaims(t *testing.T) {
 		"type": "jwt",
 		"jwt": map[string]any{
 			"issuer":            "test-issuer",
-			"jwksUri":           "/.well-known/jwks.json",
+			"jwksPath":           "/.well-known/jwks.json",
 			"jwksDestinationId": jwksDest,
 			"assertClaims": []string{
 				`claims.role == "admin"`,

@@ -2,9 +2,45 @@
 
 ## In Progress
 
-- [ ] **E2e tests for skipWhen/onlyWhen** — test with two middlewares, one skipWhen and one onlyWhen
-- [ ] **E2e test for assertClaims** — JWT middleware rejects invalid claims via CEL
-- [ ] **Update docs/features.md** — document skipWhen, onlyWhen, assertClaims
+### Comprehensive timeout configuration
+All timeouts across listeners, destinations, and middlewares must be
+configurable with semantic names. See DECISIONS.md for the naming convention.
+
+**Listener timeouts** — add `timeouts` to `model.Listener`:
+- [x] `clientHeader` (default 10s) — `Server.ReadHeaderTimeout`
+- [x] `clientRequest` (default 60s) — `Server.ReadTimeout`
+- [x] `clientResponse` (default 60s) — `Server.WriteTimeout`
+- [x] `idleBetweenRequests` (default 120s) — `Server.IdleTimeout`
+- [x] Wire in `proxy/listener.go:startListener`
+- [x] Remove hardcoded `ReadHeaderTimeout: 10s`
+- [ ] Unit tests for all four
+- [ ] Update docs/features.md
+
+**Destination timeouts** — add `timeouts` to `model.DestinationOptions`, replace `connectTimeout`:
+- [x] `request` (default 30s) — `Client.Timeout`
+- [x] `connect` (default 5s) — `Dialer.Timeout` (replaces `options.connectTimeout`)
+- [x] `dualStackFallback` (default 300ms) — `Dialer.FallbackDelay`
+- [x] `tlsHandshake` (default 5s) — `Transport.TLSHandshakeTimeout`
+- [x] `responseHeader` (default 10s) — `Transport.ResponseHeaderTimeout`
+- [x] `expectContinue` (default 1s) — `Transport.ExpectContinueTimeout`
+- [x] `idleConnection` (default 90s) — `Transport.IdleConnTimeout`
+- [x] Wire in `proxy/endpoint.go:NewEndpoint`
+- [x] Remove old `options.connectTimeout` field
+- [x] Remove `forward.timeouts.idle` from route (now `idleConnection` on destination)
+- [ ] Unit tests for all seven
+- [ ] Update docs/features.md
+
+**Middleware timeout renames**:
+- [x] `extAuthz.timeout` → `extAuthz.decisionTimeout`
+- [x] `extProc.timeout` → `extProc.phaseTimeout`
+- [x] Add `jwt.jwksRetrievalTimeout` (default 10s, currently hardcoded)
+- [x] `jwt.jwksUri` → `jwt.jwksPath` (it's a path within the destination, not a full URI)
+- [x] Update model, middleware code, tests
+- [ ] Update docs/features.md
+
+**Route cleanup**:
+- [x] Remove `forward.timeouts.idle` (moved to destination)
+- [x] Keep `forward.timeouts.request` as the external watchdog
 
 ## Pending
 
@@ -23,6 +59,14 @@ This is ASAP.
 
 ## Done
 
+- [x] **Prometheus metrics** — 22 metrics across 5 dimensions, per-listener, isolated registries
+- [x] **onError fallback routes** — typed error matching, forward/redirect/directResponse actions, X-Vrata-Error-* headers
+- [x] **JSON error responses** — all proxy errors return `{"error":"..."}` with Content-Type: application/json
+- [x] **Middleware JSON errors** — JWT and rate limit errors now return JSON instead of text/plain
+- [x] **Config restructure** — `server:` → `controlPlane:`, `controlPlane:` → `proxy:`, `cluster:` → `controlPlane.raft:`, unified `storePath`
+- [x] **Sync endpoint rename** — `/sync/stream` → `/sync/snapshot`, `/internal/raft/apply` → `/sync/raft`
+- [x] **GitHub Actions** — release-binaries.yml (4 platforms) + release-docker.yml (multi-arch)
+- [x] **Helm chart config maps** — `controlPlane.config` and `proxy.config` as free YAML maps
 - [x] **skipWhen / onlyWhen CEL** — added to MiddlewareOverride, implemented in handler.go with precompiled CEL programs. skipWhen: skip middleware if any expression matches. onlyWhen: only run if at least one matches. Mutually exclusive.
 - [x] **assertClaims CEL for JWT** — replaces old `rules` field. List of CEL expressions evaluated against decoded JWT claims map. All must pass or 403. Uses new `celeval.ClaimsProgram`.
 - [x] **Removed JWTRule** — old rules field deleted from model and middleware code
@@ -50,4 +94,4 @@ This is ASAP.
 - [x] **Kubernetes ExternalName Service** — watches Service object, resolves spec.externalName
 - [x] **Store publish outside bolt transaction** — prevents stale reads during rebuild
 - [x] **Full proxy implementation** — routing, middlewares, balancers, health, circuit breaker, outlier, TLS, HTTP/2, retry, rewrite, mirror, WebSocket, access log
-- [x] **175 unit tests + 69 e2e tests** — all passing
+- [x] **210 unit tests + 80 e2e tests** — all passing

@@ -127,18 +127,24 @@ type JWTConfig struct {
 	// validation is skipped.
 	Audiences []string `json:"audiences,omitempty" yaml:"audiences,omitempty"`
 
-	// JWKsURI is the URL path from which the JSON Web Key Set is fetched.
+	// JWKsPath is the HTTP path on the destination from which the JSON Web
+	// Key Set is fetched (e.g. "/.well-known/jwks.json").
 	// When set, JWKsDestinationID must also be set.
 	// Mutually exclusive with JWKsInline.
-	JWKsURI string `json:"jwksUri,omitempty" yaml:"jwksUri,omitempty"`
+	JWKsPath string `json:"jwksPath,omitempty" yaml:"jwksPath,omitempty"`
 
 	// JWKsDestinationID references the Destination that hosts the JWKS endpoint.
-	// Required when JWKsURI is set.
+	// Required when JWKsPath is set.
 	JWKsDestinationID string `json:"jwksDestinationId,omitempty" yaml:"jwksDestinationId,omitempty"`
 
 	// JWKsInline is a literal JSON Web Key Set document.
-	// Mutually exclusive with JWKsURI.
+	// Mutually exclusive with JWKsPath.
 	JWKsInline string `json:"jwksInline,omitempty" yaml:"jwksInline,omitempty"`
+
+	// JWKsRetrievalTimeout is the maximum time to download the JWKS
+	// document from the remote endpoint. Only applies when JWKsPath is set.
+	// Default: "10s".
+	JWKsRetrievalTimeout string `json:"jwksRetrievalTimeout,omitempty" yaml:"jwksRetrievalTimeout,omitempty"`
 
 	// ForwardJWT indicates whether the original Authorization header should be
 	// forwarded to the upstream after successful validation.
@@ -183,8 +189,10 @@ type ExtAuthzConfig struct {
 	// Path is the authorization endpoint path (e.g. "/oauth2/auth").
 	Path string `json:"path,omitempty" yaml:"path,omitempty"`
 
-	// Timeout is the check request deadline (e.g. "5s").
-	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	// DecisionTimeout is the maximum time for the authorization service to
+	// return an allow/deny decision. Covers the entire call including
+	// connect, TLS, and response. Default: "5s".
+	DecisionTimeout string `json:"decisionTimeout,omitempty" yaml:"decisionTimeout,omitempty"`
 
 	// FailureModeAllow lets requests through when the authz service is unreachable.
 	FailureModeAllow bool `json:"failureModeAllow,omitempty" yaml:"failureModeAllow,omitempty"`
@@ -246,10 +254,11 @@ type ExtProcConfig struct {
 	// or "http" (one POST per phase). Default: "grpc".
 	Mode string `json:"mode,omitempty" yaml:"mode,omitempty"`
 
-	// Timeout is the per-message deadline (e.g. "200ms", "2s").
-	// If the processor does not respond within this duration, the phase
-	// is treated as a failure (subject to AllowOnError). Default: "200ms".
-	Timeout string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	// PhaseTimeout is the maximum time for the processor to respond to each
+	// phase message. If the processor does not respond within this duration,
+	// the phase is treated as a failure (subject to AllowOnError).
+	// Default: "200ms".
+	PhaseTimeout string `json:"phaseTimeout,omitempty" yaml:"phaseTimeout,omitempty"`
 
 	// Phases controls which parts of the HTTP transaction are sent to the
 	// processor. If nil, only request and response headers are sent.

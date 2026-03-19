@@ -30,8 +30,8 @@ func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, services map[string]Service) 
 	}
 
 	timeout := 5 * time.Second
-	if cfg.Timeout != "" {
-		if d, err := time.ParseDuration(cfg.Timeout); err == nil {
+	if cfg.DecisionTimeout != "" {
+		if d, err := time.ParseDuration(cfg.DecisionTimeout); err == nil {
 			timeout = d
 		}
 	}

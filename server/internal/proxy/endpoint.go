@@ -44,20 +44,25 @@ func (u *Endpoint) setLastHealthCheck(t time.Time) {
 // NewEndpoint creates an Endpoint for a specific endpoint address, inheriting
 // TLS and transport settings from the Destination.
 func NewEndpoint(ep model.Endpoint, d model.Destination) (*Endpoint, error) {
-	connectTimeout := 5 * time.Second
-	if d.Options != nil && d.Options.ConnectTimeout != "" {
-		if dur, err := time.ParseDuration(d.Options.ConnectTimeout); err == nil {
-			connectTimeout = dur
-		}
+	var t *model.DestinationTimeouts
+	if d.Options != nil {
+		t = d.Options.Timeouts
 	}
 
+	connectTimeout := parseDurationOrDefault(t, func(dt *model.DestinationTimeouts) string { return dt.Connect }, 5*time.Second)
+	fallbackDelay := parseDurationOrDefault(t, func(dt *model.DestinationTimeouts) string { return dt.DualStackFallback }, 300*time.Millisecond)
+
 	transport := &http.Transport{
-		MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		MaxIdleConnsPerHost: 10,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       parseDurationOrDefault(t, func(dt *model.DestinationTimeouts) string { return dt.IdleConnection }, 90*time.Second),
+		TLSHandshakeTimeout:   parseDurationOrDefault(t, func(dt *model.DestinationTimeouts) string { return dt.TLSHandshake }, 5*time.Second),
+		ResponseHeaderTimeout: parseDurationOrDefault(t, func(dt *model.DestinationTimeouts) string { return dt.ResponseHeader }, 10*time.Second),
+		ExpectContinueTimeout: parseDurationOrDefault(t, func(dt *model.DestinationTimeouts) string { return dt.ExpectContinue }, 1*time.Second),
+		MaxIdleConnsPerHost:   10,
 		DialContext: (&net.Dialer{
-			Timeout:   connectTimeout,
-			KeepAlive: 30 * time.Second,
+			Timeout:       connectTimeout,
+			FallbackDelay: fallbackDelay,
+			KeepAlive:     30 * time.Second,
 		}).DialContext,
 	}
 

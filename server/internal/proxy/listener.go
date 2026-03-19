@@ -107,7 +107,10 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 	srv := &http.Server{
 		Addr:              bindAddr,
 		Handler:           lm.router,
-		ReadHeaderTimeout: 10 * time.Second,
+		ReadHeaderTimeout: parseDurationOrDefault(l.Timeouts, func(t *model.ListenerTimeouts) string { return t.ClientHeader }, 10*time.Second),
+		ReadTimeout:       parseDurationOrDefault(l.Timeouts, func(t *model.ListenerTimeouts) string { return t.ClientRequest }, 60*time.Second),
+		WriteTimeout:      parseDurationOrDefault(l.Timeouts, func(t *model.ListenerTimeouts) string { return t.ClientResponse }, 60*time.Second),
+		IdleTimeout:       parseDurationOrDefault(l.Timeouts, func(t *model.ListenerTimeouts) string { return t.IdleBetweenRequests }, 120*time.Second),
 	}
 
 	// TLS.
@@ -286,4 +289,22 @@ func sameMetrics(a, b *model.ListenerMetrics) bool {
 		return false
 	}
 	return a.ResolvedPath() == b.ResolvedPath()
+}
+
+// parseDurationOrDefault extracts a duration string from a timeouts struct
+// using the provided accessor. Returns fallback if the struct is nil, the
+// field is empty, or the value cannot be parsed.
+func parseDurationOrDefault[T any](cfg *T, accessor func(*T) string, fallback time.Duration) time.Duration {
+	if cfg == nil {
+		return fallback
+	}
+	s := accessor(cfg)
+	if s == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return fallback
+	}
+	return d
 }

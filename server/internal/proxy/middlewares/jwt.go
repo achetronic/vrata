@@ -55,10 +55,16 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 			)
 		}
 		v.keys = keys
-	} else if cfg.JWKsURI != "" && cfg.JWKsDestinationID != "" {
+	} else if cfg.JWKsPath != "" && cfg.JWKsDestinationID != "" {
 		if svc, ok := services[cfg.JWKsDestinationID]; ok {
-			v.jwksURL = svc.BaseURL + cfg.JWKsURI
+			v.jwksURL = svc.BaseURL + cfg.JWKsPath
 			v.transport = svc.Transport
+			v.jwksTimeout = 10 * time.Second
+			if cfg.JWKsRetrievalTimeout != "" {
+				if d, err := time.ParseDuration(cfg.JWKsRetrievalTimeout); err == nil {
+					v.jwksTimeout = d
+				}
+			}
 			v.refreshKeys()
 			go v.refreshLoop()
 		}
@@ -183,8 +189,9 @@ type jwtValidator struct {
 	audiences []string
 	forward   bool
 	keys      []verifierKey
-	jwksURL        string
-	transport      http.RoundTripper
+	jwksURL            string
+	jwksTimeout        time.Duration
+	transport          http.RoundTripper
 	mu             sync.RWMutex
 	stop           chan struct{}
 }
@@ -381,7 +388,7 @@ func (v *jwtValidator) refreshKeys() {
 		return
 	}
 
-	client := &http.Client{Transport: v.transport, Timeout: 10 * time.Second}
+	client := &http.Client{Transport: v.transport, Timeout: v.jwksTimeout}
 	resp, err := client.Get(v.jwksURL)
 	if err != nil {
 		slog.Warn("jwt: failed to refresh JWKS", slog.String("url", v.jwksURL), slog.String("error", err.Error()))

@@ -42,8 +42,8 @@ func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Ser
 	}
 
 	timeout := 200 * time.Millisecond
-	if cfg.Timeout != "" {
-		if d, err := time.ParseDuration(cfg.Timeout); err == nil {
+	if cfg.PhaseTimeout != "" {
+		if d, err := time.ParseDuration(cfg.PhaseTimeout); err == nil {
 			timeout = d
 		}
 	}
