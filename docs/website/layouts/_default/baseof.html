@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="{{ .Site.Language.Lang }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ if .IsHome }}{{ .Site.Title }} — {{ .Site.Params.tagline }}{{ else }}{{ .Title }} | {{ .Site.Title }}{{ end }}</title>
+  <meta name="description" content="{{ .Site.Params.description }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ "css/style.css" | relURL }}">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="{{ "/" | relURL }}" class="navbar-brand">
+      <img src="{{ "images/logo.svg" | relURL }}" alt="Vrata">
+      Vrata
+    </a>
+    <ul class="navbar-links">
+      <li><a href="{{ "docs/getting-started/" | relURL }}"{{ if hasPrefix .RelPermalink "/docs/" }} class="active"{{ end }}>Docs</a></li>
+      <li><a href="{{ .Site.Params.github }}" target="_blank">GitHub</a></li>
+    </ul>
+  </nav>
+
+  {{ block "main" . }}{{ end }}
+
+  <footer class="footer">
+    <p>Vrata — <a href="{{ .Site.Params.github }}">Open source</a> under Apache 2.0 · Built with Hugo</p>
+  </footer>
+
+  <script src="{{ "js/main.js" | relURL }}"></script>
+</body>
+</html>

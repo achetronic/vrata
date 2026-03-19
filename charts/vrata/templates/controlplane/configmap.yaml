@@ -1,0 +1,12 @@
+{{- if .Values.controlPlane.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vrata.cpName" . }}
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    mode: "controlplane"
+    {{- toYaml .Values.controlPlane.config | nindent 4 }}
+{{- end }}

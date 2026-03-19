@@ -1,0 +1,63 @@
+# mode: "controlplane" (default) or "proxy"
+# - controlplane: REST API + store + gateway + proxy + SSE sync endpoint
+# - proxy: connects to a control plane via SSE, no local store or API
+mode: "${VRATA_MODE:-controlplane}"
+
+# Control plane settings — only used when mode is "controlplane".
+controlPlane:
+  # Address the REST API HTTP server listens on.
+  address: "${CONTROLPLANE_ADDRESS:-:8080}"
+
+  # Root directory for all control plane state.
+  # Vrata places the bbolt database at <storePath>/vrata.db and,
+  # when Raft is enabled, Raft data at <storePath>/raft/.
+  storePath: "${STORE_PATH:-/data}"
+
+  # Raft enables multi-node HA replication (optional).
+  # When absent, the control plane runs in single-node mode.
+  #
+  # raft:
+  #   # Unique node ID within the cluster.
+  #   nodeId: "${RAFT_NODE_ID}"
+  #
+  #   # Address for Raft peer-to-peer communication.
+  #   bindAddress: "${RAFT_BIND_ADDRESS:-:7000}"
+  #
+  #   # Address other nodes use to reach this node.
+  #   # In Kubernetes, set to the pod IP via downward API: "${POD_IP}:7000"
+  #   advertiseAddress: "${RAFT_ADVERTISE_ADDRESS}"
+  #
+  #   # Option A: Static peer list (all nodes, including this one).
+  #   # Format: "nodeId=host:port"
+  #   # peers:
+  #   #   - "cp-0=10.0.0.1:7000"
+  #   #   - "cp-1=10.0.0.2:7000"
+  #   #   - "cp-2=10.0.0.3:7000"
+  #
+  #   # Option B: DNS discovery (Kubernetes headless Service).
+  #   # Vrata resolves this hostname and uses the returned IPs as peers.
+  #   # When set, peers is ignored.
+  #   # discovery:
+  #   #   dns: "vrata-headless.vrata.svc.cluster.local"
+
+# Proxy settings — only used when mode is "proxy".
+proxy:
+  # Base URL of the control plane to sync from (e.g. "http://10.0.0.1:8080").
+  controlPlaneUrl: "${PROXY_CONTROLPLANE_URL:-}"
+  # How long to wait before reconnecting after a stream disconnection.
+  reconnectInterval: "${PROXY_RECONNECT_INTERVAL:-5s}"
+
+log:
+  # format: "console" (human-readable) or "json"
+  format: "${LOG_FORMAT:-console}"
+  # level: "debug", "info", "warn", or "error"
+  level: "${LOG_LEVEL:-info}"
+
+# Session store for STICKY destination balancing (optional).
+# When absent, STICKY falls back to WEIGHTED_CONSISTENT_HASH.
+sessionStore:
+  type: "${SESSION_STORE_TYPE}"
+  redis:
+    address: "${REDIS_ADDRESS}"
+    password: "${REDIS_PASSWORD}"
+    db: 0

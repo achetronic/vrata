@@ -1,0 +1,54 @@
+// Vrata External Authorization Protocol v1
+//
+// This protocol defines the contract between Vrata and an external
+// authorization service running in gRPC mode. The service receives a
+// check request with the client's request metadata and returns an
+// allow/deny decision.
+
+syntax = "proto3";
+
+package extauthz.v1;
+
+option go_package = "github.com/achetronic/vrata/proto/extauthz/v1;extauthzv1";
+
+// Authorizer is the gRPC service that external authorization services implement.
+service Authorizer {
+  rpc Check(CheckRequest) returns (CheckResponse);
+}
+
+// CheckRequest carries the client request metadata for authorization.
+message CheckRequest {
+  // The HTTP method (GET, POST, etc.).
+  string method = 1;
+
+  // The request path.
+  string path = 2;
+
+  // Request headers as ordered key-value pairs.
+  repeated HeaderPair headers = 3;
+
+  // The request body (only present when includeBody is enabled).
+  bytes body = 4;
+}
+
+// CheckResponse carries the authorization decision.
+message CheckResponse {
+  // True if the request is allowed.
+  bool allowed = 1;
+
+  // HTTP status code to return when denied. Ignored when allowed.
+  uint32 denied_status = 2;
+
+  // Headers to add to the upstream request (when allowed) or to the
+  // client response (when denied).
+  repeated HeaderPair headers = 3;
+
+  // Response body to return to the client when denied.
+  bytes denied_body = 4;
+}
+
+// HeaderPair is a single HTTP header key-value pair.
+message HeaderPair {
+  string key = 1;
+  string value = 2;
+}

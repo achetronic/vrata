@@ -1,0 +1,66 @@
+# Vrata Controller configuration.
+# All string values support ${ENV_VAR} substitution.
+
+# Connection to the Vrata control plane REST API.
+controlPlaneUrl: "${CONTROLPLANE_URL:-http://localhost:8080}"
+
+# Which Kubernetes resources to watch.
+watch:
+  # Restrict to specific namespaces. Empty list = all namespaces.
+  # namespaces:
+  #   - production
+  #   - staging
+  namespaces: []
+
+  # Watch standard Gateway API HTTPRoute resources.
+  httpRoutes: true
+
+  # Watch SuperHTTPRoute resources (HTTPRoute without maxItems limits).
+  # Requires the SuperHTTPRoute CRD to be installed.
+  superHttpRoutes: false
+
+  # Watch Gateway resources to sync Listeners.
+  gateways: true
+
+# Snapshot batching — changes are accumulated and a snapshot is created
+# when the debounce timer expires or the max batch size is reached.
+snapshot:
+  # How long to wait after the last change before creating a snapshot.
+  debounce: "${SNAPSHOT_DEBOUNCE:-5s}"
+  # Force a snapshot after this many changes even if more keep arriving.
+  maxBatch: 100
+
+# Duplicate/overlapping route detection.
+duplicates:
+  # "off"    — disabled
+  # "warn"   — log overlaps but sync anyway
+  # "reject" — log overlaps and skip the HTTPRoute (sets Accepted: False)
+  mode: "${DUPLICATES_MODE:-warn}"
+
+# Logging.
+log:
+  # "console" (human-readable) or "json".
+  format: "${LOG_FORMAT:-console}"
+  # "debug", "info", "warn", or "error".
+  level: "${LOG_LEVEL:-info}"
+
+# Leader election for running multiple replicas.
+# When enabled, only the leader reconciles. Others wait.
+leaderElection:
+  enabled: false
+  # Name of the Lease resource.
+  leaseName: "${LEADER_LEASE_NAME:-vrata-controller-leader}"
+  # Namespace where the Lease is created.
+  leaseNamespace: "${LEADER_LEASE_NAMESPACE:-default}"
+  # How long the leader holds the lease.
+  leaseDuration: "15s"
+  # How long the leader waits before renewing.
+  renewDeadline: "10s"
+  # How often non-leaders retry acquiring the lease.
+  retryPeriod: "2s"
+
+# Prometheus metrics.
+metrics:
+  enabled: false
+  # Address the metrics server listens on.
+  address: "${METRICS_ADDRESS:-:9090}"

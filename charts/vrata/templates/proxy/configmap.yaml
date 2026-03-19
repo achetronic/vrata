@@ -1,0 +1,17 @@
+{{- if .Values.proxy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vrata.proxyName" . }}
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    mode: "proxy"
+    {{- $cfg := .Values.proxy.config | deepCopy }}
+    {{- if not (dig "proxy" "controlPlaneUrl" "" $cfg) }}
+    {{- $url := printf "http://%s:%d" (include "vrata.cpName" .) (int .Values.controlPlane.service.port) }}
+    {{- $_ := set (index $cfg "proxy") "controlPlaneUrl" $url }}
+    {{- end }}
+    {{- toYaml $cfg | nindent 4 }}
+{{- end }}

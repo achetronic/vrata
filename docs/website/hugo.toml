@@ -1,0 +1,47 @@
+baseURL = "https://achetronic.github.io/vrata/"
+languageCode = "en-us"
+title = "Vrata"
+enableRobotsTXT = true
+enableGitInfo = false
+
+[params]
+  description = "Programmable reverse proxy with REST API, versioned snapshots, and zero-downtime config updates."
+  tagline = "The last gateway you'll configure"
+  github = "https://github.com/achetronic/vrata"
+
+[markup]
+  [markup.highlight]
+    style = "dracula"
+    lineNos = false
+    codeFences = true
+    guessSyntax = true
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
+[menu]
+  [[menu.docs]]
+    name = "Getting Started"
+    weight = 10
+    identifier = "getting-started"
+    url = "/docs/getting-started/"
+  [[menu.docs]]
+    name = "Concepts"
+    weight = 20
+    identifier = "concepts"
+    url = "/docs/concepts/"
+  [[menu.docs]]
+    name = "API Reference"
+    weight = 50
+    identifier = "api-reference"
+    url = "/docs/api-reference/"
+  [[menu.docs]]
+    name = "Reference"
+    weight = 55
+    identifier = "reference"
+    url = "/docs/reference/"
+  [[menu.docs]]
+    name = "Clients"
+    weight = 60
+    identifier = "clients"
+    url = "/docs/clients/"

@@ -1,0 +1,24 @@
+{{- if .Values.proxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vrata.proxyName" . }}
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+  {{- with .Values.proxy.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.proxy.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "vrata.name" . }}
+    app.kubernetes.io/component: proxy
+  ports:
+    - name: http
+      port: {{ .Values.proxy.service.port }}
+      targetPort: http
+      {{- if .Values.proxy.service.nodePort }}
+      nodePort: {{ .Values.proxy.service.nodePort }}
+      {{- end }}
+{{- end }}

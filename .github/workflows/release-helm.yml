@@ -1,0 +1,72 @@
+name: Release Helm Chart
+
+on:
+  release:
+    types: [published]
+
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Semver tag to publish (e.g. v1.0.0). Used as the chart version."
+        required: true
+        type: string
+      from_main:
+        description: "Build from main branch instead of the release tag."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  CHART_PATH: charts/vrata
+
+jobs:
+  helm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Determine version and checkout ref
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          else
+            VERSION="${{ inputs.ref }}"
+          fi
+          # Strip leading 'v' for chart version (Helm expects semver without v)
+          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+          echo "raw_version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "checkout_ref=${VERSION}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ inputs.from_main }}" = "true" ]; then
+            echo "checkout_ref=main" >> "$GITHUB_OUTPUT"
+          else
+            echo "checkout_ref=${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.meta.outputs.checkout_ref }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} --username ${{ github.actor }} --password-stdin
+
+      - name: Update chart version
+        run: |
+          sed -i "s/^version:.*/version: ${{ steps.meta.outputs.version }}/" ${{ env.CHART_PATH }}/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.meta.outputs.raw_version }}\"/" ${{ env.CHART_PATH }}/Chart.yaml
+
+      - name: Package chart
+        run: helm package ${{ env.CHART_PATH }}
+
+      - name: Push to OCI registry
+        run: helm push vrata-${{ steps.meta.outputs.version }}.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/vrata/helm-chart

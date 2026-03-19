@@ -1,0 +1,3 @@
+bin/
+*.db
+docs/website/public/

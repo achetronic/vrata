@@ -1,0 +1,190 @@
+# Default values for the Vrata chart.
+# Documentation: https://github.com/achetronic/vrata
+
+image:
+  repository: ghcr.io/achetronic/vrata/server
+  # Defaults to .Chart.AppVersion when empty.
+  tag: ""
+  # Always | IfNotPresent | Never
+  pullPolicy: IfNotPresent
+  # imagePullSecrets:
+  #   - name: my-registry-secret
+
+# Control plane nodes expose the REST API, store configuration in bbolt,
+# and push active snapshots to connected proxies via SSE.
+# Set enabled: false when deploying a proxy fleet that connects to an
+# external control plane.
+controlPlane:
+  enabled: true
+
+  # Number of replicas.
+  # Use 1 for single-node mode (plain bbolt, no Raft).
+  # Use 3 or 5 for cluster mode (add controlPlane.raft to config below).
+  # Avoid even numbers — Raft requires a majority quorum.
+  replicas: 1
+
+  # Persistent storage for the bbolt store and Raft data.
+  persistence:
+    enabled: true
+    size: 1Gi
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+
+  service:
+    # ClusterIP | NodePort | LoadBalancer
+    type: ClusterIP
+    port: 8080
+    # Only used when type is NodePort. Leave empty for auto-assign.
+    nodePort: ""
+    annotations: {}
+
+  # Vrata config.yaml content for the control plane.
+  # This map is rendered as-is into the ConfigMap. All Vrata config options
+  # are supported. The chart always injects mode: "controlplane".
+  #
+  # To enable Raft HA (3 or 5 replicas), add controlPlane.raft:
+  #
+  #   config:
+  #     controlPlane:
+  #       address: ":8080"
+  #       storePath: "/data"
+  #       raft:
+  #         nodeId: "${POD_NAME}"
+  #         bindAddress: ":7000"
+  #         advertiseAddress: "${POD_IP}:7000"
+  #         discovery:
+  #           dns: "release-vrata-cp-headless.namespace.svc.cluster.local"
+  #         # Or use static peers instead of DNS discovery:
+  #         # peers:
+  #         #   - "cp-0=cp-0.release-vrata-cp-headless.namespace.svc.cluster.local:7000"
+  #         #   - "cp-1=cp-1.release-vrata-cp-headless.namespace.svc.cluster.local:7000"
+  #         #   - "cp-2=cp-2.release-vrata-cp-headless.namespace.svc.cluster.local:7000"
+  #     log:
+  #       format: console
+  #       level: info
+  config:
+    controlPlane:
+      address: ":8080"
+      storePath: "/data"
+    log:
+      format: console
+      level: info
+
+  # Kubernetes resource requests and limits.
+  resources: {}
+  # resources:
+  #   requests:
+  #     cpu: 100m
+  #     memory: 128Mi
+  #   limits:
+  #     cpu: 500m
+  #     memory: 256Mi
+
+  terminationGracePeriodSeconds: 15
+  podLabels: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# Proxy instances connect to the control plane via SSE and apply the active
+# snapshot. They are stateless and horizontally scalable.
+# Set enabled: false to deploy a control plane without any proxy fleet.
+proxy:
+  enabled: false
+
+  replicas: 2
+
+  service:
+    # ClusterIP | NodePort | LoadBalancer
+    type: ClusterIP
+    port: 3000
+    nodePort: ""
+    annotations: {}
+
+  # Vrata config.yaml content for the proxy.
+  # This map is rendered as-is into the ConfigMap. All Vrata config options
+  # are supported. The chart will always inject mode: "proxy".
+  # proxy.controlPlaneUrl defaults to the in-cluster control plane Service
+  # when not set — override it to connect to an external control plane.
+  config:
+    proxy:
+      # controlPlaneUrl: "http://external-cp:8080"
+      reconnectInterval: 5s
+    log:
+      format: console
+      level: info
+
+  resources: {}
+  # resources:
+  #   requests:
+  #     cpu: 50m
+  #     memory: 64Mi
+  #   limits:
+  #     cpu: 200m
+  #     memory: 128Mi
+
+  terminationGracePeriodSeconds: 15
+  podLabels: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  extraEnv: []
+  extraVolumes: []
+  extraVolumeMounts: []
+
+# Controller watches Gateway API resources (HTTPRoute, Gateway) in Kubernetes
+# and synchronises them to the Vrata control plane via REST API.
+# Set enabled: false if you manage Vrata config entirely via the API.
+controller:
+  enabled: false
+
+  # Install CRDs managed by the controller (e.g. SuperHTTPRoute).
+  # Requires `make controller-generate-crd` to have been run first.
+  installCRDs: false
+
+  replicas: 1
+
+  # Controller config.yaml content. Rendered as-is into the ConfigMap.
+  # See clients/controller/config.yaml for the full reference.
+  config:
+    controlPlaneUrl: "http://vrata-cp:8080"
+    watch:
+      # Restrict to specific namespaces. Empty = all.
+      namespaces: []
+      httpRoutes: true
+      superHttpRoutes: false
+      gateways: true
+    snapshot:
+      debounce: "5s"
+      maxBatch: 100
+    duplicates:
+      # off | warn | reject
+      mode: warn
+    log:
+      format: console
+      level: info
+    leaderElection:
+      enabled: false
+      leaseName: vrata-controller-leader
+      leaseNamespace: default
+      leaseDuration: "15s"
+      renewDeadline: "10s"
+      retryPeriod: "2s"
+    metrics:
+      enabled: false
+      address: ":9090"
+
+  resources: {}
+  terminationGracePeriodSeconds: 15
+  podLabels: {}
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
