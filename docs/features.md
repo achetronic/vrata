@@ -929,10 +929,10 @@ Only one of `jwksUri` + `jwksDestinationId` or `jwksInline` is needed.
 
 Each entry is a CEL expression evaluated against the decoded `claims` map. The result is injected as a request header forwarded to the upstream. Supports nested access, array indexing, and CEL functions.
 
-| Field    | Type   | Description                                                   |
-| -------- | ------ | ------------------------------------------------------------- |
-| `expr`   | string | CEL expression against `claims` map. Must return a value      |
-| `header` | string | Request header name that receives the expression result       |
+| Field    | Type   | Description                                              |
+| -------- | ------ | -------------------------------------------------------- |
+| `expr`   | string | CEL expression against `claims` map. Must return a value |
+| `header` | string | Request header name that receives the expression result  |
 
 ```json
 {

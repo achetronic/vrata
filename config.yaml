@@ -20,6 +20,27 @@ log:
   # level: "debug", "info", "warn", or "error"
   level: "${LOG_LEVEL:-info}"
 
+# Raft cluster for HA control plane (optional).
+# When absent, the control plane runs in single-node mode.
+# cluster:
+#   # Unique node ID within the cluster.
+#   nodeId: "${RAFT_NODE_ID}"
+#   # Address for Raft peer-to-peer communication.
+#   bindAddress: "${RAFT_BIND_ADDRESS:-:7000}"
+#   # Address other nodes use to reach this node.
+#   # In Kubernetes, set to the pod IP via downward API: "${POD_IP}:7000"
+#   advertiseAddress: "${RAFT_ADVERTISE_ADDRESS}"
+#   # Directory for Raft logs and snapshots.
+#   dataDir: "${RAFT_DATA_DIR:-/data/raft}"
+#   # Static peer list. Format: "nodeId=host:port"
+#   # peers:
+#   #   - "cp-0=10.0.0.1:7000"
+#   #   - "cp-1=10.0.0.2:7000"
+#   #   - "cp-2=10.0.0.3:7000"
+#   # Or use DNS discovery (Kubernetes headless Service):
+#   discovery:
+#     dns: "${RAFT_DISCOVERY_DNS}"
+
 # Session store for STICKY destination balancing.
 # Credentials via environment variables.
 sessionStore:

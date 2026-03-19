@@ -2222,12 +2222,12 @@
         "model.JWTClaimHeader": {
             "type": "object",
             "properties": {
-                "claim": {
-                    "description": "Claim is the JWT claim name (e.g. \"sub\", \"email\").",
+                "expr": {
+                    "description": "Expr is a CEL expression evaluated against the decoded `claims` map.\nMust return a string value. Supports nested access, array indexing,\nand CEL built-in functions.\nExamples: \"claims.sub\", \"claims.user.id\", \"claims.roles[0]\",\n          \"claims.orgs.map(o, o.name).join(',')\"",
                     "type": "string"
                 },
                 "header": {
-                    "description": "Header is the request header name that receives the claim value.",
+                    "description": "Header is the request header name that receives the expression result.",
                     "type": "string"
                 }
             }
@@ -2235,25 +2235,13 @@
         "model.JWTConfig": {
             "type": "object",
             "properties": {
-                "providers": {
-                    "description": "Providers is a map of provider name to JWTProvider configuration.\nThe map key is referenced from per-route overrides to select a specific\nprovider (or disable authentication for that route).",
-                    "type": "object",
-                    "additionalProperties": {
-                        "$ref": "#/definitions/model.JWTProvider"
-                    }
-                },
-                "rules": {
-                    "description": "Rules defines which request paths require JWT validation and which\nprovider to apply. If empty, all paths are validated by all providers.",
+                "assertClaims": {
+                    "description": "AssertClaims is a list of CEL expressions evaluated against the decoded\nJWT claims after the token is verified. Each expression receives a\n`claims` map (string → any) with the decoded payload. All expressions\nmust evaluate to true for the request to pass. If any fails, 403.",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/model.JWTRule"
+                        "type": "string"
                     }
-                }
-            }
-        },
-        "model.JWTProvider": {
-            "type": "object",
-            "properties": {
+                },
                 "audiences": {
                     "description": "Audiences lists the expected \"aud\" claim values. If empty, audience\nvalidation is skipped.",
                     "type": "array",
@@ -2262,7 +2250,7 @@
                     }
                 },
                 "claimToHeaders": {
-                    "description": "ClaimToHeaders maps JWT claim names to upstream request header names.\nThe claim value is set as the header value before forwarding.",
+                    "description": "ClaimToHeaders maps JWT claim names to upstream request header names.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.JWTClaimHeader"
@@ -2277,7 +2265,7 @@
                     "type": "string"
                 },
                 "jwksDestinationId": {
-                    "description": "JWKsDestinationID references the Destination entity that hosts the\nJWKS endpoint. Required when JWKsURI is set. The Destination's cluster\n(with its TLS config) is used as the upstream for fetching keys.",
+                    "description": "JWKsDestinationID references the Destination that hosts the JWKS endpoint.\nRequired when JWKsURI is set.",
                     "type": "string"
                 },
                 "jwksInline": {
@@ -2285,28 +2273,8 @@
                     "type": "string"
                 },
                 "jwksUri": {
-                    "description": "JWKsURI is the URL path from which the JSON Web Key Set is fetched.\nWhen set, JWKsDestinationID must also be set to identify the upstream\nthat serves the JWKS endpoint.\nMutually exclusive with JWKsInline.",
+                    "description": "JWKsURI is the URL path from which the JSON Web Key Set is fetched.\nWhen set, JWKsDestinationID must also be set.\nMutually exclusive with JWKsInline.",
                     "type": "string"
-                }
-            }
-        },
-        "model.JWTRule": {
-            "type": "object",
-            "properties": {
-                "allowMissing": {
-                    "description": "AllowMissing allows requests without a JWT token to pass through.\nUseful for public endpoints that coexist in the same listener.",
-                    "type": "boolean"
-                },
-                "match": {
-                    "description": "Match is the path prefix this rule applies to.",
-                    "type": "string"
-                },
-                "requires": {
-                    "description": "Requires lists the provider names that must validate the request.\nAll listed providers must succeed (AND semantics).",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },
@@ -2550,9 +2518,19 @@
                         }
                     ]
                 },
-                "jwtProvider": {
-                    "description": "JWTProvider selects a specific JWT provider by name (instead of requiring all).\nOnly meaningful when the referenced filter is of type \"jwt\".",
-                    "type": "string"
+                "onlyWhen": {
+                    "description": "OnlyWhen is a list of CEL expressions evaluated against the request.\nThe middleware is only executed if at least one expression evaluates to true.\nThe middleware is inactive by default. Mutually exclusive with SkipWhen.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "skipWhen": {
+                    "description": "SkipWhen is a list of CEL expressions evaluated against the request.\nIf ANY expression evaluates to true, the middleware is skipped.\nThe middleware is active by default. Mutually exclusive with OnlyWhen.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

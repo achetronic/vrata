@@ -705,33 +705,30 @@ definitions:
     type: object
   model.JWTClaimHeader:
     properties:
-      claim:
-        description: Claim is the JWT claim name (e.g. "sub", "email").
+      expr:
+        description: |-
+          Expr is a CEL expression evaluated against the decoded `claims` map.
+          Must return a string value. Supports nested access, array indexing,
+          and CEL built-in functions.
+          Examples: "claims.sub", "claims.user.id", "claims.roles[0]",
+                    "claims.orgs.map(o, o.name).join(',')"
         type: string
       header:
-        description: Header is the request header name that receives the claim value.
+        description: Header is the request header name that receives the expression
+          result.
         type: string
     type: object
   model.JWTConfig:
     properties:
-      providers:
-        additionalProperties:
-          $ref: '#/definitions/model.JWTProvider'
+      assertClaims:
         description: |-
-          Providers is a map of provider name to JWTProvider configuration.
-          The map key is referenced from per-route overrides to select a specific
-          provider (or disable authentication for that route).
-        type: object
-      rules:
-        description: |-
-          Rules defines which request paths require JWT validation and which
-          provider to apply. If empty, all paths are validated by all providers.
+          AssertClaims is a list of CEL expressions evaluated against the decoded
+          JWT claims after the token is verified. Each expression receives a
+          `claims` map (string → any) with the decoded payload. All expressions
+          must evaluate to true for the request to pass. If any fails, 403.
         items:
-          $ref: '#/definitions/model.JWTRule'
+          type: string
         type: array
-    type: object
-  model.JWTProvider:
-    properties:
       audiences:
         description: |-
           Audiences lists the expected "aud" claim values. If empty, audience
@@ -740,9 +737,8 @@ definitions:
           type: string
         type: array
       claimToHeaders:
-        description: |-
-          ClaimToHeaders maps JWT claim names to upstream request header names.
-          The claim value is set as the header value before forwarding.
+        description: ClaimToHeaders maps JWT claim names to upstream request header
+          names.
         items:
           $ref: '#/definitions/model.JWTClaimHeader'
         type: array
@@ -756,9 +752,8 @@ definitions:
         type: string
       jwksDestinationId:
         description: |-
-          JWKsDestinationID references the Destination entity that hosts the
-          JWKS endpoint. Required when JWKsURI is set. The Destination's cluster
-          (with its TLS config) is used as the upstream for fetching keys.
+          JWKsDestinationID references the Destination that hosts the JWKS endpoint.
+          Required when JWKsURI is set.
         type: string
       jwksInline:
         description: |-
@@ -768,28 +763,9 @@ definitions:
       jwksUri:
         description: |-
           JWKsURI is the URL path from which the JSON Web Key Set is fetched.
-          When set, JWKsDestinationID must also be set to identify the upstream
-          that serves the JWKS endpoint.
+          When set, JWKsDestinationID must also be set.
           Mutually exclusive with JWKsInline.
         type: string
-    type: object
-  model.JWTRule:
-    properties:
-      allowMissing:
-        description: |-
-          AllowMissing allows requests without a JWT token to pass through.
-          Useful for public endpoints that coexist in the same listener.
-        type: boolean
-      match:
-        description: Match is the path prefix this rule applies to.
-        type: string
-      requires:
-        description: |-
-          Requires lists the provider names that must validate the request.
-          All listed providers must succeed (AND semantics).
-        items:
-          type: string
-        type: array
     type: object
   model.LeastRequestOptions:
     properties:
@@ -1012,11 +988,22 @@ definitions:
         description: |-
           Headers overrides header manipulation for this route/group.
           Only meaningful when the referenced filter is of type "headers".
-      jwtProvider:
+      onlyWhen:
         description: |-
-          JWTProvider selects a specific JWT provider by name (instead of requiring all).
-          Only meaningful when the referenced filter is of type "jwt".
-        type: string
+          OnlyWhen is a list of CEL expressions evaluated against the request.
+          The middleware is only executed if at least one expression evaluates to true.
+          The middleware is inactive by default. Mutually exclusive with SkipWhen.
+        items:
+          type: string
+        type: array
+      skipWhen:
+        description: |-
+          SkipWhen is a list of CEL expressions evaluated against the request.
+          If ANY expression evaluates to true, the middleware is skipped.
+          The middleware is active by default. Mutually exclusive with OnlyWhen.
+        items:
+          type: string
+        type: array
     type: object
   model.MiddlewareType:
     enum:

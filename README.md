@@ -1,120 +1,199 @@
-# Vrata
+<p align="center">
+  <img src="docs/images/header.svg" alt="Vrata — The last gateway you'll configure" width="100%"/>
+</p>
 
-A programmable reverse proxy you control entirely through a REST API. Create routes, point them at upstreams, attach middlewares, and Vrata reconfigures itself on the fly — no restarts, no config files to manage, no external proxy.
+<p align="center">
+  A programmable HTTP reverse proxy. One binary, zero dependencies.<br/>
+  Configure everything through a REST API. Changes apply instantly.
+</p>
 
-One binary. Zero dependencies.
+---
 
-## What can it do?
+## What is Vrata?
 
-→ **Routing** — path, headers, methods, query params, hostnames, gRPC, regex, and [CEL expressions](https://github.com/google/cel-go) for when static matchers aren't enough.
+Vrata is a reverse proxy you configure through an API instead of files. You create listeners, destinations, routes, and middlewares — Vrata applies them on the fly without restarts.
 
-→ **Actions** — forward traffic to weighted backends, return redirects, or serve fixed responses. Forwarding supports retries with backoff, request timeouts, URL rewriting (prefix and regex), request mirroring, and WebSocket upgrades.
+## What can you do with it?
 
-→ **Load balancing** — round robin, ring hash, maglev, least request, random. Health checks, circuit breakers, and outlier detection per destination.
+**Route traffic** to your services using path prefixes, exact paths, regex, headers, methods, query params, hostnames, gRPC content-type, or [CEL expressions](https://github.com/google/cel-go) for complex logic.
 
-→ **Middlewares** — CORS, JWT validation (RSA / EC / Ed25519), external authorization (HTTP and gRPC), external processing (bidirectional, with its own proto), header manipulation, rate limiting, and access logging. Create a middleware once, attach it to any route or group by ID.
+**Split traffic** between multiple destinations with weights. Forward, redirect, or return fixed responses. Retry failed requests with backoff. Rewrite URLs. Mirror traffic for testing.
 
-→ **Versioned snapshots** — configuration changes don't go live until you say so. Capture a snapshot, activate it, and every connected proxy picks it up instantly. Bad deploy? Activate the previous snapshot and you're back.
+**Balance at two levels.** First, pick which destination gets the request (canary deploys, A/B testing). Then, pick which endpoint within that destination handles it (pod-level balancing). Each level has its own algorithms — from simple round robin to consistent hash to zero-disruption sticky sessions backed by Redis.
 
-→ **Kubernetes native** — discovers pod IPs via EndpointSlice watches. Also supports ExternalName Services. If there's no kubeconfig, the watcher disables itself silently.
+**Attach middlewares** to any route: CORS, JWT validation, external authorization, external processing, header manipulation, rate limiting, access logging. Each middleware supports CEL conditions (`skipWhen` / `onlyWhen`) so you control exactly when it runs without duplicating routes.
 
-→ **Two modes** — run everything in one process (control plane + proxy) for development, or split the control plane from N proxy instances for production. Proxies connect via SSE and sync automatically.
+**Stage and publish** config changes with versioned snapshots. Nothing goes live until you activate a snapshot. Rollback is one API call.
 
-## Quick start
+**Discover endpoints** automatically from Kubernetes via EndpointSlice watches, or define them manually as a static list.
 
-The repo ships with a `config.yaml` at the root with sensible defaults. Copy it and adjust if needed, or use it as-is:
+**Scale the control plane** to 3-5 nodes with Raft consensus for high availability.
 
-```bash
-make build
-./bin/vrata --config config.yaml
+> [!IMPORTANT]
+> Every field, every parameter, every option — with JSON examples:
+> **→ [docs/features.md](docs/features.md)**
+
+## Architecture
+
+Vrata has two components:
+
+- **Control plane** — exposes the REST API, stores configuration, and pushes it to proxies via SSE.
+- **Proxy** — stateless, connects to the control plane, receives config, routes traffic. Run 1 or 100.
+
+```mermaid
+graph LR
+    A[API calls] --> CP[Control Plane<br/>config + snapshots]
+    CP -- SSE --> P1[Proxy 1]
+    CP -- SSE --> P2[Proxy 2]
+    CP -- SSE --> P3[Proxy N]
+    P1 --> Apps[Your apps]
+    P2 --> Apps
+    P3 --> Apps
+
+    style CP fill:#13678a,stroke:#0b2545,color:#fff
+    style P1 fill:#45b7d1,stroke:#0b2545,color:#fff
+    style P2 fill:#45b7d1,stroke:#0b2545,color:#fff
+    style P3 fill:#45b7d1,stroke:#0b2545,color:#fff
+    style Apps fill:#0b2545,stroke:#13678a,color:#fff
+    style A fill:none,stroke:#45b7d1,color:#45b7d1
 ```
 
-That starts Vrata in control plane mode: the REST API listens on `:8080` and proxied traffic goes through whatever listeners you create.
+You talk to the control plane. Proxies just follow.
 
-Now configure it:
-
-```bash
-# Create a listener on port 3000
-curl -s -X POST localhost:8080/api/v1/listeners \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"main","port":3000}'
-
-# Create a destination
-DEST=$(curl -s -X POST localhost:8080/api/v1/destinations \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"httpbin","host":"httpbin.org","port":80}' | jq -r .id)
-
-# Create a route
-curl -s -X POST localhost:8080/api/v1/routes \
-  -H 'Content-Type: application/json' \
-  -d "{\"name\":\"test\",\"match\":{\"pathPrefix\":\"/\"},\"forward\":{\"backends\":[{\"destinationId\":\"$DEST\",\"weight\":100}]}}"
-
-# Capture the config and push it live
-SNAP=$(curl -s -X POST localhost:8080/api/v1/snapshots \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"v1"}' | jq -r .id)
-curl -s -X POST localhost:8080/api/v1/snapshots/$SNAP/activate
-
-# Done — traffic flows
-curl localhost:3000/get
-```
-
-Swagger UI is available at `http://localhost:8080/api/v1/docs/`.
+In development, one process runs both. In production, you split them.
 
 ## Configuration
 
-Vrata reads a YAML config file passed via `--config`. The repo includes [`config.yaml`](config.yaml) with all available options and commented defaults. Every string value supports `${ENV_VAR:-default}` substitution.
+Vrata reads a YAML config file via `--config`. Every string value supports `${ENV_VAR}` substitution.
+
+The repo includes [`config.yaml`](config.yaml) with all options commented. The two essential configs:
+
+**Control plane** (or single-process dev):
 
 ```yaml
-# "controlplane" (default) — API + store + proxy in one process
-# "proxy" — connects to a remote control plane, no local API or store
-mode: "${VRATA_MODE:-controlplane}"
-
+mode: "controlplane"
 server:
-  address: "${SERVER_ADDRESS:-:8080}"
-
-# Only used in proxy mode
-controlPlane:
-  address: "${CONTROLPLANE_ADDRESS:-}"
-  reconnectInterval: "5s"
-
-log:
-  format: "console"   # or "json"
-  level: "info"        # debug, info, warn, error
+  address: ":8080"
 ```
 
-The persistent state lives in a single bbolt file. Pass `--store-path` to control where it goes (default: in-memory for development).
-
-## Build & test
-
-```bash
-make build          # Binary at ./bin/vrata
-make test           # Unit + e2e tests
-make proto          # Regenerate protobuf Go code
-make docs           # Regenerate OpenAPI spec
-make docker-build   # Docker image
-```
-
-## Deploy
-
-**Single node** (default) — control plane + proxy in one process:
-
-```bash
-./bin/vrata --config config.yaml --store-path /data/vrata.db
-```
-
-**Multi node** — one control plane, N stateless proxies:
+**Proxy** (production fleet):
 
 ```yaml
-# proxy.yaml
 mode: "proxy"
 controlPlane:
   address: "http://control-plane:8080"
+  reconnectInterval: "5s"
 ```
 
-Proxies reconnect automatically on disconnect. They hold no state — fully disposable.
+Optional sections: `cluster` (Raft HA), `sessionStore` (Redis for sticky sessions), `log`. See [`config.yaml`](config.yaml) for the full reference.
 
-**Docker:**
+## Quick start
+
+### 1. Build and start
+
+```bash
+make build
+vrata --config config.yaml --store-path /tmp/vrata.db
+```
+
+API on `:8080`. Swagger UI at [localhost:8080/api/v1/docs/](http://localhost:8080/api/v1/docs/).
+
+### 2. Open a port
+
+```bash
+curl -X POST localhost:8080/api/v1/listeners \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "main", "port": 3000}'
+```
+
+### 3. Create a destination
+
+```bash
+curl -X POST localhost:8080/api/v1/destinations \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "httpbin", "host": "httpbin.org", "port": 80}'
+```
+
+### 4. Create a route
+
+```bash
+curl -X POST localhost:8080/api/v1/routes \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "catch-all",
+    "match": {"pathPrefix": "/"},
+    "forward": {
+      "destinations": [
+        {"destinationId": "<dest-id>", "weight": 100}
+      ]
+    }
+  }'
+```
+
+### 5. Go live
+
+Config changes are staged until you activate a snapshot:
+
+```bash
+# Capture
+SNAP=$(curl -s -X POST localhost:8080/api/v1/snapshots \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "v1"}' | jq -r .id)
+
+# Activate
+curl -X POST localhost:8080/api/v1/snapshots/$SNAP/activate
+
+# Traffic flows
+curl localhost:3000/get
+```
+
+Bad deploy? Activate a previous snapshot.
+
+## Deploy
+
+### Single process (development)
+
+```bash
+vrata --config config.yaml --store-path /data/vrata.db
+```
+
+### Control plane + proxy fleet (production)
+
+```bash
+# Control plane
+vrata --config controlplane.yaml --store-path /data/vrata.db
+
+# Proxies (scale freely)
+vrata --config proxy.yaml
+```
+
+Proxies reconnect automatically. No state — fully disposable.
+
+### HA control plane (Raft)
+
+Run 3-5 nodes. All accept reads; writes go through the leader.
+
+```yaml
+cluster:
+  nodeId: "cp-0"
+  bindAddress: ":7000"
+  advertiseAddress: "${POD_IP}:7000"
+  dataDir: "/data/raft"
+  discovery:
+    dns: "vrata-headless.vrata.svc.cluster.local"
+```
+
+### Kubernetes (Helm)
+
+```bash
+helm install vrata charts/vrata \
+  --namespace vrata --create-namespace \
+  -f charts/vrata/values.yaml
+```
+
+Control plane as StatefulSet, proxies as Deployment. See [`charts/vrata/values.yaml`](charts/vrata/values.yaml).
+
+### Docker
 
 ```bash
 docker run -d \
@@ -125,35 +204,34 @@ docker run -d \
   --config /config.yaml --store-path /data/vrata.db
 ```
 
-## Extending Vrata
+## API & docs
 
-### External processor
+|                       |                                                                   |
+| --------------------- | ----------------------------------------------------------------- |
+| **Swagger UI**        | [localhost:8080/api/v1/docs/](http://localhost:8080/api/v1/docs/) |
+| **OpenAPI spec**      | `localhost:8080/api/v1/docs/doc.json`                             |
+| **Feature reference** | [docs/features.md](docs/features.md)                              |
+| **Config reference**  | [config.yaml](config.yaml)                                        |
 
-Vrata defines its own gRPC protocol for bidirectional request/response processing at [`server/proto/extproc/v1/extproc.proto`](server/proto/extproc/v1/extproc.proto). Processors can also run in HTTP mode (JSON) with full feature parity. Write a processor in any language, point a middleware at it, and Vrata sends every request phase through it.
+## Build & test
 
-### External authorization
-
-Authorization services implement [`server/proto/extauthz/v1/extauthz.proto`](server/proto/extauthz/v1/extauthz.proto) (gRPC) or respond to plain HTTP check requests. Vrata forwards configurable headers, evaluates the response, and either allows the request through or returns the denial to the client.
+```bash
+make build            # → vrata
+make test             # Unit tests
+make e2e              # Proxy e2e (needs running instance)
+make e2e-cluster      # Cluster e2e in kind
+make docs             # Regenerate OpenAPI spec
+make proto            # Regenerate protobuf code
+```
 
 ## Contributing
 
-Contributions are welcome. The codebase is Go, standard library where possible, minimal dependencies.
-
 ```bash
 git clone https://github.com/achetronic/vrata.git
-cd vrata
-make test
+cd vrata && make test
 ```
 
-The project follows a few rules documented in [`.agents/CONVENTIONS.md`](.agents/CONVENTIONS.md):
-
-→ `net/http` only — no external routers
-→ `log/slog` only — no third-party loggers
-→ Errors bubble up — handlers decide what to do with them
-→ No manual `ResponseWriter` wrappers — use [`httpsnoop`](https://github.com/felixge/httpsnoop)
-→ A broken route never takes down other routes
-
-Architecture and technical decisions live in [`.agents/`](.agents/).
+Conventions: [`.agents/CONVENTIONS.md`](.agents/CONVENTIONS.md) · Architecture: [`.agents/`](.agents/)
 
 ## License
 
