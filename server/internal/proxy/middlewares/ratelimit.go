@@ -32,7 +32,7 @@ func RateLimitMiddlewareWithStop(cfg *model.RateLimitConfig) (Middleware, func()
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := clientIP(r, trustedNets)
 			if !limiter.Allow(key) {
-				http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+				writeJSONError(w, http.StatusTooManyRequests, "rate limit exceeded")
 				return
 			}
 			next.ServeHTTP(w, r)

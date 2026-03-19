@@ -1130,6 +1130,36 @@ definitions:
           Default: 64.
         type: integer
     type: object
+  model.OnErrorRule:
+    properties:
+      directResponse:
+        allOf:
+        - $ref: '#/definitions/model.RouteDirectResponse'
+        description: |-
+          DirectResponse returns a fixed HTTP response.
+          Mutually exclusive with Forward and Redirect.
+      forward:
+        allOf:
+        - $ref: '#/definitions/model.ForwardAction'
+        description: |-
+          Forward proxies the original request to fallback destinations.
+          Vrata injects X-Vrata-Error-* headers with the error context.
+          Mutually exclusive with Redirect and DirectResponse.
+      "on":
+        description: |-
+          On lists the error types that trigger this rule. Evaluated as OR:
+          if the actual error matches any entry, the rule fires.
+          Supports individual types and wildcards ("infrastructure", "all").
+        items:
+          $ref: '#/definitions/model.ProxyErrorType'
+        type: array
+      redirect:
+        allOf:
+        - $ref: '#/definitions/model.RouteRedirect'
+        description: |-
+          Redirect returns an HTTP redirect to the client.
+          Mutually exclusive with Forward and DirectResponse.
+    type: object
   model.OutlierDetectionOptions:
     properties:
       baseEjectionTime:
@@ -1161,6 +1191,30 @@ definitions:
     x-enum-varnames:
     - PhaseModeSend
     - PhaseModeSkip
+  model.ProxyErrorType:
+    enum:
+    - connection_refused
+    - connection_reset
+    - dns_failure
+    - timeout
+    - tls_handshake_failure
+    - circuit_open
+    - no_destination
+    - no_endpoint
+    - infrastructure
+    - all
+    type: string
+    x-enum-varnames:
+    - ProxyErrConnectionRefused
+    - ProxyErrConnectionReset
+    - ProxyErrDNSFailure
+    - ProxyErrTimeout
+    - ProxyErrTLSHandshakeFailure
+    - ProxyErrCircuitOpen
+    - ProxyErrNoDestination
+    - ProxyErrNoEndpoint
+    - ProxyErrInfrastructure
+    - ProxyErrAll
   model.QueryParamMatcher:
     properties:
       name:
@@ -1300,6 +1354,15 @@ definitions:
       name:
         description: Name is a human-readable label for the route.
         type: string
+      onError:
+        description: |-
+          OnError defines fallback actions when the forward action fails.
+          Rules are evaluated in order; the first rule whose On list matches
+          the error type is executed. If no rule matches, Vrata returns a
+          default JSON error response. Only meaningful when Forward is set.
+        items:
+          $ref: '#/definitions/model.OnErrorRule'
+        type: array
       redirect:
         allOf:
         - $ref: '#/definitions/model.RouteRedirect'

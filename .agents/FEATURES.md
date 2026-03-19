@@ -76,6 +76,20 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | IncludeAttemptCount (set per retry)                     | 100%   | Unit                  |
 | LeastRequest balancer (Done wired)                      | 100%   | Unit                  |
 
+## Error Handling (onError)
+
+| Feature | Status | Tests |
+|---|---|---|
+| JSON default error responses (all proxy errors) | 100% | Unit + E2E |
+| onError rules with type filtering | 100% | Unit (20) + E2E (6) |
+| onError directResponse action | 100% | Unit + E2E |
+| onError redirect action | 100% | Unit + E2E |
+| onError forward action with X-Vrata-Error-* headers | 100% | Unit + E2E |
+| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep) | 100% | Unit (8) |
+| Wildcard: infrastructure | 100% | Unit |
+| Wildcard: all | 100% | Unit + E2E |
+| No match falls back to default JSON | 100% | Unit + E2E |
+
 ## Middlewares
 
 | Feature                                                           | Status | Tests               |

@@ -776,3 +776,42 @@ per-destination metric disable toggles. Do not use the global Prometheus
 registry — each listener gets its own isolated registry.
 
 ---
+
+## onError fallback actions on Route
+
+**Date**: 2026-03-19
+**Status**: Implemented
+
+`Route.OnError` is an ordered list of `OnErrorRule` entries evaluated when the
+forward action fails. Each rule has an `on` filter (list of `ProxyErrorType` values)
+and exactly one action: `forward`, `redirect`, or `directResponse`. The first
+rule whose `on` matches the error type wins. If no rule matches, Vrata returns
+a default JSON error (`{"error":"..."}`).
+
+Error types: `connection_refused`, `connection_reset`, `dns_failure`, `timeout`,
+`tls_handshake_failure`, `circuit_open`, `no_destination`, `no_endpoint`.
+Wildcards: `infrastructure` (all of the above), `all` (same, forward-compatible).
+
+When a fallback `forward` is triggered, Vrata injects error context headers:
+`X-Vrata-Error`, `X-Vrata-Error-Status`, `X-Vrata-Error-Destination`,
+`X-Vrata-Error-Endpoint`, `X-Vrata-Original-Path`.
+
+All proxy-generated errors (including "no matching route", "request headers
+too large") now return JSON responses with `Content-Type: application/json`.
+
+`upstream_5xx` is not currently supported because the upstream's response
+headers have already been written to the client by the time the status code
+is known. Intercepting upstream responses requires response buffering, which
+is a separate feature.
+
+**Reasoning**: Operators need to define fallback behaviour when backends fail.
+A static 502 with empty body is not actionable. The `onError` system reuses
+the same three action modes already on Route (forward/redirect/directResponse)
+and adds zero new abstractions.
+
+**Do not**: Add `upstream_5xx` without implementing response buffering first.
+Do not allow `onError` on routes that don't have `forward` (it's meaningless).
+Do not evaluate `onError` rules for middleware rejections (401, 403, 429) —
+those are business logic decisions, not infrastructure failures.
+
+---

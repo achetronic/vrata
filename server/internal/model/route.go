@@ -51,9 +51,71 @@ type Route struct {
 	// route itself carry an override for the same middleware, the route
 	// override wins entirely (more specific takes precedence).
 	MiddlewareOverrides map[string]MiddlewareOverride `json:"middlewareOverrides,omitempty" yaml:"middlewareOverrides,omitempty"`
+
+	// OnError defines fallback actions when the forward action fails.
+	// Rules are evaluated in order; the first rule whose On list matches
+	// the error type is executed. If no rule matches, Vrata returns a
+	// default JSON error response. Only meaningful when Forward is set.
+	OnError []OnErrorRule `json:"onError,omitempty" yaml:"onError,omitempty"`
 }
 
-// DestinationLBPolicy is the algorithm used to select which Destination
+// ProxyErrorType classifies an error that occurred during forwarding.
+type ProxyErrorType string
+
+const (
+	// ProxyErrConnectionRefused — TCP connect was refused by the endpoint.
+	ProxyErrConnectionRefused ProxyErrorType = "connection_refused"
+
+	// ProxyErrConnectionReset — connection established but reset by the endpoint.
+	ProxyErrConnectionReset ProxyErrorType = "connection_reset"
+
+	// ProxyErrDNSFailure — hostname could not be resolved.
+	ProxyErrDNSFailure ProxyErrorType = "dns_failure"
+
+	// ProxyErrTimeout — request or per-attempt timeout expired.
+	ProxyErrTimeout ProxyErrorType = "timeout"
+
+	// ProxyErrTLSHandshakeFailure — TLS handshake with the upstream failed.
+	ProxyErrTLSHandshakeFailure ProxyErrorType = "tls_handshake_failure"
+
+	// ProxyErrCircuitOpen — circuit breaker prevented the attempt.
+	ProxyErrCircuitOpen ProxyErrorType = "circuit_open"
+
+	// ProxyErrNoDestination — no destination has healthy endpoints.
+	ProxyErrNoDestination ProxyErrorType = "no_destination"
+
+	// ProxyErrNoEndpoint — destination exists but all endpoints are down.
+	ProxyErrNoEndpoint ProxyErrorType = "no_endpoint"
+
+	// ProxyErrInfrastructure is a wildcard that matches all infrastructure
+	// errors.
+	ProxyErrInfrastructure ProxyErrorType = "infrastructure"
+
+	// ProxyErrAll is a wildcard that matches every error type.
+	ProxyErrAll ProxyErrorType = "all"
+)
+
+// OnErrorRule defines a fallback action for a specific set of proxy errors.
+// Exactly one of Forward, Redirect, or DirectResponse must be set.
+type OnErrorRule struct {
+	// On lists the error types that trigger this rule. Evaluated as OR:
+	// if the actual error matches any entry, the rule fires.
+	// Supports individual types and wildcards ("infrastructure", "all").
+	On []ProxyErrorType `json:"on" yaml:"on"`
+
+	// Forward proxies the original request to fallback destinations.
+	// Vrata injects X-Vrata-Error-* headers with the error context.
+	// Mutually exclusive with Redirect and DirectResponse.
+	Forward *ForwardAction `json:"forward,omitempty" yaml:"forward,omitempty"`
+
+	// Redirect returns an HTTP redirect to the client.
+	// Mutually exclusive with Forward and DirectResponse.
+	Redirect *RouteRedirect `json:"redirect,omitempty" yaml:"redirect,omitempty"`
+
+	// DirectResponse returns a fixed HTTP response.
+	// Mutually exclusive with Forward and Redirect.
+	DirectResponse *RouteDirectResponse `json:"directResponse,omitempty" yaml:"directResponse,omitempty"`
+}
 // receives each request (level 1 — before endpoint selection).
 type DestinationLBPolicy string
 

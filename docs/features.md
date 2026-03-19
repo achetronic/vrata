@@ -27,6 +27,7 @@ Vrata is a programmable HTTP reverse proxy with a REST API. You create listeners
   - [Traffic Mirror](#traffic-mirror)
   - [Redirect](#redirect)
   - [Direct Response](#direct-response)
+  - [Error Handling (onError)](#error-handling)
 - [Groups](#groups)
 - [Snapshots](#snapshots)
 - [Middlewares](#middlewares)
@@ -718,6 +719,83 @@ Return a fixed response without contacting any upstream:
   }
 }
 ```
+
+---
+
+### Error Handling
+
+When a forward action fails (upstream unreachable, circuit breaker open, etc.), the `onError` field defines fallback behaviour. Rules are evaluated in order; the first match wins.
+
+```json
+{
+  "name": "create-order",
+  "match": { "pathPrefix": "/api/v1/orders" },
+  "forward": {
+    "destinations": [{ "destinationId": "orders-svc", "weight": 100 }]
+  },
+  "onError": [
+    {
+      "on": ["connection_refused", "timeout", "no_endpoint"],
+      "forward": {
+        "destinations": [{ "destinationId": "orders-fallback", "weight": 100 }]
+      }
+    },
+    {
+      "on": ["circuit_open"],
+      "directResponse": {
+        "status": 503,
+        "body": "{\"error\": \"service temporarily unavailable\", \"retry_after\": 30}"
+      }
+    },
+    {
+      "on": ["infrastructure"],
+      "redirect": { "url": "https://status.example.com/down", "code": 302 }
+    }
+  ]
+}
+```
+
+#### Error types
+
+| Type                    | When it occurs                                   |
+| ----------------------- | ------------------------------------------------ |
+| `connection_refused`    | TCP connect refused by the endpoint              |
+| `connection_reset`      | Connection established but reset by the endpoint |
+| `dns_failure`           | Hostname could not be resolved                   |
+| `timeout`               | Request or per-attempt timeout expired           |
+| `tls_handshake_failure` | TLS handshake with the upstream failed           |
+| `circuit_open`          | Circuit breaker prevented the attempt            |
+| `no_destination`        | No destination has healthy endpoints             |
+| `no_endpoint`           | Destination exists but all endpoints are down    |
+
+#### Wildcards
+
+| Wildcard         | Matches                               |
+| ---------------- | ------------------------------------- |
+| `infrastructure` | All of the above                      |
+| `all`            | All of the above (forward-compatible) |
+
+#### Fallback forward headers
+
+When `onError` triggers a `forward`, Vrata injects error context headers so the fallback service knows why the request was rerouted:
+
+| Header                      | Example value        |
+| --------------------------- | -------------------- |
+| `X-Vrata-Error`             | `connection_refused` |
+| `X-Vrata-Error-Status`      | `502`                |
+| `X-Vrata-Error-Destination` | `orders-svc`         |
+| `X-Vrata-Error-Endpoint`    | `10.0.1.14:8080`     |
+| `X-Vrata-Original-Path`     | `/api/v1/orders`     |
+
+#### Default behaviour
+
+If no `onError` rule matches (or `onError` is not set), Vrata returns a JSON error response:
+
+```json
+{ "error": "connection refused" }
+```
+
+With `Content-Type: application/json` and the appropriate status code (502, 503, or 504).
 
 ---
 

@@ -2671,6 +2671,42 @@ const docTemplate = `{
                 }
             }
         },
+        "model.OnErrorRule": {
+            "type": "object",
+            "properties": {
+                "directResponse": {
+                    "description": "DirectResponse returns a fixed HTTP response.\nMutually exclusive with Forward and Redirect.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.RouteDirectResponse"
+                        }
+                    ]
+                },
+                "forward": {
+                    "description": "Forward proxies the original request to fallback destinations.\nVrata injects X-Vrata-Error-* headers with the error context.\nMutually exclusive with Redirect and DirectResponse.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ForwardAction"
+                        }
+                    ]
+                },
+                "on": {
+                    "description": "On lists the error types that trigger this rule. Evaluated as OR:\nif the actual error matches any entry, the rule fires.\nSupports individual types and wildcards (\"infrastructure\", \"all\").",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ProxyErrorType"
+                    }
+                },
+                "redirect": {
+                    "description": "Redirect returns an HTTP redirect to the client.\nMutually exclusive with Forward and DirectResponse.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.RouteRedirect"
+                        }
+                    ]
+                }
+            }
+        },
         "model.OutlierDetectionOptions": {
             "type": "object",
             "properties": {
@@ -2705,6 +2741,33 @@ const docTemplate = `{
             "x-enum-varnames": [
                 "PhaseModeSend",
                 "PhaseModeSkip"
+            ]
+        },
+        "model.ProxyErrorType": {
+            "type": "string",
+            "enum": [
+                "connection_refused",
+                "connection_reset",
+                "dns_failure",
+                "timeout",
+                "tls_handshake_failure",
+                "circuit_open",
+                "no_destination",
+                "no_endpoint",
+                "infrastructure",
+                "all"
+            ],
+            "x-enum-varnames": [
+                "ProxyErrConnectionRefused",
+                "ProxyErrConnectionReset",
+                "ProxyErrDNSFailure",
+                "ProxyErrTimeout",
+                "ProxyErrTLSHandshakeFailure",
+                "ProxyErrCircuitOpen",
+                "ProxyErrNoDestination",
+                "ProxyErrNoEndpoint",
+                "ProxyErrInfrastructure",
+                "ProxyErrAll"
             ]
         },
         "model.QueryParamMatcher": {
@@ -2866,6 +2929,13 @@ const docTemplate = `{
                 "name": {
                     "description": "Name is a human-readable label for the route.",
                     "type": "string"
+                },
+                "onError": {
+                    "description": "OnError defines fallback actions when the forward action fails.\nRules are evaluated in order; the first rule whose On list matches\nthe error type is executed. If no rule matches, Vrata returns a\ndefault JSON error response. Only meaningful when Forward is set.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.OnErrorRule"
+                    }
                 },
                 "redirect": {
                     "description": "Redirect returns an HTTP redirect to the client\ninstead of forwarding to an upstream.\nMutually exclusive with Forward and DirectResponse.",

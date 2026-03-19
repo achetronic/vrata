@@ -100,48 +100,48 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractBearerToken(r)
 			if token == "" {
-				http.Error(w, "missing authorization token", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "missing authorization token")
 				return
 			}
 
 			parts := strings.Split(token, ".")
 			if len(parts) != 3 {
-				http.Error(w, "invalid token format", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "invalid token format")
 				return
 			}
 
 			headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
 			if err != nil {
-				http.Error(w, "invalid token header", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "invalid token header")
 				return
 			}
 			var header jwtHeader
 			if err := json.Unmarshal(headerJSON, &header); err != nil {
-				http.Error(w, "invalid token header", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "invalid token header")
 				return
 			}
 
 			claimsJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
 			if err != nil {
-				http.Error(w, "invalid token claims", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "invalid token claims")
 				return
 			}
 			var claims map[string]interface{}
 			if err := json.Unmarshal(claimsJSON, &claims); err != nil {
-				http.Error(w, "invalid token claims", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "invalid token claims")
 				return
 			}
 
 			signature, err := base64.RawURLEncoding.DecodeString(parts[2])
 			if err != nil {
-				http.Error(w, "invalid token signature", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "invalid token signature")
 				return
 			}
 
 			signedContent := parts[0] + "." + parts[1]
 
 			if !v.validateSignatureAndClaims(header, claims, signedContent, signature) {
-				http.Error(w, "token validation failed", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "token validation failed")
 				return
 			}
 
@@ -157,7 +157,7 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 			// Evaluate assertClaims expressions against the decoded claims.
 			for _, prg := range claimsPrograms {
 				if !prg.Eval(claims) {
-					http.Error(w, "claim assertion failed", http.StatusForbidden)
+					writeJSONError(w, http.StatusForbidden, "claim assertion failed")
 					return
 				}
 			}
