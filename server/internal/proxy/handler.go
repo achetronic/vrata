@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	"github.com/felixge/httpsnoop"
 
 	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy/celeval"
 	"github.com/achetronic/vrata/internal/proxy/middlewares"
 )
 
@@ -51,23 +53,28 @@ func buildRouteHandler(
 		if !ok {
 			continue
 		}
-		if ov, hasOv := route.MiddlewareOverrides[mwID]; hasOv && ov.Disabled {
+
+		// Resolve override: route wins over group.
+		ov := resolveOverride(mwID, route, group)
+
+		if ov != nil && ov.Disabled {
 			continue
 		}
-		if group != nil {
-			if ov, hasOv := group.MiddlewareOverrides[mwID]; hasOv && ov.Disabled {
-				if _, routeHasOv := route.MiddlewareOverrides[mwID]; !routeHasOv {
-					continue
-				}
-			}
-		}
+
 		m, cleanup := buildMiddleware(mw, pools)
-		if m != nil {
-			mws = append(mws, m)
-			if cleanup != nil {
-				onCleanup(cleanup)
-			}
+		if m == nil {
+			continue
 		}
+		if cleanup != nil {
+			onCleanup(cleanup)
+		}
+
+		// Wrap with skipWhen/onlyWhen if configured.
+		if ov != nil {
+			m = wrapWithConditions(m, ov)
+		}
+
+		mws = append(mws, m)
 	}
 
 	if len(mws) > 0 {
@@ -75,6 +82,81 @@ func buildRouteHandler(
 	}
 
 	return handler
+}
+
+// resolveOverride returns the effective override for a middleware, with route
+// winning over group. Returns nil if no override exists.
+func resolveOverride(mwID string, route model.Route, group *model.RouteGroup) *model.MiddlewareOverride {
+	if ov, ok := route.MiddlewareOverrides[mwID]; ok {
+		return &ov
+	}
+	if group != nil {
+		if ov, ok := group.MiddlewareOverrides[mwID]; ok {
+			return &ov
+		}
+	}
+	return nil
+}
+
+// wrapWithConditions wraps a middleware with skipWhen/onlyWhen CEL evaluation.
+// skipWhen: if ANY expression matches, skip the middleware.
+// onlyWhen: if NO expression matches, skip the middleware.
+func wrapWithConditions(m middlewares.Middleware, ov *model.MiddlewareOverride) middlewares.Middleware {
+	var skipProgs []*celeval.Program
+	for _, expr := range ov.SkipWhen {
+		prg, err := celeval.Compile(expr)
+		if err != nil {
+			slog.Error("middleware: invalid skipWhen expression",
+				slog.String("expr", expr),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		skipProgs = append(skipProgs, prg)
+	}
+
+	var onlyProgs []*celeval.Program
+	for _, expr := range ov.OnlyWhen {
+		prg, err := celeval.Compile(expr)
+		if err != nil {
+			slog.Error("middleware: invalid onlyWhen expression",
+				slog.String("expr", expr),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		onlyProgs = append(onlyProgs, prg)
+	}
+
+	if len(skipProgs) == 0 && len(onlyProgs) == 0 {
+		return m
+	}
+
+	return func(next http.Handler) http.Handler {
+		inner := m(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for _, prg := range skipProgs {
+				if prg.Eval(r) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			if len(onlyProgs) > 0 {
+				matched := false
+				for _, prg := range onlyProgs {
+					if prg.Eval(r) {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			inner.ServeHTTP(w, r)
+		})
+	}
 }
 
 func collectMiddlewareIDs(route model.Route, group *model.RouteGroup) []string {

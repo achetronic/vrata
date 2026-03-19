@@ -137,10 +137,10 @@ func TestE2E_Proxy_JWTMiddleware(t *testing.T) {
 
 	_, mw := apiPost(t, "/middlewares", map[string]any{
 		"name": "e2e-jwt", "type": "jwt",
-		"jwt": map[string]any{"providers": map[string]any{"default": map[string]any{
+		"jwt": map[string]any{
 			"issuer": "e2e-issuer", "audiences": []string{"e2e-aud"},
 			"jwksUri": "/.well-known/jwks.json", "jwksDestinationId": jwksDestID,
-		}}},
+		},
 	})
 	defer apiDelete(t, "/middlewares/"+id(mw))
 
@@ -207,7 +207,7 @@ func TestE2E_Proxy_JWTMiddlewareEC(t *testing.T) {
 
 	_, mw := apiPost(t, "/middlewares", map[string]any{
 		"name": "e2e-jwt-ec", "type": "jwt",
-		"jwt": map[string]any{"providers": map[string]any{"default": map[string]any{"issuer": "iss", "jwksInline": jwksJSON}}},
+		"jwt": map[string]any{"issuer": "iss", "jwksInline": jwksJSON},
 	})
 	defer apiDelete(t, "/middlewares/"+id(mw))
 

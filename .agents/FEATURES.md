@@ -170,9 +170,9 @@ Method: Line-by-line source audit + unit tests + e2e tests against live cluster
 | Proxy middlewares      | 60      | 60      |
 | Raft (FSM, cluster, peers) | 7   | 7       |
 | Sync client            | 2       | 2       |
-| E2E (proxy, live)      | 69      | 69      |
+| E2E (proxy, live)      | 73      | 73      |
 | E2E (cluster, kind)    | 8       | 8       |
-| **Total**              | **252** | **252** |
+| **Total**              | **256** | **256** |
 
 ## Bugs Fixed Across All Audits
 

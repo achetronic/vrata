@@ -63,6 +63,53 @@ func (p *Program) Eval(r *http.Request) bool {
 	return ok && result
 }
 
+// ClaimsProgram is a pre-compiled CEL program for evaluating JWT claims.
+type ClaimsProgram struct {
+	program cel.Program
+}
+
+// CompileClaims parses a CEL expression that receives a `claims` map
+// (the decoded JWT payload). The expression must return a bool.
+func CompileClaims(expr string) (*ClaimsProgram, error) {
+	env, err := cel.NewEnv(
+		cel.Variable("claims", cel.MapType(cel.StringType, cel.DynType)),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("creating CEL env: %w", err)
+	}
+
+	ast, issues := env.Compile(expr)
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("compiling CEL expression: %w", issues.Err())
+	}
+
+	if ast.OutputType() != cel.BoolType {
+		return nil, fmt.Errorf("CEL expression must return bool, got %s", ast.OutputType())
+	}
+
+	prg, err := env.Program(ast)
+	if err != nil {
+		return nil, fmt.Errorf("creating CEL program: %w", err)
+	}
+
+	return &ClaimsProgram{program: prg}, nil
+}
+
+// Eval evaluates the claims program against the given JWT claims map.
+func (p *ClaimsProgram) Eval(claims map[string]any) bool {
+	vars := map[string]any{
+		"claims": claims,
+	}
+
+	out, _, err := p.program.Eval(vars)
+	if err != nil {
+		return false
+	}
+
+	result, ok := out.Value().(bool)
+	return ok && result
+}
+
 // buildRequestMap creates a map representation of the HTTP request for CEL.
 func buildRequestMap(r *http.Request) map[string]any {
 	headers := make(map[string]any, len(r.Header))

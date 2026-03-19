@@ -116,19 +116,10 @@ type CORSOrigin struct {
 // ────────────────────────────────────────────────────────────────────────────
 
 // JWTConfig holds the configuration for JWT authentication.
+// JWTConfig holds the configuration for a single JWT validation middleware.
+// Each middleware validates tokens from one issuer. Use multiple JWT
+// middlewares with skipWhen/onlyWhen for multi-provider setups.
 type JWTConfig struct {
-	// Providers is a map of provider name to JWTProvider configuration.
-	// The map key is referenced from per-route overrides to select a specific
-	// provider (or disable authentication for that route).
-	Providers map[string]JWTProvider `json:"providers,omitempty" yaml:"providers,omitempty"`
-
-	// Rules defines which request paths require JWT validation and which
-	// provider to apply. If empty, all paths are validated by all providers.
-	Rules []JWTRule `json:"rules,omitempty" yaml:"rules,omitempty"`
-}
-
-// JWTProvider describes a single JWT identity provider.
-type JWTProvider struct {
 	// Issuer is the expected value of the "iss" claim.
 	Issuer string `json:"issuer" yaml:"issuer"`
 
@@ -137,14 +128,12 @@ type JWTProvider struct {
 	Audiences []string `json:"audiences,omitempty" yaml:"audiences,omitempty"`
 
 	// JWKsURI is the URL path from which the JSON Web Key Set is fetched.
-	// When set, JWKsDestinationID must also be set to identify the upstream
-	// that serves the JWKS endpoint.
+	// When set, JWKsDestinationID must also be set.
 	// Mutually exclusive with JWKsInline.
 	JWKsURI string `json:"jwksUri,omitempty" yaml:"jwksUri,omitempty"`
 
-	// JWKsDestinationID references the Destination entity that hosts the
-	// JWKS endpoint. Required when JWKsURI is set. The Destination's cluster
-	// (with its TLS config) is used as the upstream for fetching keys.
+	// JWKsDestinationID references the Destination that hosts the JWKS endpoint.
+	// Required when JWKsURI is set.
 	JWKsDestinationID string `json:"jwksDestinationId,omitempty" yaml:"jwksDestinationId,omitempty"`
 
 	// JWKsInline is a literal JSON Web Key Set document.
@@ -156,8 +145,13 @@ type JWTProvider struct {
 	ForwardJWT bool `json:"forwardJwt,omitempty" yaml:"forwardJwt,omitempty"`
 
 	// ClaimToHeaders maps JWT claim names to upstream request header names.
-	// The claim value is set as the header value before forwarding.
 	ClaimToHeaders []JWTClaimHeader `json:"claimToHeaders,omitempty" yaml:"claimToHeaders,omitempty"`
+
+	// AssertClaims is a list of CEL expressions evaluated against the decoded
+	// JWT claims after the token is verified. Each expression receives a
+	// `claims` map (string → any) with the decoded payload. All expressions
+	// must evaluate to true for the request to pass. If any fails, 403.
+	AssertClaims []string `json:"assertClaims,omitempty" yaml:"assertClaims,omitempty"`
 }
 
 // JWTClaimHeader maps a JWT claim to a request header forwarded upstream.
@@ -167,20 +161,6 @@ type JWTClaimHeader struct {
 
 	// Header is the request header name that receives the claim value.
 	Header string `json:"header" yaml:"header"`
-}
-
-// JWTRule associates a path prefix with a required JWT provider.
-type JWTRule struct {
-	// Match is the path prefix this rule applies to.
-	Match string `json:"match" yaml:"match"`
-
-	// Requires lists the provider names that must validate the request.
-	// All listed providers must succeed (AND semantics).
-	Requires []string `json:"requires,omitempty" yaml:"requires,omitempty"`
-
-	// AllowMissing allows requests without a JWT token to pass through.
-	// Useful for public endpoints that coexist in the same listener.
-	AllowMissing bool `json:"allowMissing,omitempty" yaml:"allowMissing,omitempty"`
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -487,9 +467,15 @@ type MiddlewareOverride struct {
 	// When true, no other field is evaluated.
 	Disabled bool `json:"disabled,omitempty" yaml:"disabled,omitempty"`
 
-	// JWTProvider selects a specific JWT provider by name (instead of requiring all).
-	// Only meaningful when the referenced filter is of type "jwt".
-	JWTProvider string `json:"jwtProvider,omitempty" yaml:"jwtProvider,omitempty"`
+	// SkipWhen is a list of CEL expressions evaluated against the request.
+	// If ANY expression evaluates to true, the middleware is skipped.
+	// The middleware is active by default. Mutually exclusive with OnlyWhen.
+	SkipWhen []string `json:"skipWhen,omitempty" yaml:"skipWhen,omitempty"`
+
+	// OnlyWhen is a list of CEL expressions evaluated against the request.
+	// The middleware is only executed if at least one expression evaluates to true.
+	// The middleware is inactive by default. Mutually exclusive with SkipWhen.
+	OnlyWhen []string `json:"onlyWhen,omitempty" yaml:"onlyWhen,omitempty"`
 
 	// Headers overrides header manipulation for this route/group.
 	// Only meaningful when the referenced filter is of type "headers".

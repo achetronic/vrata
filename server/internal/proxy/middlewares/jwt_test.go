@@ -57,13 +57,11 @@ func TestJWTValidSignature(t *testing.T) {
 	jwks := makeJWKS(t, &key.PublicKey, "test-kid")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {
+		
 				Issuer:     "test-issuer",
 				Audiences:  []string{"test-aud"},
 				JWKsInline: jwks,
-			},
-		},
+		
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -98,12 +96,10 @@ func TestJWTInvalidSignature(t *testing.T) {
 	jwks := makeJWKS(t, &key.PublicKey, "test-kid")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {
+		
 				Issuer:     "test-issuer",
 				JWKsInline: jwks,
-			},
-		},
+		
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -134,12 +130,10 @@ func TestJWTExpired(t *testing.T) {
 	jwks := makeJWKS(t, &key.PublicKey, "kid1")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {
+		
 				Issuer:     "iss",
 				JWKsInline: jwks,
-			},
-		},
+		
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -162,7 +156,7 @@ func TestJWTExpired(t *testing.T) {
 
 func TestJWTMissingToken(t *testing.T) {
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{"default": {Issuer: "iss"}},
+		Issuer: "iss",
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -178,24 +172,40 @@ func TestJWTMissingToken(t *testing.T) {
 	}
 }
 
-func TestJWTAllowMissing(t *testing.T) {
+func TestJWTAssertClaims(t *testing.T) {
+	key := generateTestKey(t)
+	jwks := makeJWKS(t, &key.PublicKey, "kid1")
+
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{"default": {Issuer: "iss"}},
-		Rules:     []model.JWTRule{{Match: "/public", AllowMissing: true}},
+		Issuer:     "test-issuer",
+		JWKsInline: jwks,
+		AssertClaims: []string{
+			`claims.role == "admin"`,
+		},
 	}
 
 	mw := JWTMiddleware(cfg, nil)
-	var reached bool
-	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reached = true
-		w.WriteHeader(200)
-	}))
+
+	adminToken := signJWT(t, key, map[string]interface{}{"alg": "RS256", "kid": "kid1"},
+		map[string]interface{}{"iss": "test-issuer", "exp": float64(time.Now().Add(time.Hour).Unix()), "role": "admin"})
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
 
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, httptest.NewRequest("GET", "/public/page", nil))
+	r := httptest.NewRequest("GET", "/api", nil)
+	r.Header.Set("Authorization", "Bearer "+adminToken)
+	handler.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Errorf("admin token: expected 200, got %d", w.Code)
+	}
 
-	if !reached {
-		t.Errorf("expected handler reached for allow-missing path, got %d", w.Code)
+	viewerToken := signJWT(t, key, map[string]interface{}{"alg": "RS256", "kid": "kid1"},
+		map[string]interface{}{"iss": "test-issuer", "exp": float64(time.Now().Add(time.Hour).Unix()), "role": "viewer"})
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest("GET", "/api", nil)
+	r2.Header.Set("Authorization", "Bearer "+viewerToken)
+	handler.ServeHTTP(w2, r2)
+	if w2.Code != 403 {
+		t.Errorf("viewer token: expected 403, got %d", w2.Code)
 	}
 }
 
@@ -204,15 +214,13 @@ func TestJWTClaimToHeaders(t *testing.T) {
 	jwks := makeJWKS(t, &key.PublicKey, "kid1")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {
+		
 				Issuer:     "iss",
 				JWKsInline: jwks,
 				ClaimToHeaders: []model.JWTClaimHeader{
 					{Claim: "sub", Header: "X-User-ID"},
 				},
-			},
-		},
+		
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -240,13 +248,11 @@ func TestJWTForwardJWTFalse(t *testing.T) {
 	jwks := makeJWKS(t, &key.PublicKey, "kid1")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {
+		
 				Issuer:     "iss",
 				JWKsInline: jwks,
 				ForwardJWT: false,
-			},
-		},
+		
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -292,13 +298,11 @@ func TestJWTRemoteJWKS(t *testing.T) {
 	defer srv.Close()
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {
+		
 				Issuer:            "iss",
 				JWKsURI:           "/.well-known/jwks.json",
 				JWKsDestinationID: "jwks-svc",
-			},
-		},
+		
 	}
 
 	services := map[string]Service{
@@ -363,9 +367,7 @@ func TestJWTECSignature(t *testing.T) {
 	jwks := makeECJWKS(t, &key.PublicKey, "ec-kid", "P-256")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {Issuer: "iss", JWKsInline: jwks},
-		},
+		Issuer: "iss", JWKsInline: jwks,
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -394,9 +396,7 @@ func TestJWTECInvalidSignature(t *testing.T) {
 	jwks := makeECJWKS(t, &key.PublicKey, "ec-kid", "P-256")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {Issuer: "iss", JWKsInline: jwks},
-		},
+		Issuer: "iss", JWKsInline: jwks,
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -444,9 +444,7 @@ func TestJWTEd25519Signature(t *testing.T) {
 	jwks := makeEd25519JWKS(t, pub, "ed-kid")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {Issuer: "iss", JWKsInline: jwks},
-		},
+		Issuer: "iss", JWKsInline: jwks,
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -475,9 +473,7 @@ func TestJWTEd25519InvalidSignature(t *testing.T) {
 	jwks := makeEd25519JWKS(t, pub, "ed-kid")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {Issuer: "iss", JWKsInline: jwks},
-		},
+		Issuer: "iss", JWKsInline: jwks,
 	}
 
 	mw := JWTMiddleware(cfg, nil)
@@ -503,9 +499,7 @@ func TestJWTMissingExpClaim(t *testing.T) {
 	jwks := makeJWKS(t, &key.PublicKey, "kid1")
 
 	cfg := &model.JWTConfig{
-		Providers: map[string]model.JWTProvider{
-			"default": {Issuer: "iss", JWKsInline: jwks},
-		},
+		Issuer: "iss", JWKsInline: jwks,
 	}
 
 	mw := JWTMiddleware(cfg, nil)

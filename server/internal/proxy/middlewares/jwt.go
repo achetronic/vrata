@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy/celeval"
 )
 
 // JWTMiddleware creates a JWT validation middleware.
@@ -35,51 +36,53 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 // stop function must be called when the routing table is replaced to
 // prevent goroutine leaks.
 func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (Middleware, func()) {
-	if cfg == nil || len(cfg.Providers) == 0 {
+	if cfg == nil || cfg.Issuer == "" {
 		return passthrough, nil
 	}
 
-	validators := make(map[string]*jwtValidator)
-	for name, p := range cfg.Providers {
-		v := &jwtValidator{
-			issuer:         p.Issuer,
-			audiences:      p.Audiences,
-			forward:        p.ForwardJWT,
-			claimToHeaders: p.ClaimToHeaders,
-			stop:           make(chan struct{}),
-		}
+	v := &jwtValidator{
+		issuer:         cfg.Issuer,
+		audiences:      cfg.Audiences,
+		forward:        cfg.ForwardJWT,
+		claimToHeaders: cfg.ClaimToHeaders,
+		stop:           make(chan struct{}),
+	}
 
-		if p.JWKsInline != "" {
-			keys, err := parseJWKS([]byte(p.JWKsInline))
-			if err != nil {
-				slog.Error("jwt: failed to parse inline JWKS",
-					slog.String("provider", name),
-					slog.String("error", err.Error()),
-				)
-			}
-			v.keys = keys
-		} else if p.JWKsURI != "" && p.JWKsDestinationID != "" {
-			if svc, ok := services[p.JWKsDestinationID]; ok {
-				v.jwksURL = svc.BaseURL + p.JWKsURI
-				v.transport = svc.Transport
-				v.refreshKeys()
-				go v.refreshLoop()
-			}
+	if cfg.JWKsInline != "" {
+		keys, err := parseJWKS([]byte(cfg.JWKsInline))
+		if err != nil {
+			slog.Error("jwt: failed to parse inline JWKS",
+				slog.String("error", err.Error()),
+			)
 		}
+		v.keys = keys
+	} else if cfg.JWKsURI != "" && cfg.JWKsDestinationID != "" {
+		if svc, ok := services[cfg.JWKsDestinationID]; ok {
+			v.jwksURL = svc.BaseURL + cfg.JWKsURI
+			v.transport = svc.Transport
+			v.refreshKeys()
+			go v.refreshLoop()
+		}
+	}
 
-		validators[name] = v
+	// Pre-compile assertClaims CEL expressions.
+	var claimsPrograms []*celeval.ClaimsProgram
+	for _, expr := range cfg.AssertClaims {
+		prg, err := celeval.CompileClaims(expr)
+		if err != nil {
+			slog.Error("jwt: invalid assertClaims expression, skipping",
+				slog.String("expr", expr),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		claimsPrograms = append(claimsPrograms, prg)
 	}
 
 	mw := Middleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := extractBearerToken(r)
 			if token == "" {
-				for _, rule := range cfg.Rules {
-					if strings.HasPrefix(r.URL.Path, rule.Match) && rule.AllowMissing {
-						next.ServeHTTP(w, r)
-						return
-					}
-				}
 				http.Error(w, "missing authorization token", http.StatusUnauthorized)
 				return
 			}
@@ -120,25 +123,26 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 
 			signedContent := parts[0] + "." + parts[1]
 
-			validated := false
-			for _, v := range validators {
-				if v.validateSignatureAndClaims(header, claims, signedContent, signature) {
-					validated = true
-					for _, cth := range v.claimToHeaders {
-						if val, ok := claims[cth.Claim]; ok {
-							r.Header.Set(cth.Header, fmt.Sprintf("%v", val))
-						}
-					}
-					if !v.forward {
-						r.Header.Del("Authorization")
-					}
-					break
-				}
-			}
-
-			if !validated {
+			if !v.validateSignatureAndClaims(header, claims, signedContent, signature) {
 				http.Error(w, "token validation failed", http.StatusUnauthorized)
 				return
+			}
+
+			for _, cth := range v.claimToHeaders {
+				if val, ok := claims[cth.Claim]; ok {
+					r.Header.Set(cth.Header, fmt.Sprintf("%v", val))
+				}
+			}
+			if !v.forward {
+				r.Header.Del("Authorization")
+			}
+
+			// Evaluate assertClaims expressions against the decoded claims.
+			for _, prg := range claimsPrograms {
+				if !prg.Eval(claims) {
+					http.Error(w, "claim assertion failed", http.StatusForbidden)
+					return
+				}
 			}
 
 			next.ServeHTTP(w, r)
@@ -146,9 +150,7 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 	})
 
 	stop := func() {
-		for _, v := range validators {
-			close(v.stop)
-		}
+		close(v.stop)
 	}
 
 	return mw, stop
