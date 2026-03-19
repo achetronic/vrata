@@ -17,13 +17,13 @@
 | 5   | `proxy/circuit.go`             | `openDuration` and `failureThreshold` now configurable via `CircuitBreakerOptions`    | **FIXED**                         |
 | 6   | `proxy/handler.go`             | `unwrapHTTPTransport` dead code — removed                                             | **FIXED**                         |
 | 7   | `proxy/pool.go`                | `roundRobinCounter` dead code — removed                                               | **FIXED**                         |
-| 8   | `proxy/middlewares/extproc.go` | `interceptResponseWriter` manual ResponseWriter                                       | **DEFERRED** — tracked in TODO.md |
+| 8   | `proxy/middlewares/extproc.go` | `interceptResponseWriter` replaced with `httpsnoop.Wrap` hooks                        | **FIXED**                         |
 | 9   | `api/handlers/sync.go`         | `http.Error` in API handler — replaced with `respond.Error`                           | **FIXED**                         |
 | 10  | `api/router.go`                | `http.Error` with raw `err.Error()` — replaced with `respond.Error` with safe message | **FIXED**                         |
 | 11  | `model/destination.go`         | `DestinationTimeouts.Request` wired as fallback in forwardHandler                     | **FIXED**                         |
 | 12  | `proxy/metrics.go`             | `_ = sizeBuckets` dead code — removed                                                 | **FIXED**                         |
 
-**11 fixed, 1 deferred (ExtProc interceptResponseWriter — tracked in TODO.md)**
+**All 12 critical findings fixed**
 
 ---
 
@@ -87,10 +87,10 @@
 
 | Severity  | Total   | Fixed  | Deferred | Acceptable                   |
 | --------- | ------- | ------ | -------- | ---------------------------- |
-| Critical  | 12      | 11     | 1        | 0                            |
+| Critical  | 12      | 12     | 0        | 0                            |
 | High      | 48      | 48     | 0        | 0                            |
 | Medium    | 28+     | 22+    | 0        | 6 (partial coverage via e2e) |
 | Low       | 15      | 8      | 0        | 7                            |
-| **Total** | **103** | **89** | **1**    | **13**                       |
+| **Total** | **103** | **90** | **0**    | **13**                       |
 
 **Tests**: 226 unit tests passing, 0 failures. Build + vet clean.

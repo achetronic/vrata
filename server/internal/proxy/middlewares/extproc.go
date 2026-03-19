@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/felixge/httpsnoop"
 	"time"
 
 	"github.com/achetronic/vrata/internal/model"
@@ -199,19 +201,49 @@ func (ep *extProc) handle(next http.Handler, w http.ResponseWriter, r *http.Requ
 	}
 
 	// Call upstream, intercepting the response for post-processing.
-	irw := &interceptResponseWriter{
-		ResponseWriter:  w,
-		statusCode:      http.StatusOK,
-		captureHeaders:  ep.phases.responseHeaders,
-		captureBody:     ep.phases.responseBody != model.BodyModeNone && ep.phases.responseBody != "",
-		headersSent:     false,
+	// Use httpsnoop to preserve optional interfaces (Flusher, Hijacker, etc.)
+	captureHeaders := ep.phases.responseHeaders
+	captureBody := ep.phases.responseBody != model.BodyModeNone && ep.phases.responseBody != ""
+	needCapture := captureHeaders || captureBody
+
+	var capturedStatus int
+	var capturedBody []byte
+	headersSent := false
+
+	hooked := httpsnoop.Wrap(w, httpsnoop.Hooks{
+		WriteHeader: func(next httpsnoop.WriteHeaderFunc) httpsnoop.WriteHeaderFunc {
+			return func(code int) {
+				capturedStatus = code
+				if !needCapture {
+					headersSent = true
+					next(code)
+				}
+			}
+		},
+		Write: func(next httpsnoop.WriteFunc) httpsnoop.WriteFunc {
+			return func(b []byte) (int, error) {
+				if captureBody {
+					capturedBody = append(capturedBody, b...)
+					return len(b), nil
+				}
+				if !headersSent {
+					w.WriteHeader(capturedStatus)
+					headersSent = true
+				}
+				return next(b)
+			}
+		},
+	})
+
+	if capturedStatus == 0 {
+		capturedStatus = http.StatusOK
 	}
 
-	next.ServeHTTP(irw, r)
+	next.ServeHTTP(hooked, r)
 
 	// Phase 3: Response headers.
-	if ep.phases.responseHeaders {
-		resp, err := ep.processResponseHeaders(irw)
+	if captureHeaders {
+		resp, err := ep.processResponseHeaders(capturedStatus, w.Header(), len(capturedBody) == 0)
 		if err != nil {
 			if !ep.cfg.AllowOnError {
 				slog.Error("extproc: response headers processing failed",
@@ -220,14 +252,14 @@ func (ep *extProc) handle(next http.Handler, w http.ResponseWriter, r *http.Requ
 			}
 		} else if resp != nil {
 			if ha := resp.GetResponseHeaders(); ha != nil {
-				applyHeadersAction(irw.Header(), ha, ep.cfg.AllowedMutations)
+				applyHeadersAction(w.Header(), ha, ep.cfg.AllowedMutations)
 			}
 		}
 	}
 
 	// Phase 4: Response body.
-	if irw.captureBody && len(irw.body) > 0 {
-		resp, err := ep.processResponseBody(irw.body)
+	if captureBody && len(capturedBody) > 0 {
+		resp, err := ep.processResponseBody(capturedBody)
 		if err != nil {
 			if !ep.cfg.AllowOnError {
 				slog.Error("extproc: response body processing failed",
@@ -236,13 +268,20 @@ func (ep *extProc) handle(next http.Handler, w http.ResponseWriter, r *http.Requ
 			}
 		} else if resp != nil {
 			if ba := resp.GetResponseBody(); ba != nil {
-				irw.body = applyResponseBodyAction(irw.body, ba)
+				capturedBody = applyResponseBodyAction(capturedBody, ba)
 			}
 		}
 	}
 
 	// Flush the (possibly mutated) response to the client.
-	irw.flush()
+	if !headersSent {
+		w.WriteHeader(capturedStatus)
+		if len(capturedBody) > 0 {
+			if _, err := w.Write(capturedBody); err != nil {
+				slog.Warn("extproc: failed to flush response body", slog.String("error", err.Error()))
+			}
+		}
+	}
 }
 
 // onError handles processor failures. Returns true if the request should
@@ -319,18 +358,19 @@ func (ep *extProc) processRequestBody(r *http.Request) (*extprocv1.ProcessingRes
 }
 
 // processResponseHeaders sends response headers to the processor.
-func (ep *extProc) processResponseHeaders(irw *interceptResponseWriter) (*extprocv1.ProcessingResponse, error) {
-	pairs := headersToProto(irw.Header(), ep.cfg.ForwardRules)
+// processResponseHeaders sends the response headers to the external processor.
+func (ep *extProc) processResponseHeaders(statusCode int, headers http.Header, endOfStream bool) (*extprocv1.ProcessingResponse, error) {
+	pairs := headersToProto(headers, ep.cfg.ForwardRules)
 	pairs = append(pairs, &extprocv1.HeaderPair{
 		Key:   ":status",
-		Value: fmt.Sprintf("%d", irw.statusCode),
+		Value: fmt.Sprintf("%d", statusCode),
 	})
 
 	req := &extprocv1.ProcessingRequest{
 		Phase: &extprocv1.ProcessingRequest_ResponseHeaders{
 			ResponseHeaders: &extprocv1.HttpHeaders{
 				Headers:     pairs,
-				EndOfStream: len(irw.body) == 0,
+				EndOfStream: endOfStream,
 			},
 		},
 		ObserveOnly: ep.observeEnabled(),
@@ -762,60 +802,6 @@ func writeReject(w http.ResponseWriter, reject *extprocv1.RejectRequest) {
 	w.WriteHeader(status)
 	if reject.Body != nil {
 		w.Write(reject.Body)
-	}
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Response interceptor
-// ─────────────────────────────────────────────────────────────────────────────
-
-// interceptResponseWriter captures the upstream response so response phases
-// can inspect and mutate headers and body before sending to the client.
-type interceptResponseWriter struct {
-	http.ResponseWriter
-	statusCode     int
-	body           []byte
-	captureHeaders bool
-	captureBody    bool
-	headersSent    bool
-}
-
-// WriteHeader captures the status code without writing it to the client.
-func (irw *interceptResponseWriter) WriteHeader(code int) {
-	irw.statusCode = code
-	if !irw.captureHeaders && !irw.captureBody {
-		irw.ResponseWriter.WriteHeader(code)
-		irw.headersSent = true
-	}
-}
-
-// Write captures the body for later processing.
-func (irw *interceptResponseWriter) Write(b []byte) (int, error) {
-	if irw.captureBody {
-		irw.body = append(irw.body, b...)
-		return len(b), nil
-	}
-	if !irw.headersSent {
-		irw.ResponseWriter.WriteHeader(irw.statusCode)
-		irw.headersSent = true
-	}
-	return irw.ResponseWriter.Write(b)
-}
-
-// flush sends the (possibly mutated) response to the client.
-func (irw *interceptResponseWriter) flush() {
-	if irw.headersSent {
-		return
-	}
-	irw.ResponseWriter.WriteHeader(irw.statusCode)
-	if len(irw.body) > 0 {
-		irw.ResponseWriter.Write(irw.body)
-	}
-}
-
-func (irw *interceptResponseWriter) Flush() {
-	if f, ok := irw.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
 	}
 }
 
