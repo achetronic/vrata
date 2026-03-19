@@ -77,7 +77,6 @@ func NewMetricsCollector(cfg *model.ListenerMetrics) *MetricsCollector {
 	}
 
 	durationBuckets := cfg.ResolvedDurationBuckets()
-	sizeBuckets := cfg.ResolvedSizeBuckets()
 
 	if cfg.CollectRoute() {
 		mc.routeRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -189,8 +188,6 @@ func NewMetricsCollector(cfg *model.ListenerMetrics) *MetricsCollector {
 			Name: "vrata_listener_tls_handshake_errors_total",
 			Help: "TLS handshake errors per listener.",
 		}, []string{"listener", "address"})
-
-		_ = sizeBuckets
 
 		reg.MustRegister(mc.listenerConnections, mc.listenerActive, mc.listenerTLSErrors)
 	}

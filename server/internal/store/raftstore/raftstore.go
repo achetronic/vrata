@@ -38,87 +38,114 @@ func New(local *boltstore.Store, node *rft.Node) *Store {
 
 // ─── Reads — served from local bolt ─────────────────────────────────────────
 
+// ListRoutes returns all routes from the local store.
 func (s *Store) ListRoutes(ctx context.Context) ([]model.Route, error) {
 	return s.local.ListRoutes(ctx)
 }
+// GetRoute returns a route by ID from the local store.
 func (s *Store) GetRoute(ctx context.Context, id string) (model.Route, error) {
 	return s.local.GetRoute(ctx, id)
 }
+// ListGroups returns all groups from the local store.
 func (s *Store) ListGroups(ctx context.Context) ([]model.RouteGroup, error) {
 	return s.local.ListGroups(ctx)
 }
+// GetGroup returns a group by ID from the local store.
 func (s *Store) GetGroup(ctx context.Context, id string) (model.RouteGroup, error) {
 	return s.local.GetGroup(ctx, id)
 }
+// ListMiddlewares returns all middlewares from the local store.
 func (s *Store) ListMiddlewares(ctx context.Context) ([]model.Middleware, error) {
 	return s.local.ListMiddlewares(ctx)
 }
+// GetMiddleware returns a middleware by ID from the local store.
 func (s *Store) GetMiddleware(ctx context.Context, id string) (model.Middleware, error) {
 	return s.local.GetMiddleware(ctx, id)
 }
+// ListListeners returns all listeners from the local store.
 func (s *Store) ListListeners(ctx context.Context) ([]model.Listener, error) {
 	return s.local.ListListeners(ctx)
 }
+// GetListener returns a listener by ID from the local store.
 func (s *Store) GetListener(ctx context.Context, id string) (model.Listener, error) {
 	return s.local.GetListener(ctx, id)
 }
+// ListDestinations returns all destinations from the local store.
 func (s *Store) ListDestinations(ctx context.Context) ([]model.Destination, error) {
 	return s.local.ListDestinations(ctx)
 }
+// GetDestination returns a destination by ID from the local store.
 func (s *Store) GetDestination(ctx context.Context, id string) (model.Destination, error) {
 	return s.local.GetDestination(ctx, id)
 }
+// ListSnapshots returns summary metadata for all snapshots from the local store.
 func (s *Store) ListSnapshots(ctx context.Context) ([]model.SnapshotSummary, error) {
 	return s.local.ListSnapshots(ctx)
 }
+// GetSnapshot returns a snapshot by ID from the local store.
 func (s *Store) GetSnapshot(ctx context.Context, id string) (model.VersionedSnapshot, error) {
 	return s.local.GetSnapshot(ctx, id)
 }
+// GetActiveSnapshot returns the active snapshot from the local store.
 func (s *Store) GetActiveSnapshot(ctx context.Context) (model.VersionedSnapshot, error) {
 	return s.local.GetActiveSnapshot(ctx)
 }
+// Subscribe returns a channel of store events from the local store.
 func (s *Store) Subscribe(ctx context.Context) (<-chan store.StoreEvent, error) {
 	return s.local.Subscribe(ctx)
 }
 
 // ─── Writes — go through Raft ────────────────────────────────────────────────
 
+// SaveRoute creates or replaces a route via the Raft log.
 func (s *Store) SaveRoute(ctx context.Context, v model.Route) error {
 	return s.apply(rft.CmdSaveRoute, v.ID, v)
 }
+// DeleteRoute removes a route via the Raft log.
 func (s *Store) DeleteRoute(ctx context.Context, id string) error {
 	return s.apply(rft.CmdDeleteRoute, id, nil)
 }
+// SaveGroup creates or replaces a group via the Raft log.
 func (s *Store) SaveGroup(ctx context.Context, v model.RouteGroup) error {
 	return s.apply(rft.CmdSaveGroup, v.ID, v)
 }
+// DeleteGroup removes a group via the Raft log.
 func (s *Store) DeleteGroup(ctx context.Context, id string) error {
 	return s.apply(rft.CmdDeleteGroup, id, nil)
 }
+// SaveMiddleware creates or replaces a middleware via the Raft log.
 func (s *Store) SaveMiddleware(ctx context.Context, v model.Middleware) error {
 	return s.apply(rft.CmdSaveMiddleware, v.ID, v)
 }
+// DeleteMiddleware removes a middleware via the Raft log.
 func (s *Store) DeleteMiddleware(ctx context.Context, id string) error {
 	return s.apply(rft.CmdDeleteMiddleware, id, nil)
 }
+// SaveListener creates or replaces a listener via the Raft log.
 func (s *Store) SaveListener(ctx context.Context, v model.Listener) error {
 	return s.apply(rft.CmdSaveListener, v.ID, v)
 }
+// DeleteListener removes a listener via the Raft log.
 func (s *Store) DeleteListener(ctx context.Context, id string) error {
 	return s.apply(rft.CmdDeleteListener, id, nil)
 }
+// SaveDestination creates or replaces a destination via the Raft log.
 func (s *Store) SaveDestination(ctx context.Context, v model.Destination) error {
 	return s.apply(rft.CmdSaveDestination, v.ID, v)
 }
+// DeleteDestination removes a destination via the Raft log.
 func (s *Store) DeleteDestination(ctx context.Context, id string) error {
 	return s.apply(rft.CmdDeleteDestination, id, nil)
 }
+// SaveSnapshot creates or replaces a versioned snapshot via the Raft log.
 func (s *Store) SaveSnapshot(ctx context.Context, v model.VersionedSnapshot) error {
 	return s.apply(rft.CmdSaveSnapshot, v.ID, v)
 }
+// DeleteSnapshot removes a versioned snapshot via the Raft log.
 func (s *Store) DeleteSnapshot(ctx context.Context, id string) error {
 	return s.apply(rft.CmdDeleteSnapshot, id, nil)
 }
+// ActivateSnapshot sets the active snapshot via the Raft log.
 func (s *Store) ActivateSnapshot(ctx context.Context, id string) error {
 	return s.apply(rft.CmdActivateSnapshot, id, nil)
 }

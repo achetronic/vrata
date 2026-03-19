@@ -32,6 +32,7 @@ type HashBalancer interface {
 // WeightedRandomBalancer picks by weighted random.
 type WeightedRandomBalancer struct{}
 
+// Pick selects a random endpoint.
 func (WeightedRandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	return pickRandomEndpoint(endpoints)
 }
@@ -41,6 +42,7 @@ type RoundRobinBalancer struct {
 	counter atomic.Uint64
 }
 
+// Pick selects the next endpoint in round-robin order.
 func (rr *RoundRobinBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	if len(dests) == 0 {
 		return nil
@@ -60,6 +62,7 @@ func NewLeastRequestBalancer() *LeastRequestBalancer {
 	return &LeastRequestBalancer{inflight: make(map[string]int64)}
 }
 
+// Pick selects the endpoint with the fewest active requests.
 func (lb *LeastRequestBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
@@ -80,6 +83,7 @@ func (lb *LeastRequestBalancer) Pick(_ *http.Request, dests []model.DestinationR
 	return endpoints[best]
 }
 
+// Done decrements the in-flight counter for the given endpoint.
 func (lb *LeastRequestBalancer) Done(destID string) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
@@ -92,6 +96,7 @@ func (lb *LeastRequestBalancer) Done(destID string) {
 // RandomBalancer picks a random destination.
 type RandomBalancer struct{}
 
+// Pick selects a random endpoint.
 func (RandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	if len(dests) == 0 {
 		return nil
@@ -153,10 +158,13 @@ func (rh *RingHashBalancer) Build(dests []model.DestinationRef) {
 	})
 }
 
+// Pick selects an endpoint using the request's hash.
 func (rh *RingHashBalancer) Pick(r *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	return rh.PickByHash(hashRequest(r), dests, endpoints)
 }
 
+// Pick selects an endpoint using the request's hash.
+// PickByHash selects an endpoint using a pre-computed hash key.
 func (rh *RingHashBalancer) PickByHash(h uint32, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	rh.mu.RLock()
 	defer rh.mu.RUnlock()
@@ -246,10 +254,13 @@ func (m *MaglevBalancer) Build(dests []model.DestinationRef) {
 	m.table = table
 }
 
+// Pick selects an endpoint using the request's hash.
 func (m *MaglevBalancer) Pick(r *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	return m.PickByHash(hashRequest(r), dests, endpoints)
 }
 
+// Pick selects an endpoint using the request's hash.
+// PickByHash selects an endpoint using a pre-computed hash key.
 func (m *MaglevBalancer) PickByHash(h uint32, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

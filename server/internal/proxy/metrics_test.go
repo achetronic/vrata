@@ -193,6 +193,51 @@ func TestMetricsCollectorMirror(t *testing.T) {
 	}
 }
 
+func TestMetricsCollectorDestInflight(t *testing.T) {
+	cfg := &model.ListenerMetrics{Path: "/metrics"}
+	mc := NewMetricsCollector(cfg)
+
+	mc.DestInflightInc("dest-1")
+	mc.DestInflightInc("dest-1")
+	mc.DestInflightDec("dest-1")
+
+	val := gaugeValue(t, mc.destInflight, "dest-1")
+	if val != 1 {
+		t.Errorf("expected dest inflight=1, got %v", val)
+	}
+}
+
+func TestMetricsCollectorListenerMetrics(t *testing.T) {
+	cfg := &model.ListenerMetrics{Path: "/metrics"}
+	mc := NewMetricsCollector(cfg)
+
+	mc.RecordListenerConnection("main", ":8080")
+	mc.RecordListenerConnection("main", ":8080")
+	mc.ListenerActiveInc("main", ":8080")
+	mc.ListenerActiveDec("main", ":8080")
+	mc.RecordTLSError("main", ":8080")
+
+	conn := counterValue(t, mc.listenerConnections, "main", ":8080")
+	if conn != 2 {
+		t.Errorf("expected 2 connections, got %v", conn)
+	}
+	active := gaugeValue(t, mc.listenerActive, "main", ":8080")
+	if active != 0 {
+		t.Errorf("expected 0 active, got %v", active)
+	}
+	tlsErr := counterValue(t, mc.listenerTLSErrors, "main", ":8080")
+	if tlsErr != 1 {
+		t.Errorf("expected 1 TLS error, got %v", tlsErr)
+	}
+}
+
+func TestFormatDestEndpoint(t *testing.T) {
+	got := FormatDestEndpoint("10.0.1.5", 8080)
+	if got != "10.0.1.5:8080" {
+		t.Errorf("expected 10.0.1.5:8080, got %s", got)
+	}
+}
+
 func TestStatusClass(t *testing.T) {
 	tests := []struct {
 		code int

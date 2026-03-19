@@ -3,11 +3,11 @@ package proxy
 import (
 	cryptorand "crypto/rand"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"sync/atomic"
 	"time"
 
 	"github.com/achetronic/vrata/internal/model"
@@ -156,10 +156,6 @@ func (dp *DestinationPool) endpointMap(eps []*Endpoint) map[string]*Endpoint {
 	return m
 }
 
-// roundRobinCounter is a package-level counter for default round-robin
-// when no balancer is explicitly configured.
-var roundRobinCounter atomic.Uint64
-
 // isStickyEndpoint returns true if this pool uses STICKY endpoint balancing
 // and has a session store available.
 func (dp *DestinationPool) isStickyEndpoint() bool {
@@ -221,7 +217,9 @@ func (dp *DestinationPool) pickStickyEndpoint(r *http.Request, w http.ResponseWr
 
 	ep := healthy[rand.Intn(len(healthy))]
 	ttlSec := int(parseEPTTL(ttlStr, time.Hour).Seconds())
-	_ = dp.SessionStore.Set(r.Context(), storeKey, "ep", ep.ID, ttlSec)
+	if err := dp.SessionStore.Set(r.Context(), storeKey, "ep", ep.ID, ttlSec); err != nil {
+		slog.Warn("sticky endpoint: failed to persist session", slog.String("error", err.Error()))
+	}
 	return ep
 }
 

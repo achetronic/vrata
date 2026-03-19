@@ -18,6 +18,12 @@ func TestLoadDefaultMode(t *testing.T) {
 	if cfg.Mode != ModeControlPlane {
 		t.Errorf("expected mode %q, got %q", ModeControlPlane, cfg.Mode)
 	}
+	if cfg.ControlPlane.Address != ":8080" {
+		t.Errorf("expected default address %q, got %q", ":8080", cfg.ControlPlane.Address)
+	}
+	if cfg.ControlPlane.StorePath != "/data" {
+		t.Errorf("expected default storePath %q, got %q", "/data", cfg.ControlPlane.StorePath)
+	}
 }
 
 func TestLoadProxyMode(t *testing.T) {

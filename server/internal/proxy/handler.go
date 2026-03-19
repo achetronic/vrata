@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math/rand"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"sync"
 	"time"
@@ -483,19 +484,6 @@ func recordEndpointResult(ep *Endpoint, pool *DestinationPool, status int, colle
 	}
 }
 
-func unwrapHTTPTransport(rt http.RoundTripper) (*http.Transport, bool) {
-	for {
-		switch t := rt.(type) {
-		case *http.Transport:
-			return t, true
-		case interface{ Unwrap() http.RoundTripper }:
-			rt = t.Unwrap()
-		default:
-			return nil, false
-		}
-	}
-}
-
 // ─── Level 1: Destination selection ─────────────────────────────────────────
 
 func pickDestinationPool(
@@ -631,7 +619,9 @@ func pickStickyPool(
 		return nil
 	}
 	ttlSec := int(parseTTL(ttlStr, time.Hour).Seconds())
-	_ = store.Set(r.Context(), sid, routeID, pool.Destination.ID, ttlSec)
+	if err := store.Set(r.Context(), sid, routeID, pool.Destination.ID, ttlSec); err != nil {
+		slog.Warn("sticky: failed to persist session", slog.String("error", err.Error()))
+	}
 	return pool
 }
 
@@ -690,7 +680,12 @@ func mirrorRequest(original *http.Request, mirror *model.RouteMirror, pools map[
 
 	var bodyBytes []byte
 	if original.Body != nil {
-		bodyBytes, _ = io.ReadAll(original.Body)
+		var err error
+		bodyBytes, err = io.ReadAll(original.Body)
+		if err != nil {
+			slog.Warn("mirror: failed to read request body", slog.String("error", err.Error()))
+			return
+		}
 		original.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 	clone := original.Clone(context.Background())
@@ -700,21 +695,9 @@ func mirrorRequest(original *http.Request, mirror *model.RouteMirror, pools map[
 	ep := pool.Endpoints[0]
 	go func() {
 		proxy := pool.ReverseProxyFor(ep)
-		proxy.ServeHTTP(newDiscardResponseWriter(), clone)
+		proxy.ServeHTTP(httptest.NewRecorder(), clone)
 	}()
 }
-
-type discardResponseWriter struct {
-	header http.Header
-}
-
-func newDiscardResponseWriter() *discardResponseWriter {
-	return &discardResponseWriter{header: make(http.Header)}
-}
-
-func (d *discardResponseWriter) Header() http.Header        { return d.header }
-func (d *discardResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
-func (d *discardResponseWriter) WriteHeader(int)             {}
 
 func applyRewrite(r *http.Request, rw *model.RouteRewrite) {
 	if rw.PathRegex != nil {

@@ -127,7 +127,9 @@ func extAuthzHTTP(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 
 			copyMatchingHeaders(w.Header(), resp.Header, denyPatterns)
 			w.WriteHeader(resp.StatusCode)
-			io.Copy(w, resp.Body)
+			if _, err := io.Copy(w, resp.Body); err != nil {
+				slog.Warn("extauthz: failed to copy deny body", slog.String("error", err.Error()))
+			}
 		})
 	}
 }

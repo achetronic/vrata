@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
 )
 
@@ -27,7 +28,7 @@ import (
 func (d *Dependencies) SyncSnapshot(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		respond.Error(w, http.StatusInternalServerError, "streaming not supported", d.Logger)
 		return
 	}
 

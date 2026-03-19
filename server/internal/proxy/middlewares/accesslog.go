@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -77,6 +78,10 @@ func openLogWriter(path string) *logWriter {
 	default:
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
+			slog.Warn("accesslog: failed to open file, falling back to stdout",
+				slog.String("path", path),
+				slog.String("error", err.Error()),
+			)
 			return &logWriter{w: os.Stdout}
 		}
 		return &logWriter{w: f, closer: f}
@@ -89,7 +94,11 @@ func (lw *logWriter) writeLine(fields map[string]string, useJSON bool) {
 	defer lw.mu.Unlock()
 
 	if useJSON {
-		data, _ := json.Marshal(fields)
+		data, err := json.Marshal(fields)
+		if err != nil {
+			slog.Warn("accesslog: failed to marshal JSON", slog.String("error", err.Error()))
+			return
+		}
 		fmt.Fprintf(lw.w, "%s\n", data)
 	} else {
 		parts := make([]string, 0, len(fields))
@@ -103,7 +112,9 @@ func (lw *logWriter) writeLine(fields map[string]string, useJSON bool) {
 // close releases the file handle if this writer owns one.
 func (lw *logWriter) close() {
 	if lw.closer != nil {
-		lw.closer.Close()
+		if err := lw.closer.Close(); err != nil {
+			slog.Warn("accesslog: failed to close file", slog.String("error", err.Error()))
+		}
 	}
 }
 

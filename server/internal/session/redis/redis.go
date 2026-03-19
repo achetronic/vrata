@@ -1,3 +1,5 @@
+// Package redis implements the session store interface using Redis as the
+// backend for STICKY destination and endpoint balancing.
 package redis
 
 import (

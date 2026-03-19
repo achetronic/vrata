@@ -48,6 +48,11 @@ configurable with semantic names. See DECISIONS.md for the naming convention.
 - [ ] Add authentication to the REST API
 - [ ] Update `ARCHITECTURE.md` to reflect current package structure
 
+### Deferred from audit
+- [ ] **Circuit breaker configurability** — add `OpenDuration` and `FailureThreshold` fields to `CircuitBreakerOptions` model. Currently hardcoded to 30s and 5. Wire in `proxy/circuit.go`.
+- [ ] **ExtProc interceptResponseWriter → httpsnoop** — `proxy/middlewares/extproc.go` manually implements `http.ResponseWriter` for response interception. Needs refactor to use `httpsnoop.Wrap` to preserve optional interfaces.
+- [ ] **DestinationTimeouts.Request wiring** — model field exists but is not wired. `httputil.ReverseProxy` doesn't use `http.Client`, so `Client.Timeout` can't be set directly. Design options: (a) wrap Transport with context deadline, (b) apply in forwardHandler as fallback when route has no `forward.timeouts.request`.
+
 ### Proxy fleets — single control plane, multiple fleets
 A single control plane should be able to manage multiple independent proxy
 fleets, each with its own routing config. A fleet identifier (e.g. a label

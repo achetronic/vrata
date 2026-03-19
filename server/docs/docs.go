@@ -3294,11 +3294,6 @@ const docTemplate = `{
                 "tls",
                 "mtls"
             ],
-            "x-enum-comments": {
-                "TLSModeMTLS": "mutual TLS — present client certificate",
-                "TLSModeNone": "plaintext (default)",
-                "TLSModeTLS": "TLS — verify server certificate"
-            },
             "x-enum-varnames": [
                 "TLSModeNone",
                 "TLSModeTLS",

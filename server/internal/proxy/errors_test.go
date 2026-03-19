@@ -76,6 +76,54 @@ func TestClassifyError_FallbackMessage(t *testing.T) {
 	}
 }
 
+func TestClassifyError_FallbackConnectionReset(t *testing.T) {
+	err := errors.New("read tcp: connection reset by peer")
+	got := classifyError(err)
+	if got != model.ProxyErrConnectionReset {
+		t.Errorf("got %q, want connection_reset", got)
+	}
+}
+
+func TestClassifyError_FallbackDNS(t *testing.T) {
+	err := errors.New("dial tcp: lookup bad.host: no such host")
+	got := classifyError(err)
+	if got != model.ProxyErrDNSFailure {
+		t.Errorf("got %q, want dns_failure", got)
+	}
+}
+
+func TestClassifyError_FallbackIOTimeout(t *testing.T) {
+	err := errors.New("read tcp 10.0.0.1:8080: i/o timeout")
+	got := classifyError(err)
+	if got != model.ProxyErrTimeout {
+		t.Errorf("got %q, want timeout", got)
+	}
+}
+
+func TestClassifyError_FallbackTLS(t *testing.T) {
+	err := errors.New("tls: handshake failure")
+	got := classifyError(err)
+	if got != model.ProxyErrTLSHandshakeFailure {
+		t.Errorf("got %q, want tls_handshake_failure", got)
+	}
+}
+
+func TestInjectErrorHeaders_EmptyFields(t *testing.T) {
+	r := httptest.NewRequest("GET", "/test", nil)
+	pe := &ProxyError{Type: model.ProxyErrNoDestination, Status: 502}
+	injectErrorHeaders(r, pe)
+
+	if r.Header.Get("X-Vrata-Error") != "no_destination" {
+		t.Error("missing X-Vrata-Error")
+	}
+	if r.Header.Get("X-Vrata-Error-Destination") != "" {
+		t.Error("X-Vrata-Error-Destination should be empty")
+	}
+	if r.Header.Get("X-Vrata-Error-Endpoint") != "" {
+		t.Error("X-Vrata-Error-Endpoint should be empty")
+	}
+}
+
 func TestMatchesOnError_ExactMatch(t *testing.T) {
 	rule := model.OnErrorRule{On: []model.ProxyErrorType{model.ProxyErrTimeout, model.ProxyErrCircuitOpen}}
 	if !matchesOnError(rule, model.ProxyErrTimeout) {

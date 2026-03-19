@@ -15,11 +15,20 @@ const (
 type EndpointLBPolicy string
 
 const (
-	EndpointLBRoundRobin   EndpointLBPolicy = "ROUND_ROBIN"
+	// EndpointLBRoundRobin cycles through endpoints in order.
+	EndpointLBRoundRobin EndpointLBPolicy = "ROUND_ROBIN"
+
+	// EndpointLBLeastRequest picks the endpoint with the fewest active requests.
 	EndpointLBLeastRequest EndpointLBPolicy = "LEAST_REQUEST"
-	EndpointLBRingHash     EndpointLBPolicy = "RING_HASH"
-	EndpointLBMaglev       EndpointLBPolicy = "MAGLEV"
-	EndpointLBRandom       EndpointLBPolicy = "RANDOM"
+
+	// EndpointLBRingHash uses consistent hashing for endpoint stickiness.
+	EndpointLBRingHash EndpointLBPolicy = "RING_HASH"
+
+	// EndpointLBMaglev uses Maglev consistent hashing for endpoint stickiness.
+	EndpointLBMaglev EndpointLBPolicy = "MAGLEV"
+
+	// EndpointLBRandom picks a random endpoint.
+	EndpointLBRandom EndpointLBPolicy = "RANDOM"
 
 	// EndpointLBSticky uses a session cookie and an external session store
 	// (e.g. Redis) to guarantee zero disruption when endpoints change.
@@ -33,9 +42,14 @@ const (
 type TLSMode string
 
 const (
-	TLSModeNone TLSMode = "none" // plaintext (default)
-	TLSModeTLS  TLSMode = "tls"  // TLS — verify server certificate
-	TLSModeMTLS TLSMode = "mtls" // mutual TLS — present client certificate
+	// TLSModeNone connects to the upstream in plaintext (default).
+	TLSModeNone TLSMode = "none"
+
+	// TLSModeTLS connects with TLS and verifies the server certificate.
+	TLSModeTLS TLSMode = "tls"
+
+	// TLSModeMTLS connects with mutual TLS, presenting a client certificate.
+	TLSModeMTLS TLSMode = "mtls"
 )
 
 // Endpoint is a concrete network address (IP or hostname + port) that a

@@ -10,8 +10,13 @@ import (
 type CircuitState int32
 
 const (
-	CircuitClosed   CircuitState = 0
-	CircuitOpen     CircuitState = 1
+	// CircuitClosed allows all requests through (normal operation).
+	CircuitClosed CircuitState = 0
+
+	// CircuitOpen rejects all requests (upstream deemed unhealthy).
+	CircuitOpen CircuitState = 1
+
+	// CircuitHalfOpen allows a single probe request to test recovery.
 	CircuitHalfOpen CircuitState = 2
 )
 

@@ -117,12 +117,13 @@ func (od *OutlierDetector) RecordResponse(destID string, statusCode int) {
 	}
 }
 
-// Start begins the periodic check to un-eject endpoints.
+// Start begins the periodic check to un-eject endpoints. The loop ticks
+// every second and evaluates each tracker against its configured interval.
 func (od *OutlierDetector) Start(ctx context.Context) {
 	ctx, od.cancel = context.WithCancel(ctx)
 
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 
 		for {

@@ -398,6 +398,7 @@ func (v *jwtValidator) refreshKeys() {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		slog.Warn("jwt: failed to read JWKS response", slog.String("url", v.jwksURL), slog.String("error", err.Error()))
 		return
 	}
 
@@ -428,6 +429,10 @@ func parseJWKS(data []byte) ([]verifierKey, error) {
 	for _, k := range jwks.Keys {
 		vk, err := parseJWK(k)
 		if err != nil {
+			slog.Warn("jwt: skipping unparseable JWK",
+				slog.String("kid", k.Kid),
+				slog.String("error", err.Error()),
+			)
 			continue
 		}
 		keys = append(keys, vk)
