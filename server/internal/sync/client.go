@@ -150,6 +150,13 @@ func (c *Client) applySnapshot(data []byte) error {
 	}
 	if c.deps.OutlierDetector != nil {
 		c.deps.OutlierDetector.Update(table.Pools())
+		od := c.deps.OutlierDetector
+		for _, pool := range table.Pools() {
+			for _, ep := range pool.Endpoints {
+				ep.OnResponse = od.RecordResponse
+			}
+			pool.OnResponse = od.RecordResponse
+		}
 	}
 
 	c.deps.ListenerManager.Reconcile(snap.Listeners)
