@@ -1,0 +1,336 @@
+// Package mapper translates Gateway API resources into Vrata API entities.
+// All functions are pure (no I/O, no side effects) and fully testable.
+package mapper
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/achetronic/vrata/clients/controller/internal/vrata"
+)
+
+// HTTPRouteInput holds the fields extracted from a Gateway API HTTPRoute
+// that the mapper needs. This decouples the mapper from the concrete
+// Gateway API types so it can handle both HTTPRoute and SuperHTTPRoute.
+type HTTPRouteInput struct {
+	Name      string
+	Namespace string
+	Hostnames []string
+	Rules     []RuleInput
+}
+
+// RuleInput holds a single rule from an HTTPRoute.
+type RuleInput struct {
+	Matches    []MatchInput
+	BackendRefs []BackendRefInput
+	Filters    []FilterInput
+}
+
+// MatchInput holds a single match within a rule.
+type MatchInput struct {
+	PathType  string // "PathPrefix", "Exact", "RegularExpression"
+	PathValue string
+	Method    string
+	Headers   []HeaderMatchInput
+}
+
+// HeaderMatchInput holds a single header match.
+type HeaderMatchInput struct {
+	Name  string
+	Value string
+	Type  string // "Exact" or "RegularExpression"
+}
+
+// BackendRefInput holds a backend reference.
+type BackendRefInput struct {
+	ServiceName      string
+	ServiceNamespace string
+	Port             uint32
+	Weight           uint32
+}
+
+// FilterInput holds a filter from a rule.
+type FilterInput struct {
+	Type string // "RequestRedirect", "URLRewrite", "RequestHeaderModifier"
+
+	// RequestRedirect fields.
+	RedirectScheme   string
+	RedirectHost     string
+	RedirectPort     uint32
+	RedirectPath     string
+	RedirectCode     uint32
+	RedirectStripQuery bool
+
+	// URLRewrite fields.
+	RewritePathPrefix string
+	RewriteHostname   string
+
+	// RequestHeaderModifier fields.
+	HeadersToAdd    []HeaderValue
+	HeadersToRemove []string
+}
+
+// HeaderValue is a key-value pair for header manipulation.
+type HeaderValue struct {
+	Name  string
+	Value string
+}
+
+// GatewayInput holds the fields extracted from a Gateway resource.
+type GatewayInput struct {
+	Name      string
+	Namespace string
+	Listeners []GatewayListenerInput
+}
+
+// GatewayListenerInput holds a single listener from a Gateway.
+type GatewayListenerInput struct {
+	Name     string
+	Port     uint32
+	Protocol string // "HTTP" or "HTTPS"
+	Hostname string
+}
+
+// MappedEntities holds all Vrata entities produced from a single HTTPRoute.
+type MappedEntities struct {
+	Group        vrata.RouteGroup
+	Routes       []vrata.Route
+	Destinations []DestinationKey
+	Middlewares  []vrata.Middleware
+}
+
+// DestinationKey uniquely identifies a Destination by Service coordinates.
+// Used for deduplication across HTTPRoutes.
+type DestinationKey struct {
+	Name      string
+	Namespace string
+	Port      uint32
+}
+
+// DestinationName returns the ownership-tagged name for a Destination.
+func (dk DestinationKey) DestinationName() string {
+	return fmt.Sprintf("k8s:%s/%s:%d", dk.Namespace, dk.Name, dk.Port)
+}
+
+// FQDN returns the Kubernetes Service FQDN for this destination.
+func (dk DestinationKey) FQDN() string {
+	return fmt.Sprintf("%s.%s.svc.cluster.local", dk.Name, dk.Namespace)
+}
+
+// MapHTTPRoute translates an HTTPRoute into Vrata entities.
+func MapHTTPRoute(input HTTPRouteInput) MappedEntities {
+	prefix := fmt.Sprintf("k8s:%s/%s", input.Namespace, input.Name)
+
+	var routes []vrata.Route
+	var allDests []DestinationKey
+	var allMiddlewares []vrata.Middleware
+
+	for ri, rule := range input.Rules {
+		// Collect destinations from backendRefs.
+		var destRefs []map[string]any
+		for _, br := range rule.BackendRefs {
+			dk := DestinationKey{Name: br.ServiceName, Namespace: br.ServiceNamespace, Port: br.Port}
+			allDests = append(allDests, dk)
+
+			weight := br.Weight
+			if weight == 0 {
+				weight = 1
+			}
+			destRefs = append(destRefs, map[string]any{
+				"destinationId": dk.DestinationName(),
+				"weight":        weight,
+			})
+		}
+
+		// Check for redirect filter (overrides forward).
+		redirectFilter := findFilter(rule.Filters, "RequestRedirect")
+		rewriteFilter := findFilter(rule.Filters, "URLRewrite")
+		headerFilter := findFilter(rule.Filters, "RequestHeaderModifier")
+
+		// Create a middleware for header modification if present.
+		var middlewareIDs []string
+		if headerFilter != nil {
+			mwName := fmt.Sprintf("%s/rule-%d/headers", prefix, ri)
+			mw := mapHeaderModifierFilter(mwName, headerFilter)
+			allMiddlewares = append(allMiddlewares, mw)
+			middlewareIDs = append(middlewareIDs, mwName)
+		}
+
+		// One Route per match in the rule.
+		matches := rule.Matches
+		if len(matches) == 0 {
+			matches = []MatchInput{{PathType: "PathPrefix", PathValue: "/"}}
+		}
+
+		for mi, m := range matches {
+			routeName := fmt.Sprintf("%s/rule-%d/match-%d", prefix, ri, mi)
+			route := vrata.Route{
+				Name:          routeName,
+				Match:         mapMatch(m),
+				MiddlewareIDs: middlewareIDs,
+			}
+
+			if redirectFilter != nil {
+				route.Redirect = mapRedirectFilter(redirectFilter)
+			} else if len(destRefs) > 0 {
+				fwd := map[string]any{
+					"destinations": destRefs,
+				}
+				if rewriteFilter != nil {
+					fwd["rewrite"] = mapRewriteFilter(rewriteFilter)
+				}
+				route.Forward = fwd
+			}
+
+			routes = append(routes, route)
+		}
+	}
+
+	// Deduplicate destinations.
+	allDests = deduplicateDests(allDests)
+
+	// Build the group.
+	routeNames := make([]string, len(routes))
+	for i, r := range routes {
+		routeNames[i] = r.Name
+	}
+
+	group := vrata.RouteGroup{
+		Name:      prefix,
+		RouteIDs:  routeNames,
+		Hostnames: input.Hostnames,
+	}
+
+	return MappedEntities{
+		Group:        group,
+		Routes:       routes,
+		Destinations: allDests,
+		Middlewares:  allMiddlewares,
+	}
+}
+
+// MapGateway translates a Gateway into Vrata Listeners.
+func MapGateway(input GatewayInput) []vrata.Listener {
+	var listeners []vrata.Listener
+	for _, l := range input.Listeners {
+		name := fmt.Sprintf("k8s:%s/%s/%s", input.Namespace, input.Name, l.Name)
+		listener := vrata.Listener{
+			Name:    name,
+			Address: "0.0.0.0",
+			Port:    l.Port,
+		}
+		listeners = append(listeners, listener)
+	}
+	return listeners
+}
+
+// mapMatch converts a MatchInput to a Vrata match map.
+func mapMatch(m MatchInput) map[string]any {
+	match := make(map[string]any)
+	switch m.PathType {
+	case "Exact":
+		match["path"] = m.PathValue
+	case "RegularExpression":
+		match["pathRegex"] = m.PathValue
+	default:
+		match["pathPrefix"] = m.PathValue
+	}
+	if m.Method != "" {
+		match["methods"] = []string{m.Method}
+	}
+	if len(m.Headers) > 0 {
+		var headers []map[string]any
+		for _, h := range m.Headers {
+			hm := map[string]any{"name": h.Name, "value": h.Value}
+			if h.Type == "RegularExpression" {
+				hm["regex"] = true
+			}
+			headers = append(headers, hm)
+		}
+		match["headers"] = headers
+	}
+	return match
+}
+
+// mapRedirectFilter converts a redirect filter to a Vrata redirect map.
+func mapRedirectFilter(f *FilterInput) map[string]any {
+	rd := make(map[string]any)
+	if f.RedirectScheme != "" {
+		rd["scheme"] = f.RedirectScheme
+	}
+	if f.RedirectHost != "" {
+		rd["host"] = f.RedirectHost
+	}
+	if f.RedirectPath != "" {
+		rd["path"] = f.RedirectPath
+	}
+	if f.RedirectCode > 0 {
+		rd["code"] = f.RedirectCode
+	}
+	if f.RedirectStripQuery {
+		rd["stripQuery"] = true
+	}
+	return rd
+}
+
+// mapRewriteFilter converts a URL rewrite filter to a Vrata rewrite map.
+func mapRewriteFilter(f *FilterInput) map[string]any {
+	rw := make(map[string]any)
+	if f.RewritePathPrefix != "" {
+		rw["path"] = f.RewritePathPrefix
+	}
+	if f.RewriteHostname != "" {
+		rw["host"] = f.RewriteHostname
+	}
+	return rw
+}
+
+// mapHeaderModifierFilter converts a header modifier filter to a Vrata Middleware.
+func mapHeaderModifierFilter(name string, f *FilterInput) vrata.Middleware {
+	headers := make(map[string]any)
+	if len(f.HeadersToAdd) > 0 {
+		var add []map[string]any
+		for _, h := range f.HeadersToAdd {
+			add = append(add, map[string]any{"key": h.Name, "value": h.Value})
+		}
+		headers["requestHeadersToAdd"] = add
+	}
+	if len(f.HeadersToRemove) > 0 {
+		headers["requestHeadersToRemove"] = f.HeadersToRemove
+	}
+	return vrata.Middleware{
+		Name:    name,
+		Type:    "headers",
+		Headers: headers,
+	}
+}
+
+// findFilter returns the first filter of the given type, or nil.
+func findFilter(filters []FilterInput, filterType string) *FilterInput {
+	for i := range filters {
+		if filters[i].Type == filterType {
+			return &filters[i]
+		}
+	}
+	return nil
+}
+
+// deduplicateDests removes duplicate DestinationKeys by name.
+func deduplicateDests(dests []DestinationKey) []DestinationKey {
+	seen := make(map[string]bool)
+	var out []DestinationKey
+	for _, d := range dests {
+		key := d.DestinationName()
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// IsOwned returns true if the entity name starts with the controller
+// ownership prefix.
+func IsOwned(name string) bool {
+	return strings.HasPrefix(name, "k8s:")
+}

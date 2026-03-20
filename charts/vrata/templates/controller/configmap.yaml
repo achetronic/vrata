@@ -1,0 +1,11 @@
+{{- if .Values.controller.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vrata.fullname" . }}-controller
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- toYaml .Values.controller.config | nindent 4 }}
+{{- end }}

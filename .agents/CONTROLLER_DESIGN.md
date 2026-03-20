@@ -1,10 +1,10 @@
-# KController — Design
+# Controller — Design
 
 ## Overview
 
-The KController is a Kubernetes controller that watches Gateway API resources
+The Controller is a Kubernetes controller that watches Gateway API resources
 (`Gateway`, `HTTPRoute`, and future `SuperHTTPRoute`) and synchronises them
-to Vrata via its REST API. It is a separate binary that lives in `kcontroller/`.
+to Vrata via its REST API. It is a separate binary that lives in `clients/controller/`.
 Its only contract with Vrata is the OpenAPI spec — no shared code, no imports.
 
 The controller is unidirectional: it reads from Kubernetes and writes to Vrata.
@@ -106,9 +106,9 @@ steady-state (individual changes trickling in).
 ## Components
 
 ```
-kcontroller/
+clients/controller/
 ├── cmd/
-│   └── kcontroller/
+│   └── controller/
 │       └── main.go              # flags, scheme registration, informers, start
 ├── internal/
 │   ├── mapper/
