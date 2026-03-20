@@ -154,7 +154,9 @@ controller:
   # Controller config.yaml content. Rendered as-is into the ConfigMap.
   # See clients/controller/config.yaml for the full reference.
   config:
-    controlPlaneUrl: "http://vrata-cp:8080"
+    # controlPlaneUrl defaults to the in-cluster control plane Service
+    # when not set — override it to connect to an external control plane.
+    # controlPlaneUrl: "http://external-cp:8080"
     watch:
       # Restrict to specific namespaces. Empty = all.
       namespaces: []

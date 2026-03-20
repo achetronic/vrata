@@ -7,5 +7,10 @@ metadata:
     {{- include "vrata.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    {{- toYaml .Values.controller.config | nindent 4 }}
+    {{- $cfg := .Values.controller.config | deepCopy }}
+    {{- if not (dig "controlPlaneUrl" "" $cfg) }}
+    {{- $url := printf "http://%s:%d" (include "vrata.cpName" .) (int .Values.controlPlane.service.port) }}
+    {{- $_ := set $cfg "controlPlaneUrl" $url }}
+    {{- end }}
+    {{- toYaml $cfg | nindent 4 }}
 {{- end }}
