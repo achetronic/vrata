@@ -20,18 +20,21 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
-
-	"github.com/go-logr/logr"
 	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/go-logr/logr"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/homedir"
 
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -51,10 +54,6 @@ import (
 	"github.com/achetronic/vrata/clients/controller/internal/refgrant"
 	"github.com/achetronic/vrata/clients/controller/internal/status"
 	"github.com/achetronic/vrata/clients/controller/internal/vrata"
-
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/leaderelection"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
 )
 
 // main is the entry point for the controller binary.
@@ -178,9 +177,8 @@ func run() error {
 		logger.Info("metrics server listening", slog.String("address", cfg.Metrics.Address))
 	}
 
-	// ReferenceGrant checker.
+	// ReferenceGrant checker for cross-namespace backend references.
 	refGrantChecker := refgrant.NewChecker(k8sClient, logger)
-	_ = refGrantChecker
 
 	// Start informer cache in background.
 	go func() {
@@ -202,21 +200,66 @@ func run() error {
 
 	// Build the reconcile loop as a function — called directly or via leader election.
 	reconcileLoop := func(ctx context.Context) {
-		if cfg.WatchGateways() {
-			if err := syncAllGateways(ctx, informerCache, rec, bat, logger); err != nil {
-				logger.Error("initial Gateway sync failed", slog.String("error", err.Error()))
+		syncCycle := func() {
+			start := time.Now()
+
+			// Reset dedup detector before each cycle to clear stale entries.
+			if detector != nil {
+				detector.Reset()
+			}
+
+			// Collect desired group names from all route sources for GC.
+			desiredGroups := make(map[string]bool)
+
+			if cfg.WatchGateways() {
+				if err := syncAllGateways(ctx, informerCache, rec, bat, logger); err != nil {
+					logger.Error("Gateway sync failed", slog.String("error", err.Error()))
+					if m != nil {
+						m.ReconcileErrors.WithLabelValues("gateway").Inc()
+					}
+				} else if m != nil {
+					m.ReconcileTotal.WithLabelValues("gateway", "success").Inc()
+				}
+			}
+			if cfg.WatchHTTPRoutes() {
+				groups, err := syncAllHTTPRoutes(ctx, informerCache, rec, bat, statusWriter, detector, dupMode, refGrantChecker, m, logger)
+				if err != nil {
+					logger.Error("HTTPRoute sync failed", slog.String("error", err.Error()))
+					if m != nil {
+						m.ReconcileErrors.WithLabelValues("httproute").Inc()
+					}
+				} else if m != nil {
+					m.ReconcileTotal.WithLabelValues("httproute", "success").Inc()
+				}
+				for _, g := range groups {
+					desiredGroups[g] = true
+				}
+			}
+			if cfg.WatchSuperHTTPRoutes() {
+				groups, err := syncAllSuperHTTPRoutes(ctx, informerCache, rec, bat, detector, dupMode, refGrantChecker, m, logger)
+				if err != nil {
+					logger.Error("SuperHTTPRoute sync failed", slog.String("error", err.Error()))
+					if m != nil {
+						m.ReconcileErrors.WithLabelValues("superhttproute").Inc()
+					}
+				} else if m != nil {
+					m.ReconcileTotal.WithLabelValues("superhttproute", "success").Inc()
+				}
+				for _, g := range groups {
+					desiredGroups[g] = true
+				}
+			}
+
+			// Garbage collect orphaned groups (and their routes, middlewares, destinations).
+			gcOrphanedGroups(ctx, rec, bat, desiredGroups, logger)
+
+			if m != nil {
+				m.ReconcileDuration.WithLabelValues("cycle").Observe(time.Since(start).Seconds())
+				m.PendingChanges.Set(float64(bat.Pending()))
 			}
 		}
-		if cfg.WatchHTTPRoutes() {
-			if err := syncAllHTTPRoutes(ctx, informerCache, rec, bat, statusWriter, detector, dupMode, logger); err != nil {
-				logger.Error("initial HTTPRoute sync failed", slog.String("error", err.Error()))
-			}
-		}
-		if cfg.WatchSuperHTTPRoutes() {
-			if err := syncAllSuperHTTPRoutes(ctx, informerCache, rec, bat, detector, dupMode, logger); err != nil {
-				logger.Error("initial SuperHTTPRoute sync failed", slog.String("error", err.Error()))
-			}
-		}
+
+		syncCycle()
 		bat.Flush(ctx)
 		healthy.Store(true)
 
@@ -229,21 +272,7 @@ func run() error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if cfg.WatchGateways() {
-					if err := syncAllGateways(ctx, informerCache, rec, bat, logger); err != nil {
-						logger.Error("Gateway sync failed", slog.String("error", err.Error()))
-					}
-				}
-				if cfg.WatchHTTPRoutes() {
-					if err := syncAllHTTPRoutes(ctx, informerCache, rec, bat, statusWriter, detector, dupMode, logger); err != nil {
-						logger.Error("HTTPRoute sync failed", slog.String("error", err.Error()))
-					}
-				}
-				if cfg.WatchSuperHTTPRoutes() {
-					if err := syncAllSuperHTTPRoutes(ctx, informerCache, rec, bat, detector, dupMode, logger); err != nil {
-						logger.Error("SuperHTTPRoute sync failed", slog.String("error", err.Error()))
-					}
-				}
+				syncCycle()
 			}
 		}
 	}
@@ -304,7 +333,8 @@ func run() error {
 	return nil
 }
 
-// syncAllGateways lists all Gateways and reconciles their Listeners.
+// syncAllGateways lists all Gateways, reconciles their Listeners, and removes
+// orphaned listeners that no longer correspond to any Gateway in Kubernetes.
 func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, logger *slog.Logger) error {
 	var gateways gwapiv1.GatewayList
 	if err := c.List(ctx, &gateways); err != nil {
@@ -312,11 +342,14 @@ func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconci
 	}
 
 	vrataClient := rec.Client()
+	desiredNames := make(map[string]bool)
+
 	for _, gw := range gateways.Items {
 		input := gatewayToInput(&gw)
 		listeners := mapper.MapGateway(input)
 
 		for _, l := range listeners {
+			desiredNames[l.Name] = true
 			existing, err := findListenerByName(ctx, vrataClient, l.Name)
 			if err != nil {
 				logger.Error("checking listener", slog.String("name", l.Name), slog.String("error", err.Error()))
@@ -331,33 +364,105 @@ func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconci
 			}
 		}
 	}
+
+	// Garbage collect orphaned listeners.
+	ownedNames, err := rec.OwnedListenerNames(ctx)
+	if err != nil {
+		logger.Error("listing owned listeners for GC", slog.String("error", err.Error()))
+		return nil
+	}
+	for _, name := range ownedNames {
+		if desiredNames[name] {
+			continue
+		}
+		changes, err := rec.DeleteListenerByName(ctx, name)
+		if err != nil {
+			logger.Error("deleting orphaned listener", slog.String("name", name), slog.String("error", err.Error()))
+			continue
+		}
+		for i := 0; i < changes; i++ {
+			bat.Signal(ctx)
+		}
+	}
+
 	return nil
 }
 
 // syncAllHTTPRoutes lists all HTTPRoutes and reconciles each one.
-func syncAllHTTPRoutes(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, sw *status.Writer, detector *dedup.Detector, dupMode config.DuplicateMode, logger *slog.Logger) error {
+// Returns the list of desired k8s: group names for garbage collection.
+func syncAllHTTPRoutes(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, sw *status.Writer, detector *dedup.Detector, dupMode config.DuplicateMode, rgc *refgrant.Checker, m *kcmetrics.Metrics, logger *slog.Logger) ([]string, error) {
 	var routes gwapiv1.HTTPRouteList
 	if err := c.List(ctx, &routes); err != nil {
-		return fmt.Errorf("listing HTTPRoutes: %w", err)
+		return nil, fmt.Errorf("listing HTTPRoutes: %w", err)
 	}
+
+	var desiredGroups []string
 
 	for i := range routes.Items {
 		hr := &routes.Items[i]
 		input := gatewayHTTPRouteToInput(hr)
+		groupName := fmt.Sprintf("k8s:%s/%s", hr.Namespace, hr.Name)
+		desiredGroups = append(desiredGroups, groupName)
+
+		// Check cross-namespace backendRefs via ReferenceGrant.
+		if rgc != nil {
+			denied := false
+			for _, rule := range input.Rules {
+				for _, br := range rule.BackendRefs {
+					if br.ServiceNamespace != hr.Namespace {
+						allowed, err := rgc.AllowedBackendRef(ctx, hr.Namespace, br.ServiceNamespace, br.ServiceName)
+						if err != nil {
+							logger.Error("checking ReferenceGrant",
+								slog.String("namespace", hr.Namespace),
+								slog.String("name", hr.Name),
+								slog.String("error", err.Error()),
+							)
+						}
+						if !allowed {
+							denied = true
+							if m != nil {
+								m.RefGrantDenied.Inc()
+							}
+							if sw != nil {
+								sw.SetResolvedRefs(ctx, hr, false, fmt.Sprintf(
+									"cross-namespace backendRef %s/%s denied: no matching ReferenceGrant",
+									br.ServiceNamespace, br.ServiceName,
+								))
+							}
+							break
+						}
+					}
+				}
+				if denied {
+					break
+				}
+			}
+			if denied {
+				continue
+			}
+		}
 
 		if detector != nil {
 			ols := detector.Check(input)
-			if len(ols) > 0 && dupMode == config.DuplicateModeReject {
-				msg := formatOverlapMessage(ols)
-				logger.Warn("rejecting HTTPRoute due to overlapping paths",
-					slog.String("namespace", hr.Namespace),
-					slog.String("name", hr.Name),
-					slog.String("overlaps", msg),
-				)
-				if sw != nil {
-					sw.SetAccepted(ctx, hr, false, "OverlappingRoute", msg)
+			if len(ols) > 0 {
+				if m != nil {
+					m.OverlapsDetected.Inc()
 				}
-				continue
+				if dupMode == config.DuplicateModeReject {
+					if m != nil {
+						m.OverlapsRejected.Inc()
+					}
+					msg := formatOverlapMessage(ols)
+					logger.Warn("rejecting HTTPRoute due to overlapping paths",
+						slog.String("namespace", hr.Namespace),
+						slog.String("name", hr.Name),
+						slog.String("overlaps", msg),
+					)
+					if sw != nil {
+						sw.SetAccepted(ctx, hr, false, "OverlappingRoute", msg)
+					}
+					continue
+				}
 			}
 		}
 
@@ -383,7 +488,8 @@ func syncAllHTTPRoutes(ctx context.Context, c cache.Cache, rec *reconciler.Recon
 			}
 		}
 	}
-	return nil
+
+	return desiredGroups, nil
 }
 
 // formatOverlapMessage builds a human-readable message listing all overlaps.
@@ -401,15 +507,20 @@ func formatOverlapMessage(ols []dedup.Overlap) string {
 
 // syncAllSuperHTTPRoutes lists all SuperHTTPRoutes and reconciles each one.
 // Uses the same mapper as HTTPRoute since the spec is identical.
-func syncAllSuperHTTPRoutes(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, detector *dedup.Detector, dupMode config.DuplicateMode, logger *slog.Logger) error {
+// Garbage collection is handled by gcOrphanedGroups which covers all k8s: groups.
+func syncAllSuperHTTPRoutes(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, detector *dedup.Detector, dupMode config.DuplicateMode, rgc *refgrant.Checker, m *kcmetrics.Metrics, logger *slog.Logger) ([]string, error) {
 	var routes vrataapiv1.SuperHTTPRouteList
 	if err := c.List(ctx, &routes); err != nil {
-		return fmt.Errorf("listing SuperHTTPRoutes: %w", err)
+		return nil, fmt.Errorf("listing SuperHTTPRoutes: %w", err)
 	}
+
+	var desiredGroups []string
 
 	for i := range routes.Items {
 		shr := &routes.Items[i]
 		input := superHTTPRouteToInput(shr)
+		groupName := fmt.Sprintf("k8s:%s/%s", shr.Namespace, shr.Name)
+		desiredGroups = append(desiredGroups, groupName)
 
 		if detector != nil {
 			ols := detector.Check(input)
@@ -440,7 +551,7 @@ func syncAllSuperHTTPRoutes(ctx context.Context, c cache.Cache, rec *reconciler.
 			}
 		}
 	}
-	return nil
+	return desiredGroups, nil
 }
 
 // superHTTPRouteToInput converts a SuperHTTPRoute to the mapper's input type.
@@ -553,6 +664,56 @@ func findListenerByName(ctx context.Context, client *vrata.Client, name string) 
 		}
 	}
 	return nil, nil
+}
+
+// parseGroupName extracts namespace and name from a group name "k8s:namespace/name".
+// Returns ("", "", false) if the format is invalid.
+func parseGroupName(groupName string) (string, string, bool) {
+	if !strings.HasPrefix(groupName, "k8s:") {
+		return "", "", false
+	}
+	rest := groupName[4:]
+	idx := strings.IndexByte(rest, '/')
+	if idx < 0 {
+		return "", "", false
+	}
+	return rest[:idx], rest[idx+1:], true
+}
+
+// gcOrphanedGroups deletes k8s: groups (and their routes, middlewares, destinations)
+// from Vrata that no longer correspond to any HTTPRoute or SuperHTTPRoute in Kubernetes.
+func gcOrphanedGroups(ctx context.Context, rec *reconciler.Reconciler, bat *batcher.Batcher, desiredGroups map[string]bool, logger *slog.Logger) {
+	ownedGroups, err := rec.OwnedGroupNames(ctx)
+	if err != nil {
+		logger.Error("listing owned groups for GC", slog.String("error", err.Error()))
+		return
+	}
+	for _, groupName := range ownedGroups {
+		if desiredGroups[groupName] {
+			continue
+		}
+		ns, name, ok := parseGroupName(groupName)
+		if !ok {
+			continue
+		}
+		changes, err := rec.DeleteHTTPRoute(ctx, ns, name)
+		if err != nil {
+			logger.Error("deleting orphaned entities",
+				slog.String("group", groupName),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		if changes > 0 {
+			logger.Info("reconciler: garbage collected orphaned route group",
+				slog.String("group", groupName),
+				slog.Int("changes", changes),
+			)
+			for j := 0; j < changes; j++ {
+				bat.Signal(ctx)
+			}
+		}
+	}
 }
 
 // gatewayToInput converts a Gateway API Gateway to the mapper's input type.
