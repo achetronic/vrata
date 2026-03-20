@@ -10,7 +10,7 @@ The chart is published as an OCI artifact in the GitHub Container Registry — n
 ## Install
 
 ```bash
-helm install vrata oci://ghcr.io/achetronic/vrata/helm-chart \
+helm install vrata oci://ghcr.io/achetronic/vrata/helm-chart/vrata \
   --namespace vrata \
   --create-namespace
 ```
