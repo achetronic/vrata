@@ -1,10 +1,16 @@
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 GO          := go
 BUILD_DIR   := ./bin
+TOOLS_DIR   := ./bin/tools
 SERVER_DIR  := ./server
 KC_DIR      := ./clients/controller
 
-SWAG        := swag
+# Tool versions — pinned for reproducibility.
+CONTROLLER_GEN_VERSION := v0.17.3
+KIND_VERSION           := v0.27.0
+SWAG_VERSION           := v2.0.0-rc5
+
+SWAG        := $(TOOLS_DIR)/swag
 SWAG_FLAGS  := --generalInfo main.go \
 	--dir $(SERVER_DIR)/cmd/vrata,$(SERVER_DIR)/internal/api/handlers,$(SERVER_DIR)/internal/api/respond,$(SERVER_DIR)/internal/model \
 	--parseInternal \
@@ -26,10 +32,10 @@ KIND_NODE_IP   := $(shell kubectl --context kind-$(KIND_CLUSTER) get nodes -o js
 GATEWAY_API_VERSION ?= v1.5.1
 GATEWAY_API_CRDS_URL := https://github.com/kubernetes-sigs/gateway-api/releases/download/$(GATEWAY_API_VERSION)/standard-install.yaml
 
-.PHONY: build test e2e e2e-all clean kind-up kind-down \
+.PHONY: build test e2e e2e-all clean deps docker-build docker-push kind-up kind-down kind-deploy-all \
 	server-build server-run server-test server-e2e server-e2e-cluster \
-	server-docker-build server-docker-push server-docs server-proto server-port-forward-podinfo \
-	controller-build controller-test controller-e2e \
+	server-docs server-proto server-port-forward-podinfo \
+	controller-build controller-test controller-e2e controller-generate-crd controller-deploy-crd \
 	deploy-gateway-api-crds
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -42,6 +48,24 @@ build: server-build controller-build
 ## test: run all unit tests (server + controller)
 test: server-test controller-test
 
+## deps: install all development tools into ./bin/tools/
+##
+##   Installs: controller-gen, kind, swag, protoc-gen-go, protoc-gen-go-grpc
+##   All pinned to specific versions for reproducibility.
+deps:
+	@mkdir -p $(TOOLS_DIR)
+	@echo "→ Installing controller-gen $(CONTROLLER_GEN_VERSION)..."
+	@GOBIN=$(abspath $(TOOLS_DIR)) $(GO) install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_GEN_VERSION)
+	@echo "→ Installing kind $(KIND_VERSION)..."
+	@GOBIN=$(abspath $(TOOLS_DIR)) $(GO) install sigs.k8s.io/kind@$(KIND_VERSION)
+	@echo "→ Installing swag $(SWAG_VERSION)..."
+	@GOBIN=$(abspath $(TOOLS_DIR)) $(GO) install github.com/swaggo/swag/v2/cmd/swag@$(SWAG_VERSION)
+	@echo "→ Installing protoc-gen-go..."
+	@GOBIN=$(abspath $(TOOLS_DIR)) $(GO) install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+	@echo "→ Installing protoc-gen-go-grpc..."
+	@GOBIN=$(abspath $(TOOLS_DIR)) $(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+	@echo "✓ All tools installed in $(TOOLS_DIR)/"
+
 ## e2e: run all e2e tests (server proxy + controller)
 e2e: server-e2e controller-e2e
 
@@ -52,28 +76,47 @@ e2e-all: kind-up deploy-gateway-api-crds server-e2e server-e2e-cluster controlle
 clean:
 	rm -rf $(BUILD_DIR)
 
+## kind-deploy-all: build image, load into kind, install all three components via Helm
+##
+##   Creates the kind cluster if needed, installs Gateway API CRDs,
+##   builds the unified Docker image, loads it into kind, and deploys
+##   control plane + proxy + controller via Helm.
+kind-deploy-all: kind-up deploy-gateway-api-crds docker-build
+	@KIND=$$(command -v $(TOOLS_DIR)/kind || command -v kind) && \
+		$$KIND load docker-image $(IMAGE):$(VERSION) --name $(KIND_CLUSTER)
+	@HELM=$$(command -v $(TOOLS_DIR)/helm || command -v helm) && \
+		$$HELM upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
+		--kube-context kind-$(KIND_CLUSTER) \
+		--namespace $(HELM_NAMESPACE) --create-namespace \
+		--set image.repository=$(IMAGE) \
+		--set image.tag=$(VERSION) \
+		--set image.pullPolicy=Never \
+		--set controlPlane.enabled=true \
+		--set proxy.enabled=true \
+		--set controller.enabled=true \
+		--wait --timeout 3m
+	@echo "✓ All components deployed to kind cluster $(KIND_CLUSTER)"
+
+_check-kind:
+	@(test -f $(TOOLS_DIR)/kind || command -v kind > /dev/null 2>&1) || (echo "ERROR: kind not found. Run 'make deps' first." && exit 1)
+	@command -v kubectl > /dev/null 2>&1 || (echo "ERROR: kubectl not found." && exit 1)
+	@(test -f $(TOOLS_DIR)/helm || command -v helm > /dev/null 2>&1) || (echo "ERROR: helm not found." && exit 1)
+	@KIND=$$(command -v $(TOOLS_DIR)/kind || command -v kind) && \
+		$$KIND get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER)$$" || \
+		(echo "ERROR: kind cluster '$(KIND_CLUSTER)' not found. Run 'make kind-up' first." && exit 1)
+	@echo "✓ kind cluster $(KIND_CLUSTER) found"
+
 ## kind-up: create the kind cluster for e2e tests (idempotent)
 kind-up:
-	@which kind > /dev/null 2>&1 || (echo "ERROR: kind not found. Install: https://kind.sigs.k8s.io/" && exit 1)
-	@kind get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER)$$" \
+	@KIND=$$(command -v $(TOOLS_DIR)/kind || command -v kind) && \
+		$$KIND get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER)$$" \
 		&& echo "✓ kind cluster $(KIND_CLUSTER) already exists" \
-		|| (echo "→ Creating kind cluster $(KIND_CLUSTER)..." && kind create cluster --name $(KIND_CLUSTER))
+		|| (echo "→ Creating kind cluster $(KIND_CLUSTER)..." && $$KIND create cluster --name $(KIND_CLUSTER))
 
 ## kind-down: delete the kind cluster
 kind-down:
-	@kind delete cluster --name $(KIND_CLUSTER) 2>/dev/null || true
-
-## deploy-gateway-api-crds: install Gateway API CRDs into the current k8s cluster
-##
-##   Override the version:
-##     make deploy-gateway-api-crds GATEWAY_API_VERSION=v1.4.0
-deploy-gateway-api-crds:
-	@echo "→ Installing Gateway API CRDs $(GATEWAY_API_VERSION)..."
-	@kubectl apply --server-side -f $(GATEWAY_API_CRDS_URL)
-	@echo "→ Waiting for CRDs to be established..."
-	@kubectl wait --for condition=Established crd/gateways.gateway.networking.k8s.io --timeout=30s
-	@kubectl wait --for condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=30s
-	@echo "✓ Gateway API CRDs $(GATEWAY_API_VERSION) installed"
+	@KIND=$$(command -v $(TOOLS_DIR)/kind || command -v kind) && \
+		$$KIND delete cluster --name $(KIND_CLUSTER) 2>/dev/null || true
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Server
@@ -104,13 +147,13 @@ server-e2e:
 ##
 ##   Requires: kind, kubectl, helm, docker
 ##   Cluster name: vrata-dev (must exist)
-server-e2e-cluster: _check-kind server-build
-	@echo "→ Building cluster image..."
-	docker build -t $(KIND_IMAGE) .
+server-e2e-cluster: _check-kind docker-build
 	@echo "→ Loading image into kind..."
-	kind load docker-image $(KIND_IMAGE) --name $(KIND_CLUSTER)
+	@KIND=$$(command -v $(TOOLS_DIR)/kind || command -v kind) && \
+		$$KIND load docker-image $(IMAGE):$(VERSION) --name $(KIND_CLUSTER)
 	@echo "→ Installing Helm chart..."
-	helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
+	@HELM=$$(command -v $(TOOLS_DIR)/helm || command -v helm) && \
+		$$HELM upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
 		--kube-context kind-$(KIND_CLUSTER) \
 		--namespace $(HELM_NAMESPACE) --create-namespace \
 		-f $(HELM_VALUES) --wait --timeout 3m
@@ -122,12 +165,12 @@ server-e2e-cluster: _check-kind server-build
 		KUBE_CONTEXT=kind-$(KIND_CLUSTER) \
 		$(GO) test ./test/e2e/ -v -timeout 180s -count=1 -tags kind -run 'TestCluster_'
 
-## server-docker-build: build the server Docker image
-server-docker-build:
+## docker-build: build the Docker image (server + controller in one image)
+docker-build:
 	docker build -t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 
-## server-docker-push: push the server Docker image
-server-docker-push:
+## docker-push: push the Docker image
+docker-push:
 	docker push $(IMAGE):$(VERSION)
 	docker push $(IMAGE):latest
 
@@ -138,7 +181,7 @@ server-docs:
 
 ## server-proto: regenerate Go code from .proto files
 server-proto:
-	protoc \
+	PATH=$(abspath $(TOOLS_DIR)):$$PATH protoc \
 		--proto_path=$(SERVER_DIR)/proto \
 		--go_out=$(SERVER_DIR)/proto --go_opt=paths=source_relative \
 		--go-grpc_out=$(SERVER_DIR)/proto --go-grpc_opt=paths=source_relative \
@@ -173,10 +216,31 @@ controller-test:
 controller-e2e:
 	cd $(KC_DIR) && $(GO) test ./test/e2e/ -v -timeout 120s -count=1
 
-_check-kind:
-	@which kind > /dev/null 2>&1 || (echo "ERROR: kind not found. Install: https://kind.sigs.k8s.io/" && exit 1)
-	@which kubectl > /dev/null 2>&1 || (echo "ERROR: kubectl not found." && exit 1)
-	@which helm > /dev/null 2>&1 || (echo "ERROR: helm not found. Install: https://helm.sh/" && exit 1)
-	@kind get clusters 2>/dev/null | grep -q "^$(KIND_CLUSTER)$$" || \
-		(echo "ERROR: kind cluster '$(KIND_CLUSTER)' not found." && exit 1)
-	@echo "✓ kind cluster $(KIND_CLUSTER) found"
+## controller-generate-crd: generate the SuperHTTPRoute CRD and strip maxItems/CEL
+##
+##   Requires: controller-gen (go install sigs.k8s.io/controller-tools/cmd/controller-gen@latest)
+controller-generate-crd:
+	@echo "→ Generating SuperHTTPRoute CRD..."
+	@cd $(KC_DIR) && ../../$(TOOLS_DIR)/controller-gen crd paths=./apis/... output:crd:dir=./config/crd
+	@echo "→ Cleaning maxItems and CEL validations..."
+	@cd $(KC_DIR) && $(GO) run ./cmd/crdclean config/crd/vrata.io_superhttproutes.yaml config/crd/vrata.io_superhttproutes.yaml
+	@echo "✓ CRD generated at $(KC_DIR)/config/crd/vrata.io_superhttproutes.yaml"
+
+## controller-deploy-crd: install the SuperHTTPRoute CRD into the current k8s cluster
+controller-deploy-crd:
+	@echo "→ Installing SuperHTTPRoute CRD..."
+	@kubectl apply --server-side -f $(KC_DIR)/config/crd/vrata.io_superhttproutes.yaml
+	@kubectl wait --for condition=Established crd/superhttproutes.vrata.io --timeout=30s
+	@echo "✓ SuperHTTPRoute CRD installed"
+
+## deploy-gateway-api-crds: install Gateway API CRDs into the current k8s cluster
+##
+##   Override the version:
+##     make controller-deploy-gateway-api-crds GATEWAY_API_VERSION=v1.4.0
+controller-deploy-gateway-api-crds:
+	@echo "→ Installing Gateway API CRDs $(GATEWAY_API_VERSION)..."
+	@kubectl apply --server-side -f $(GATEWAY_API_CRDS_URL)
+	@echo "→ Waiting for CRDs to be established..."
+	@kubectl wait --for condition=Established crd/gateways.gateway.networking.k8s.io --timeout=30s
+	@kubectl wait --for condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=30s
+	@echo "✓ Gateway API CRDs $(GATEWAY_API_VERSION) installed"

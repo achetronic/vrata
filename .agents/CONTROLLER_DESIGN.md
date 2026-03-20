@@ -152,16 +152,20 @@ the `maxItems` constraints. The same mapper code handles both types.
 
 ## Configuration
 
-The controller is configured via flags or environment variables:
+The controller is configured via a YAML file passed with `--config` (the only CLI flag).
+All string values support `${ENV_VAR}` substitution via `os.ExpandEnv`.
+See [`clients/controller/config.yaml`](../../clients/controller/config.yaml) for the
+full reference with inline comments.
 
-| Flag                   | Env                  | Default                 | Description                                                |
-| ---------------------- | -------------------- | ----------------------- | ---------------------------------------------------------- |
-| `--vrata-url`          | `VRATA_URL`          | `http://localhost:8080` | Vrata control plane API URL                                |
-| `--kubeconfig`         | `KUBECONFIG`         | in-cluster              | Path to kubeconfig                                         |
-| `--namespace`          | `WATCH_NAMESPACE`    | all                     | Namespace to watch (empty = all)                           |
-| `--warn-duplicates`    | `WARN_DUPLICATES`    | `false`                 | Log warnings for duplicate path+hostname across HTTPRoutes |
-| `--snapshot-debounce`  | `SNAPSHOT_DEBOUNCE`  | `5s`                    | Time to wait after last change before creating snapshot    |
-| `--snapshot-max-batch` | `SNAPSHOT_MAX_BATCH` | `100`                   | Max changes before forcing snapshot                        |
+| Section | Key fields | Description |
+|---------|-----------|-------------|
+| `vrata` | `url` | Base URL of the Vrata control plane API |
+| `watch` | `namespaces`, `httpRoutes`, `superHttpRoutes`, `gateways` | Which k8s resources to watch and optional namespace filter |
+| `snapshot` | `debounce`, `maxBatch` | Batching before creating a Vrata snapshot |
+| `duplicates` | `mode` (`off` / `warn` / `reject`) | Overlap detection with semantic path matching |
+| `log` | `format`, `level` | Structured logging (console/json, debug/info/warn/error) |
+| `leaderElection` | `enabled`, `leaseName`, `leaseNamespace`, durations | Lease-based leader election for multiple replicas |
+| `metrics` | `enabled`, `address` | Prometheus metrics endpoint |
 
 ## Status Writing
 

@@ -145,28 +145,37 @@ proxy:
 controller:
   enabled: false
 
-  image:
-    repository: ghcr.io/achetronic/vrata/controller
-    tag: ""
-    pullPolicy: IfNotPresent
-
   replicas: 1
 
   # Controller config.yaml content. Rendered as-is into the ConfigMap.
+  # See clients/controller/config.yaml for the full reference.
   config:
-    vrata:
-      url: "http://vrata-cp:8080"
+    controlPlaneUrl: "http://vrata-cp:8080"
     watch:
+      # Restrict to specific namespaces. Empty = all.
+      namespaces: []
       httpRoutes: true
+      superHttpRoutes: false
       gateways: true
     snapshot:
       debounce: "5s"
       maxBatch: 100
     duplicates:
-      mode: warn # off | warn | reject
+      # off | warn | reject
+      mode: warn
     log:
       format: console
       level: info
+    leaderElection:
+      enabled: false
+      leaseName: vrata-controller-leader
+      leaseNamespace: default
+      leaseDuration: "15s"
+      renewDeadline: "10s"
+      retryPeriod: "2s"
+    metrics:
+      enabled: false
+      address: ":9090"
 
   resources: {}
   terminationGracePeriodSeconds: 15

@@ -15,8 +15,8 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Vrata.URL != "http://localhost:8080" {
-		t.Errorf("expected default vrata.url, got %q", cfg.Vrata.URL)
+	if cfg.ControlPlaneURL != "http://localhost:8080" {
+		t.Errorf("expected default controlPlaneUrl, got %q", cfg.ControlPlaneURL)
 	}
 	if cfg.Snapshot.Debounce != "5s" {
 		t.Errorf("expected default debounce 5s, got %q", cfg.Snapshot.Debounce)
@@ -44,8 +44,7 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadEnvExpansion(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	os.WriteFile(path, []byte(`vrata:
-  url: "${TEST_VRATA_URL}"
+	os.WriteFile(path, []byte(`controlPlaneUrl: "${TEST_VRATA_URL}"
 `), 0644)
 
 	t.Setenv("TEST_VRATA_URL", "http://cp:9090")
@@ -54,8 +53,8 @@ func TestLoadEnvExpansion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Vrata.URL != "http://cp:9090" {
-		t.Errorf("expected expanded URL, got %q", cfg.Vrata.URL)
+	if cfg.ControlPlaneURL != "http://cp:9090" {
+		t.Errorf("expected expanded URL, got %q", cfg.ControlPlaneURL)
 	}
 }
 
@@ -63,8 +62,7 @@ func TestLoadCustomValues(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	os.WriteFile(path, []byte(`
-vrata:
-  url: "http://vrata:8080"
+controlPlaneUrl: "http://vrata:8080"
 watch:
   namespaces: ["prod", "staging"]
   httpRoutes: false
@@ -84,8 +82,8 @@ log:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Vrata.URL != "http://vrata:8080" {
-		t.Errorf("expected custom URL, got %q", cfg.Vrata.URL)
+	if cfg.ControlPlaneURL != "http://vrata:8080" {
+		t.Errorf("expected custom URL, got %q", cfg.ControlPlaneURL)
 	}
 	if len(cfg.Watch.Namespaces) != 2 {
 		t.Errorf("expected 2 namespaces, got %d", len(cfg.Watch.Namespaces))

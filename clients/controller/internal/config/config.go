@@ -10,8 +10,9 @@ import (
 
 // Config holds all runtime configuration for the controller.
 type Config struct {
-	// Vrata holds connection settings for the Vrata control plane API.
-	Vrata VrataConfig `yaml:"vrata"`
+	// ControlPlaneURL is the base URL of the Vrata control plane REST API
+	// (e.g. "http://localhost:8080").
+	ControlPlaneURL string `yaml:"controlPlaneUrl"`
 
 	// Watch controls which Kubernetes resources the controller observes.
 	Watch WatchConfig `yaml:"watch"`
@@ -31,12 +32,6 @@ type Config struct {
 
 	// Metrics controls Prometheus metrics exposition.
 	Metrics MetricsConfig `yaml:"metrics"`
-}
-
-// VrataConfig holds connection settings for the Vrata REST API.
-type VrataConfig struct {
-	// URL is the base URL of the Vrata control plane (e.g. "http://localhost:8080").
-	URL string `yaml:"url"`
 }
 
 // WatchConfig controls which Kubernetes resources are watched.
@@ -193,8 +188,8 @@ func Load(path string) (*Config, error) {
 
 // applyDefaults fills in zero-value fields with sensible defaults.
 func applyDefaults(cfg *Config) {
-	if cfg.Vrata.URL == "" {
-		cfg.Vrata.URL = "http://localhost:8080"
+	if cfg.ControlPlaneURL == "" {
+		cfg.ControlPlaneURL = "http://localhost:8080"
 	}
 	if cfg.Snapshot.Debounce == "" {
 		cfg.Snapshot.Debounce = "5s"
@@ -230,8 +225,8 @@ func applyDefaults(cfg *Config) {
 
 // validate checks that the configuration is internally consistent.
 func validate(cfg *Config) error {
-	if cfg.Vrata.URL == "" {
-		return fmt.Errorf("vrata.url is required")
+	if cfg.ControlPlaneURL == "" {
+		return fmt.Errorf("controlPlaneUrl is required")
 	}
 	return nil
 }

@@ -2,13 +2,13 @@
 
 ## Pending
 
-- [ ] **SuperHTTPRoute** — CRD generation pipeline (fetch HTTPRoute CRD, patch maxItems, generate Go types, scheme registration, informer)
 - [ ] **TLS gap** — Gateway references Secrets for TLS, Vrata Listener expects file paths. Need mechanism to mount Secrets as files or extend Vrata to accept inline certs.
 - [ ] **Regex overlap detection** — detect semantic overlaps when one of the paths is a RegularExpression. Currently regex paths are skipped by the dedup detector.
 
 ## Done
 
 - [x] **Config loader** — YAML + os.ExpandEnv, --config flag, defaults, validation (5 unit tests)
+- [x] **SuperHTTPRoute** — `vrata.io/v1` CRD, Go types wrapping gwapiv1.HTTPRouteSpec, scheme registration, informer, crdclean script (strips maxItems + CEL), Makefile targets (controller-generate-crd, controller-deploy-crd)
 - [x] **Vrata API client** — typed HTTP client, CRUD all resources, Owned() filter (6 unit tests)
 - [x] **Mapper** — HTTPRoute → Routes+Groups+Destinations+Middlewares, Gateway → Listeners, pure/no I/O (15 unit tests)
 - [x] **Reconciler** — apply, delete, dependency order, refcount rebuild from Vrata (5 unit tests)

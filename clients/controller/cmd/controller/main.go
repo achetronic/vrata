@@ -34,6 +34,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	vrataapiv1 "github.com/achetronic/vrata/clients/controller/apis/v1"
+
 	"github.com/achetronic/vrata/clients/controller/internal/batcher"
 	"github.com/achetronic/vrata/clients/controller/internal/config"
 	"github.com/achetronic/vrata/clients/controller/internal/dedup"
@@ -80,6 +82,7 @@ func run() error {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(gwapiv1.Install(scheme))
 	utilruntime.Must(gwapiv1beta1.Install(scheme))
+	utilruntime.Must(vrataapiv1.Install(scheme))
 
 	// Build controller-runtime k8s client (for status writes).
 	k8sClient, err := runtimeclient.New(restCfg, runtimeclient.Options{Scheme: scheme})
@@ -103,7 +106,7 @@ func run() error {
 	}
 
 	// Build Vrata client, reconciler, batcher, status writer, dedup detector.
-	vrataClient := vrata.NewClient(cfg.Vrata.URL)
+	vrataClient := vrata.NewClient(cfg.ControlPlaneURL)
 	rec := reconciler.NewReconciler(vrataClient, logger)
 	debounce, _ := time.ParseDuration(cfg.Snapshot.Debounce)
 	if debounce == 0 {
@@ -181,8 +184,9 @@ func run() error {
 	}
 
 	logger.Info("controller started",
-		slog.String("vrata", cfg.Vrata.URL),
+		slog.String("vrata", cfg.ControlPlaneURL),
 		slog.Bool("httpRoutes", cfg.WatchHTTPRoutes()),
+		slog.Bool("superHttpRoutes", cfg.WatchSuperHTTPRoutes()),
 		slog.Bool("gateways", cfg.WatchGateways()),
 	)
 
@@ -196,6 +200,11 @@ func run() error {
 		if cfg.WatchHTTPRoutes() {
 			if err := syncAllHTTPRoutes(ctx, informerCache, rec, bat, statusWriter, detector, dupMode, logger); err != nil {
 				logger.Error("initial HTTPRoute sync failed", slog.String("error", err.Error()))
+			}
+		}
+		if cfg.WatchSuperHTTPRoutes() {
+			if err := syncAllSuperHTTPRoutes(ctx, informerCache, rec, bat, detector, dupMode, logger); err != nil {
+				logger.Error("initial SuperHTTPRoute sync failed", slog.String("error", err.Error()))
 			}
 		}
 		bat.Flush(ctx)
@@ -218,6 +227,11 @@ func run() error {
 				if cfg.WatchHTTPRoutes() {
 					if err := syncAllHTTPRoutes(ctx, informerCache, rec, bat, statusWriter, detector, dupMode, logger); err != nil {
 						logger.Error("HTTPRoute sync failed", slog.String("error", err.Error()))
+					}
+				}
+				if cfg.WatchSuperHTTPRoutes() {
+					if err := syncAllSuperHTTPRoutes(ctx, informerCache, rec, bat, detector, dupMode, logger); err != nil {
+						logger.Error("SuperHTTPRoute sync failed", slog.String("error", err.Error()))
 					}
 				}
 			}
@@ -373,6 +387,148 @@ func formatOverlapMessage(ols []dedup.Overlap) string {
 		))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// syncAllSuperHTTPRoutes lists all SuperHTTPRoutes and reconciles each one.
+// Uses the same mapper as HTTPRoute since the spec is identical.
+func syncAllSuperHTTPRoutes(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, detector *dedup.Detector, dupMode config.DuplicateMode, logger *slog.Logger) error {
+	var routes vrataapiv1.SuperHTTPRouteList
+	if err := c.List(ctx, &routes); err != nil {
+		return fmt.Errorf("listing SuperHTTPRoutes: %w", err)
+	}
+
+	for i := range routes.Items {
+		shr := &routes.Items[i]
+		input := superHTTPRouteToInput(shr)
+
+		if detector != nil {
+			ols := detector.Check(input)
+			if len(ols) > 0 && dupMode == config.DuplicateModeReject {
+				msg := formatOverlapMessage(ols)
+				logger.Warn("rejecting SuperHTTPRoute due to overlapping paths",
+					slog.String("namespace", shr.Namespace),
+					slog.String("name", shr.Name),
+					slog.String("overlaps", msg),
+				)
+				continue
+			}
+		}
+
+		mapped := mapper.MapHTTPRoute(input)
+		changes, err := rec.ApplyHTTPRoute(ctx, mapped)
+		if err != nil {
+			logger.Error("sync SuperHTTPRoute failed",
+				slog.String("namespace", shr.Namespace),
+				slog.String("name", shr.Name),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		if changes > 0 {
+			for j := 0; j < changes; j++ {
+				bat.Signal(ctx)
+			}
+		}
+	}
+	return nil
+}
+
+// superHTTPRouteToInput converts a SuperHTTPRoute to the mapper's input type.
+// Since the spec is identical to HTTPRoute, the conversion is the same.
+func superHTTPRouteToInput(shr *vrataapiv1.SuperHTTPRoute) mapper.HTTPRouteInput {
+	input := mapper.HTTPRouteInput{
+		Name:      shr.Name,
+		Namespace: shr.Namespace,
+	}
+
+	for _, h := range shr.Spec.Hostnames {
+		input.Hostnames = append(input.Hostnames, string(h))
+	}
+
+	for _, rule := range shr.Spec.Rules {
+		ri := mapper.RuleInput{}
+		for _, match := range rule.Matches {
+			mi := mapper.MatchInput{}
+			if match.Path != nil {
+				if match.Path.Type != nil {
+					mi.PathType = string(*match.Path.Type)
+				}
+				if match.Path.Value != nil {
+					mi.PathValue = *match.Path.Value
+				}
+			}
+			if match.Method != nil {
+				mi.Method = string(*match.Method)
+			}
+			for _, hm := range match.Headers {
+				hi := mapper.HeaderMatchInput{Name: string(hm.Name), Value: hm.Value}
+				if hm.Type != nil {
+					hi.Type = string(*hm.Type)
+				}
+				mi.Headers = append(mi.Headers, hi)
+			}
+			ri.Matches = append(ri.Matches, mi)
+		}
+		for _, br := range rule.BackendRefs {
+			ns := shr.Namespace
+			if br.Namespace != nil {
+				ns = string(*br.Namespace)
+			}
+			port := uint32(0)
+			if br.Port != nil {
+				port = uint32(*br.Port)
+			}
+			weight := uint32(1)
+			if br.Weight != nil {
+				weight = uint32(*br.Weight)
+			}
+			ri.BackendRefs = append(ri.BackendRefs, mapper.BackendRefInput{
+				ServiceName: string(br.Name), ServiceNamespace: ns, Port: port, Weight: weight,
+			})
+		}
+		for _, f := range rule.Filters {
+			fi := mapper.FilterInput{Type: string(f.Type)}
+			switch f.Type {
+			case gwapiv1.HTTPRouteFilterRequestRedirect:
+				if f.RequestRedirect != nil {
+					if f.RequestRedirect.Scheme != nil {
+						fi.RedirectScheme = *f.RequestRedirect.Scheme
+					}
+					if f.RequestRedirect.Hostname != nil {
+						fi.RedirectHost = string(*f.RequestRedirect.Hostname)
+					}
+					if f.RequestRedirect.StatusCode != nil {
+						fi.RedirectCode = uint32(*f.RequestRedirect.StatusCode)
+					}
+				}
+			case gwapiv1.HTTPRouteFilterURLRewrite:
+				if f.URLRewrite != nil {
+					if f.URLRewrite.Path != nil && f.URLRewrite.Path.ReplacePrefixMatch != nil {
+						fi.RewritePathPrefix = *f.URLRewrite.Path.ReplacePrefixMatch
+					}
+					if f.URLRewrite.Hostname != nil {
+						fi.RewriteHostname = string(*f.URLRewrite.Hostname)
+					}
+				}
+			case gwapiv1.HTTPRouteFilterRequestHeaderModifier:
+				if f.RequestHeaderModifier != nil {
+					for _, h := range f.RequestHeaderModifier.Add {
+						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{Name: string(h.Name), Value: h.Value})
+					}
+					for _, h := range f.RequestHeaderModifier.Set {
+						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{Name: string(h.Name), Value: h.Value})
+					}
+					for _, name := range f.RequestHeaderModifier.Remove {
+						fi.HeadersToRemove = append(fi.HeadersToRemove, name)
+					}
+				}
+			}
+			ri.Filters = append(ri.Filters, fi)
+		}
+		input.Rules = append(input.Rules, ri)
+	}
+
+	return input
 }
 
 // findListenerByName searches for a listener by name in Vrata.
