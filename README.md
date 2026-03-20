@@ -353,6 +353,13 @@ docker run -d \
   --config /config.yaml
 ```
 
+## Clients
+
+Vrata exposes a REST API. Anything that speaks HTTP can configure it. The repo includes:
+
+- **Kubernetes Controller** (`clients/controller/`) — watches Gateway API resources (`HTTPRoute`, `Gateway`, `SuperHTTPRoute`) and syncs them to Vrata automatically. Supports overlap detection, batched snapshots, leader election, and Prometheus metrics. [Config reference →](clients/controller/config.yaml)
+- **UI** — planned.
+
 ## API & docs
 
 |                       |                                                                   |

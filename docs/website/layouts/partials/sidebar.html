@@ -1,0 +1,67 @@
+{{ $currentURL := .RelPermalink }}
+
+<aside class="sidebar">
+  {{ range .Site.Menus.docs }}
+    {{ $sectionURL := .URL }}
+    {{ $isActive := hasPrefix $currentURL $sectionURL }}
+
+    {{/* Collect DIRECT children only (not grandchildren) */}}
+    {{ $children := slice }}
+    {{ range $.Site.Pages }}
+      {{ if and (hasPrefix .RelPermalink $sectionURL) (ne .RelPermalink $sectionURL) }}
+        {{ $rel := strings.TrimPrefix $sectionURL .RelPermalink }}
+        {{ $depth := len (split (strings.TrimRight "/" $rel) "/") }}
+        {{ if le $depth 1 }}
+          {{ $children = $children | append . }}
+        {{ end }}
+      {{ end }}
+    {{ end }}
+
+    <div class="sidebar-section open">
+      <div class="sidebar-heading{{ if $isActive }} active{{ end }}" onclick="this.parentElement.classList.toggle('open')">
+        <a href="{{ $sectionURL }}">{{ .Name }}</a>
+        {{ if $children }}<span class="sidebar-arrow">›</span>{{ end }}
+      </div>
+
+      {{ if $children }}
+      <ul class="sidebar-children">
+        {{ range $children }}
+          {{ $childURL := .RelPermalink }}
+          {{ $childIsActive := eq $currentURL $childURL }}
+          {{ $childIsParent := and (not $childIsActive) (hasPrefix $currentURL $childURL) }}
+
+          {{/* Collect grandchildren (direct children of this child) */}}
+          {{ $grandchildren := slice }}
+          {{ range $.Site.Pages }}
+            {{ if and (hasPrefix .RelPermalink $childURL) (ne .RelPermalink $childURL) }}
+              {{ $rel2 := strings.TrimPrefix $childURL .RelPermalink }}
+              {{ $depth2 := len (split (strings.TrimRight "/" $rel2) "/") }}
+              {{ if le $depth2 1 }}
+                {{ $grandchildren = $grandchildren | append . }}
+              {{ end }}
+            {{ end }}
+          {{ end }}
+
+          <li>
+            {{ if $grandchildren }}
+              <div class="sidebar-subsection open">
+                <div class="sidebar-subheading{{ if $childIsActive }} active{{ end }}" onclick="event.stopPropagation(); this.parentElement.classList.toggle('open')">
+                  <a href="{{ $childURL }}">{{ .Title }}</a>
+                  <span class="sidebar-arrow">›</span>
+                </div>
+                <ul class="sidebar-grandchildren">
+                  {{ range $grandchildren }}
+                    <li><a href="{{ .RelPermalink }}"{{ if eq $currentURL .RelPermalink }} class="active"{{ end }}>{{ .Title }}</a></li>
+                  {{ end }}
+                </ul>
+              </div>
+            {{ else }}
+              <a href="{{ $childURL }}"{{ if $childIsActive }} class="active"{{ end }}>{{ .Title }}</a>
+            {{ end }}
+          </li>
+        {{ end }}
+      </ul>
+      {{ end }}
+    </div>
+  {{ end }}
+</aside>

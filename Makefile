@@ -40,7 +40,8 @@ SWAG := $(TOOLS_DIR)/swag
 	server-build server-run server-test server-e2e server-e2e-cluster \
 	server-docs server-proto server-port-forward-podinfo \
 	controller-build controller-test controller-e2e \
-	controller-generate-crd controller-deploy-crd controller-deploy-gateway-api-crds
+	controller-generate-crd controller-deploy-crd controller-deploy-gateway-api-crds \
+	docs-serve docs-build docs-deploy
 
 ###############################################################################
 ## Common
@@ -239,3 +240,31 @@ controller-deploy-gateway-api-crds:
 	@kubectl wait --for condition=Established crd/gateways.gateway.networking.k8s.io --timeout=30s
 	@kubectl wait --for condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=30s
 	@echo "✓ Gateway API CRDs $(GATEWAY_API_VERSION) installed"
+
+###############################################################################
+## Documentation Website
+###############################################################################
+
+DOCS_DIR    := ./docs/website
+DOCS_URL    ?= https://achetronic.github.io/vrata/
+
+## docs-serve: run Hugo development server with live reload
+docs-serve:
+	cd $(DOCS_DIR) && hugo server --baseURL http://localhost:1313/ --bind 0.0.0.0
+
+## docs-build: build the static site for deployment
+docs-build:
+	cd $(DOCS_DIR) && hugo --minify --baseURL $(DOCS_URL)
+
+## docs-deploy: build and push to gh-pages branch
+docs-deploy: docs-build
+	@cd $(DOCS_DIR) && \
+		DEPLOY_DIR=$$(mktemp -d) && \
+		cp -r public/* $$DEPLOY_DIR/ && \
+		cd $$DEPLOY_DIR && \
+		git init && git checkout -b gh-pages && \
+		git add . && git commit -m "Deploy docs" && \
+		git remote add origin $$(cd $(CURDIR) && git remote get-url origin) && \
+		git push -f origin gh-pages && \
+		rm -rf $$DEPLOY_DIR
+	@echo "✓ Docs deployed to gh-pages"

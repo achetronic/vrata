@@ -1,0 +1,61 @@
+{{ define "main" }}
+
+<!-- Hero -->
+<section class="hero">
+  <img src="{{ "images/logo.svg" | relURL }}" alt="Vrata">
+  <h1>Vrata</h1>
+  <p class="tagline">The last gateway you'll configure</p>
+  <p style="color: #8ecae6; max-width: 600px; margin: 0 auto 2rem; font-size: 1.05rem; line-height: 1.6;">
+    A programmable reverse proxy you control with an API. Routes, middlewares, canary splits, and HA — all live, all instant.
+  </p>
+  <div class="hero-cta">
+    <a href="{{ "docs/getting-started/what-is-vrata/" | relURL }}" class="btn-primary">Get Started</a>
+    <a href="{{ .Site.Params.github }}" class="btn-secondary" target="_blank">GitHub →</a>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features fade-in">
+  <h2>Built for platform teams</h2>
+  <p class="subtitle">Everything you need to run HTTP traffic at scale — without touching a config file.</p>
+  <div class="feature-grid">
+    <div class="feature-card">
+      <h3>🔹 Smart routing</h3>
+      <p>Path, headers, methods, regex, query params, hostnames, gRPC, or CEL expressions for cross-field logic. Pre-compiled at build time.</p>
+    </div>
+    <div class="feature-card">
+      <h3>🔹 Canary & sticky sessions</h3>
+      <p>Two-level load balancing: pick the service, then pick the pod. Weighted random, consistent hash, or zero-disruption Redis-backed sticky.</p>
+    </div>
+    <div class="feature-card">
+      <h3>🔹 Request interception</h3>
+      <p>External processor (gRPC/HTTP) inspects and mutates request/response phases. External authorization. Header manipulation with interpolation.</p>
+    </div>
+    <div class="feature-card">
+      <h3>🔹 Security & auth</h3>
+      <p>JWT validation (RSA/EC/Ed25519, JWKS, CEL claim assertions). CORS. Rate limiting per client IP. CEL conditions on any middleware.</p>
+    </div>
+    <div class="feature-card">
+      <h3>🔹 Resilience</h3>
+      <p>Retries with backoff. Circuit breakers. Health checks. Outlier detection. onError fallback routes with typed error matching.</p>
+    </div>
+    <div class="feature-card">
+      <h3>🔹 Zero-downtime config</h3>
+      <p>Versioned snapshots. Edit via REST API. Activate to push to all proxies instantly via SSE. Rollback is one call.</p>
+    </div>
+    <div class="feature-card">
+      <h3>🔹 Full observability</h3>
+      <p>22 Prometheus metrics across 5 dimensions: route, destination, endpoint, middleware, listener. Per-listener, toggleable.</p>
+    </div>
+    <div class="feature-card">
+      <h3>🔹 Kubernetes native</h3>
+      <p>EndpointSlice discovery. Helm chart. Gateway API controller that syncs HTTPRoutes and SuperHTTPRoutes to Vrata automatically.</p>
+    </div>
+    <div class="feature-card">
+      <h3>🔹 HA control plane</h3>
+      <p>3-5 node Raft consensus. Any node accepts writes. DNS peer discovery. Instant failover. Proxies reconnect transparently.</p>
+    </div>
+  </div>
+</section>
+
+{{ end }}
