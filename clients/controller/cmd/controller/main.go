@@ -20,6 +20,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+
+	"github.com/go-logr/logr"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -36,6 +38,7 @@ import (
 	gwapiv1beta1 "sigs.k8s.io/gateway-api/apis/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vrataapiv1 "github.com/achetronic/vrata/clients/controller/apis/v1"
 
@@ -73,6 +76,10 @@ func run() error {
 	}
 
 	logger := buildLogger(cfg)
+
+	// Bridge slog to controller-runtime's logr so that internal components
+	// (cache, client, informers) use the same structured logger.
+	crlog.SetLogger(slogLogr(logger))
 
 	// Build k8s REST config.
 	restCfg, err := buildK8sConfig()
@@ -719,4 +726,10 @@ func buildK8sConfig() (*rest.Config, error) {
 		return nil, fmt.Errorf("no kubeconfig found")
 	}
 	return clientcmd.BuildConfigFromFlags("", kubeconfig)
+}
+
+// slogLogr converts an *slog.Logger into a logr.Logger so that
+// controller-runtime internal components share the same structured logger.
+func slogLogr(l *slog.Logger) logr.Logger {
+	return logr.FromSlogHandler(l.Handler())
 }
