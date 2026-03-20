@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/achetronic/vrata/clients/controller/internal/batcher"
+	"github.com/achetronic/vrata/clients/controller/internal/dedup"
 	"github.com/achetronic/vrata/clients/controller/internal/mapper"
 	"github.com/achetronic/vrata/clients/controller/internal/reconciler"
 	"github.com/achetronic/vrata/clients/controller/internal/vrata"
@@ -1269,5 +1270,278 @@ func TestE2E_Controller_BulkReconcile(t *testing.T) {
 	t.Logf("Vrata has %d owned groups", ownedGroups)
 	if ownedGroups < limit {
 		t.Errorf("expected at least %d owned groups, got %d", limit, ownedGroups)
+	}
+}
+
+// ─── Overlap detection e2e tests ─────────────────────────────────────────────
+
+// TestE2E_Controller_OverlapDetection_SamePath verifies that two HTTPRoutes
+// with the same hostname and path are detected as overlapping by the detector.
+func TestE2E_Controller_OverlapDetection_SamePath(t *testing.T) {
+	det := dedup.NewDetector(testLogger())
+
+	pathPrefix := gwapiv1.PathMatchPathPrefix
+	port := gwapiv1.PortNumber(80)
+
+	hrA := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "overlap-a", Namespace: "default"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path: &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "svc-a", Port: &port}}}},
+			}},
+		},
+	}
+	hrB := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "overlap-b", Namespace: "prod"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path: &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "svc-b", Port: &port}}}},
+			}},
+		},
+	}
+
+	det.Check(gatewayHTTPRouteToInput(hrA))
+	overlaps := det.Check(gatewayHTTPRouteToInput(hrB))
+
+	if len(overlaps) == 0 {
+		t.Error("expected overlap: same hostname + same path prefix from different namespaces")
+	}
+	t.Logf("detected %d overlap(s)", len(overlaps))
+}
+
+// TestE2E_Controller_OverlapDetection_HeaderDisambiguates verifies that two
+// HTTPRoutes with the same hostname and path but different header matchers
+// are NOT considered overlapping — the headers route to different traffic.
+func TestE2E_Controller_OverlapDetection_HeaderDisambiguates(t *testing.T) {
+	det := dedup.NewDetector(testLogger())
+
+	pathPrefix := gwapiv1.PathMatchPathPrefix
+	headerExact := gwapiv1.HeaderMatchExact
+	port := gwapiv1.PortNumber(80)
+
+	hrSandbox := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "env-sandbox", Namespace: "default"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path: &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Headers: []gwapiv1.HTTPHeaderMatch{{
+						Type: &headerExact, Name: "X-Env", Value: "sandbox",
+					}},
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "sandbox-svc", Port: &port}}}},
+			}},
+		},
+	}
+	hrProduction := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "env-production", Namespace: "default"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path: &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Headers: []gwapiv1.HTTPHeaderMatch{{
+						Type: &headerExact, Name: "X-Env", Value: "production",
+					}},
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "prod-svc", Port: &port}}}},
+			}},
+		},
+	}
+
+	det.Check(gatewayHTTPRouteToInput(hrSandbox))
+	overlaps := det.Check(gatewayHTTPRouteToInput(hrProduction))
+
+	if len(overlaps) > 0 {
+		t.Errorf("expected NO overlap: same path but different X-Env header values, got %d", len(overlaps))
+	}
+}
+
+// TestE2E_Controller_OverlapDetection_SameHeadersSamePathOverlaps verifies
+// that two HTTPRoutes with identical hostname + path + header matchers are
+// correctly detected as overlapping.
+func TestE2E_Controller_OverlapDetection_SameHeadersSamePathOverlaps(t *testing.T) {
+	det := dedup.NewDetector(testLogger())
+
+	pathPrefix := gwapiv1.PathMatchPathPrefix
+	headerExact := gwapiv1.HeaderMatchExact
+	port := gwapiv1.PortNumber(80)
+
+	hrA := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "dup-header-a", Namespace: "ns-a"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path:    &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Headers: []gwapiv1.HTTPHeaderMatch{{Type: &headerExact, Name: "X-Env", Value: "prod"}},
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "svc-a", Port: &port}}}},
+			}},
+		},
+	}
+	hrB := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "dup-header-b", Namespace: "ns-b"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path:    &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Headers: []gwapiv1.HTTPHeaderMatch{{Type: &headerExact, Name: "X-Env", Value: "prod"}},
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "svc-b", Port: &port}}}},
+			}},
+		},
+	}
+
+	det.Check(gatewayHTTPRouteToInput(hrA))
+	overlaps := det.Check(gatewayHTTPRouteToInput(hrB))
+
+	if len(overlaps) == 0 {
+		t.Error("expected overlap: same hostname + path + headers from different namespaces")
+	}
+	t.Logf("detected %d overlap(s)", len(overlaps))
+}
+
+// TestE2E_Controller_OverlapDetection_HeaderVsNoHeader verifies that a route
+// with header matchers does NOT overlap with a route without headers, even
+// when hostname and path are identical — they target different traffic.
+func TestE2E_Controller_OverlapDetection_HeaderVsNoHeader(t *testing.T) {
+	det := dedup.NewDetector(testLogger())
+
+	pathPrefix := gwapiv1.PathMatchPathPrefix
+	headerExact := gwapiv1.HeaderMatchExact
+	port := gwapiv1.PortNumber(80)
+
+	hrWithHeader := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "with-header", Namespace: "default"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path:    &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Headers: []gwapiv1.HTTPHeaderMatch{{Type: &headerExact, Name: "X-Env", Value: "canary"}},
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "canary-svc", Port: &port}}}},
+			}},
+		},
+	}
+	hrNoHeader := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "no-header", Namespace: "default"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path: &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "default-svc", Port: &port}}}},
+			}},
+		},
+	}
+
+	det.Check(gatewayHTTPRouteToInput(hrWithHeader))
+	overlaps := det.Check(gatewayHTTPRouteToInput(hrNoHeader))
+
+	if len(overlaps) > 0 {
+		t.Errorf("expected NO overlap: one route has X-Env header, the other doesn't, got %d", len(overlaps))
+	}
+}
+
+// TestE2E_Controller_OverlapDetection_MethodDisambiguates verifies that two
+// HTTPRoutes with the same hostname and path but different HTTP methods are
+// NOT considered overlapping — GET /api and POST /api target different traffic.
+func TestE2E_Controller_OverlapDetection_MethodDisambiguates(t *testing.T) {
+	det := dedup.NewDetector(testLogger())
+
+	pathPrefix := gwapiv1.PathMatchPathPrefix
+	methodGET := gwapiv1.HTTPMethodGet
+	methodPOST := gwapiv1.HTTPMethodPost
+	port := gwapiv1.PortNumber(80)
+
+	hrGET := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-get", Namespace: "default"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path:   &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Method: &methodGET,
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "read-svc", Port: &port}}}},
+			}},
+		},
+	}
+	hrPOST := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "api-post", Namespace: "default"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path:   &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Method: &methodPOST,
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "write-svc", Port: &port}}}},
+			}},
+		},
+	}
+
+	det.Check(gatewayHTTPRouteToInput(hrGET))
+	overlaps := det.Check(gatewayHTTPRouteToInput(hrPOST))
+
+	if len(overlaps) > 0 {
+		t.Errorf("expected NO overlap: GET /api vs POST /api are different traffic, got %d", len(overlaps))
+	}
+}
+
+// TestE2E_Controller_OverlapDetection_SameMethodOverlaps verifies that two
+// HTTPRoutes with the same hostname, path, AND method ARE detected as overlapping.
+func TestE2E_Controller_OverlapDetection_SameMethodOverlaps(t *testing.T) {
+	det := dedup.NewDetector(testLogger())
+
+	pathPrefix := gwapiv1.PathMatchPathPrefix
+	methodGET := gwapiv1.HTTPMethodGet
+	port := gwapiv1.PortNumber(80)
+
+	hrA := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "get-a", Namespace: "ns-a"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path:   &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Method: &methodGET,
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "svc-a", Port: &port}}}},
+			}},
+		},
+	}
+	hrB := &gwapiv1.HTTPRoute{
+		ObjectMeta: metav1.ObjectMeta{Name: "get-b", Namespace: "ns-b"},
+		Spec: gwapiv1.HTTPRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"api.example.com"},
+			Rules: []gwapiv1.HTTPRouteRule{{
+				Matches: []gwapiv1.HTTPRouteMatch{{
+					Path:   &gwapiv1.HTTPPathMatch{Type: &pathPrefix, Value: strPtr("/api")},
+					Method: &methodGET,
+				}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{BackendObjectReference: gwapiv1.BackendObjectReference{Name: "svc-b", Port: &port}}}},
+			}},
+		},
+	}
+
+	det.Check(gatewayHTTPRouteToInput(hrA))
+	overlaps := det.Check(gatewayHTTPRouteToInput(hrB))
+
+	if len(overlaps) == 0 {
+		t.Error("expected overlap: same hostname + path + method GET from different namespaces")
 	}
 }
