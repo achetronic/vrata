@@ -145,6 +145,10 @@ proxy:
 controller:
   enabled: false
 
+  # Install CRDs managed by the controller (e.g. SuperHTTPRoute).
+  # Requires `make controller-generate-crd` to have been run first.
+  installCRDs: false
+
   replicas: 1
 
   # Controller config.yaml content. Rendered as-is into the ConfigMap.
