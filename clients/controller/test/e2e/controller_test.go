@@ -1075,3 +1075,199 @@ func TestE2E_Controller_MultipleRules(t *testing.T) {
 	}
 	t.Error("group not found")
 }
+
+// ─── Bulk tests against production-scale anonymized routes ──────────────────
+
+// loadTestRoutes parses the anonymized test-routes.yaml and returns mapper inputs.
+func loadTestRoutes(t *testing.T) []mapper.HTTPRouteInput {
+	t.Helper()
+	data, err := os.ReadFile("test-routes.yaml")
+	if err != nil {
+		t.Fatalf("reading test-routes.yaml: %v", err)
+	}
+
+	content := string(data)
+	items := strings.Split(content, "\n- apiVersion:")
+	if len(items) < 2 {
+		t.Fatalf("expected items in test-routes.yaml, got %d splits", len(items))
+	}
+
+	var inputs []mapper.HTTPRouteInput
+	for i, item := range items {
+		if i == 0 {
+			continue
+		}
+		full := "apiVersion:" + item
+		input := mapper.HTTPRouteInput{}
+
+		for _, line := range strings.Split(full, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "name:") && input.Name == "" {
+				input.Name = strings.TrimSpace(strings.TrimPrefix(trimmed, "name:"))
+			}
+			if strings.HasPrefix(trimmed, "namespace:") && input.Namespace == "" {
+				input.Namespace = strings.TrimSpace(strings.TrimPrefix(trimmed, "namespace:"))
+			}
+		}
+
+		inHostnames := false
+		for _, line := range strings.Split(full, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "hostnames:" {
+				inHostnames = true
+				continue
+			}
+			if inHostnames {
+				if strings.HasPrefix(trimmed, "- ") && !strings.Contains(trimmed, ":") {
+					input.Hostnames = append(input.Hostnames, strings.TrimPrefix(trimmed, "- "))
+				} else if !strings.HasPrefix(trimmed, "- ") {
+					inHostnames = false
+				}
+			}
+		}
+
+		if input.Name == "" {
+			continue
+		}
+
+		input.Rules = []mapper.RuleInput{{
+			Matches: []mapper.MatchInput{{PathType: "PathPrefix", PathValue: "/"}},
+			BackendRefs: []mapper.BackendRefInput{{
+				ServiceName: "svc", ServiceNamespace: input.Namespace, Port: 80, Weight: 1,
+			}},
+		}}
+
+		inputs = append(inputs, input)
+	}
+
+	if len(inputs) == 0 {
+		t.Fatal("no routes parsed from test-routes.yaml")
+	}
+	return inputs
+}
+
+func TestE2E_Controller_BulkParsing(t *testing.T) {
+	inputs := loadTestRoutes(t)
+	t.Logf("Parsed %d routes from test-routes.yaml", len(inputs))
+
+	if len(inputs) < 1000 {
+		t.Fatalf("expected 1000+ routes, got %d", len(inputs))
+	}
+
+	totalRoutes := 0
+	totalDests := 0
+	totalGroups := 0
+
+	for _, input := range inputs {
+		mapped := mapper.MapHTTPRoute(input)
+		if mapped.Group.Name == "" {
+			t.Errorf("empty group name for %s/%s", input.Namespace, input.Name)
+		}
+		if len(mapped.Routes) == 0 {
+			t.Errorf("no routes generated for %s/%s", input.Namespace, input.Name)
+		}
+		for _, r := range mapped.Routes {
+			if r.Name == "" {
+				t.Error("empty route name")
+			}
+			if r.Match == nil {
+				t.Errorf("nil match on route %s", r.Name)
+			}
+		}
+		totalRoutes += len(mapped.Routes)
+		totalDests += len(mapped.Destinations)
+		totalGroups++
+	}
+
+	t.Logf("Mapped: %d groups, %d routes, %d destinations", totalGroups, totalRoutes, totalDests)
+
+	if totalRoutes < 1000 {
+		t.Errorf("expected 1000+ routes after mapping, got %d", totalRoutes)
+	}
+}
+
+func TestE2E_Controller_BulkReconcile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping bulk reconcile in short mode")
+	}
+
+	ctx := context.Background()
+	vrataCleanOwned(t)
+	defer vrataCleanOwned(t)
+
+	vrataClient := vrata.NewClient("http://localhost:8080")
+	rec := reconciler.NewReconciler(vrataClient, testLogger())
+	rec.Init(ctx)
+
+	inputs := loadTestRoutes(t)
+	t.Logf("Reconciling %d routes against Vrata", len(inputs))
+
+	limit := 100
+	if len(inputs) > limit {
+		inputs = inputs[:limit]
+	}
+
+	totalChanges := 0
+	reconcileErrors := 0
+	for _, input := range inputs {
+		mapped := mapper.MapHTTPRoute(input)
+		changes, err := rec.ApplyHTTPRoute(ctx, mapped)
+		if err != nil {
+			t.Logf("reconcile error for %s/%s: %v", input.Namespace, input.Name, err)
+			reconcileErrors++
+			continue
+		}
+		totalChanges += changes
+	}
+
+	t.Logf("Reconciled: %d changes applied, %d errors", totalChanges, reconcileErrors)
+
+	if reconcileErrors > 0 {
+		t.Errorf("expected 0 errors, got %d", reconcileErrors)
+	}
+
+	routes, err := vrataClient.ListRoutes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownedRoutes := 0
+	for _, r := range routes {
+		if mapper.IsOwned(r.Name) {
+			ownedRoutes++
+		}
+	}
+	t.Logf("Vrata has %d owned routes", ownedRoutes)
+	if ownedRoutes < limit {
+		t.Errorf("expected at least %d owned routes, got %d", limit, ownedRoutes)
+	}
+
+	dests, err := vrataClient.ListDestinations(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownedDests := 0
+	for _, d := range dests {
+		if mapper.IsOwned(d.Name) {
+			ownedDests++
+		}
+	}
+	t.Logf("Vrata has %d owned destinations", ownedDests)
+	if ownedDests == 0 {
+		t.Error("expected at least 1 owned destination")
+	}
+
+	groups, err := vrataClient.ListGroups(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownedGroups := 0
+	for _, g := range groups {
+		if mapper.IsOwned(g.Name) {
+			ownedGroups++
+		}
+	}
+	t.Logf("Vrata has %d owned groups", ownedGroups)
+	if ownedGroups < limit {
+		t.Errorf("expected at least %d owned groups, got %d", limit, ownedGroups)
+	}
+}
