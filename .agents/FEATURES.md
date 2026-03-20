@@ -117,12 +117,25 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | ------------------------------------------------------- | ------ | ---------- |
 | Atomic routing table swap (with cleanup callbacks)      | 100%   | Unit + E2E |
 | Listener management (detects TLS changes)               | 100%   | E2E        |
-| Circuit breaker (RecordFailure wired, half-open atomic) | 100%   | Unit       |
+| Circuit breaker (configurable failureThreshold + openDuration) | 100% | Unit |
 | Health checks (thresholds, per-dest interval)           | 100%   | Unit       |
 | Outlier detection (wired via OnResponse, race-free)     | 100%   | Unit       |
 | TLS upstream                                            | 100%   | Unit       |
 | TLS downstream                                          | 100%   | Unit       |
 | HTTP/2 (ALPN configured)                                | 100%   | Unit       |
+
+## Timeouts
+
+| Feature | Status | Tests |
+|---|---|---|
+| Listener timeouts (clientHeader, clientRequest, clientResponse, idleBetweenRequests) | 100% | Unit (4) |
+| Destination timeouts (request, connect, dualStackFallback, tlsHandshake, responseHeader, expectContinue, idleConnection) | 100% | Unit (6) |
+| Destination request timeout fallback (route → destination) | 100% | Code review |
+| parseDurationOrDefault generic helper | 100% | Unit (4) |
+| ExtAuthz decisionTimeout (renamed from timeout) | 100% | Unit + E2E |
+| ExtProc phaseTimeout (renamed from timeout) | 100% | Unit + E2E |
+| JWT jwksRetrievalTimeout (new, was hardcoded 10s) | 100% | E2E |
+| JWT jwksPath (renamed from jwksUri) | 100% | E2E |
 
 ## Prometheus Metrics
 

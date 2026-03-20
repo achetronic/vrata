@@ -86,6 +86,28 @@ With TLS:
 | `http2`               | bool   | Enable HTTP/2                    |
 | `serverName`          | string | Server header value              |
 | `maxRequestHeadersKB` | number | Max header size in KB            |
+| `metrics`             | object | Prometheus metrics config        |
+| `timeouts`            | object | Client connection timeouts       |
+
+### Listener Timeouts
+
+```json
+{
+  "timeouts": {
+    "clientHeader": "10s",
+    "clientRequest": "60s",
+    "clientResponse": "60s",
+    "idleBetweenRequests": "120s"
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `clientHeader` | `10s` | Time for the client to send all request headers |
+| `clientRequest` | `60s` | Time to receive the complete request (headers + body) |
+| `clientResponse` | `60s` | Time to send the complete response to the client |
+| `idleBetweenRequests` | `120s` | How long a keep-alive connection stays open between requests |
 
 ---
 
@@ -329,7 +351,9 @@ Protects the upstream from overload:
       "maxConnections": 100,
       "maxPendingRequests": 50,
       "maxRequests": 200,
-      "maxRetries": 3
+      "maxRetries": 3,
+      "failureThreshold": 5,
+      "openDuration": "30s"
     }
   }
 }
@@ -371,12 +395,43 @@ Passive ejection based on error patterns:
 }
 ```
 
+### Destination Timeouts
+
+Controls how long each stage of the connection to this upstream is allowed to take:
+
+```json
+{
+  "options": {
+    "timeouts": {
+      "request": "30s",
+      "connect": "5s",
+      "dualStackFallback": "300ms",
+      "tlsHandshake": "5s",
+      "responseHeader": "10s",
+      "expectContinue": "1s",
+      "idleConnection": "90s"
+    }
+  }
+}
+```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `request` | `30s` | Total budget for the entire HTTP call (connect + TLS + send + wait + receive) |
+| `connect` | `5s` | Establish TCP connection with the endpoint |
+| `dualStackFallback` | `300ms` | How long to wait before trying the other IP family (IPv4↔IPv6) |
+| `tlsHandshake` | `5s` | Complete the TLS handshake after TCP connect |
+| `responseHeader` | `10s` | Wait for the upstream to send the first byte of response headers |
+| `expectContinue` | `1s` | Wait for 100-Continue before sending the request body |
+| `idleConnection` | `90s` | How long to keep a reusable connection idle before closing it |
+
+If a route has `forward.timeouts.request` set, it takes precedence over `destination.options.timeouts.request`. The most restrictive always wins.
+
 ### Other Options
 
-| Field                      | Description                           |
-| -------------------------- | ------------------------------------- |
-| `connectTimeout`           | TCP connection timeout. Default: `5s` |
-| `http2`                    | Enable HTTP/2 to upstream             |
+| Field | Description |
+|---|---|
+| `http2` | Enable HTTP/2 to upstream |
 | `maxRequestsPerConnection` | Drain after N requests. 0 = unlimited |
 
 ---
@@ -972,7 +1027,7 @@ Validates JWT tokens in the `Authorization` header. Each JWT middleware validate
   "jwt": {
     "issuer": "https://myapp.auth0.com/",
     "audiences": ["https://api.example.com"],
-    "jwksUri": "/.well-known/jwks.json",
+    "jwksPath": "/.well-known/jwks.json",
     "jwksDestinationId": "auth0-server",
     "forwardJwt": true,
     "claimToHeaders": [
@@ -995,14 +1050,15 @@ Supports RSA (RS256/384/512), ECDSA (ES256/384/512), and Ed25519. JWKS keys are 
 | ------------------- | -------- | ------------------------------------------------------- |
 | `issuer`            | string   | **Required**. Expected `iss` claim                      |
 | `audiences`         | string[] | Expected `aud` values. Empty = skip audience check      |
-| `jwksUri`           | string   | URL path to fetch JWKS from (via a Destination)         |
+| `jwksPath`           | string   | URL path to fetch JWKS from (via a Destination)         |
 | `jwksDestinationId` | string   | Destination ID hosting the JWKS endpoint                |
 | `jwksInline`        | string   | Literal JWKS JSON document (for testing or static keys) |
+| `jwksRetrievalTimeout` | string | Max time to download JWKS. Default: `10s`            |
 | `forwardJwt`        | bool     | Forward the `Authorization` header to the upstream      |
 | `claimToHeaders`    | array    | Map claims to upstream request headers                  |
 | `assertClaims`      | string[] | CEL expressions evaluated against decoded claims        |
 
-Only one of `jwksUri` + `jwksDestinationId` or `jwksInline` is needed.
+Only one of `jwksPath` + `jwksDestinationId` or `jwksInline` is needed.
 
 #### claimToHeaders
 
@@ -1052,7 +1108,7 @@ Via Destination:
 
 ```json
 {
-  "jwksUri": "/.well-known/jwks.json",
+  "jwksPath": "/.well-known/jwks.json",
   "jwksDestinationId": "auth-server"
 }
 ```
@@ -1095,7 +1151,7 @@ Delegates authorization to an external HTTP or gRPC service. The authz service r
     "destinationId": "auth-service-dest",
     "mode": "http",
     "path": "/authorize",
-    "timeout": "5s",
+    "decisionTimeout": "5s",
     "failureModeAllow": false,
     "includeBody": false,
     "onCheck": {
@@ -1120,7 +1176,7 @@ Delegates authorization to an external HTTP or gRPC service. The authz service r
 | `destinationId`    | string | **Required**. Destination hosting the authz service  |
 | `mode`             | string | `http` or `grpc`. Default: `http`                    |
 | `path`             | string | Authorization endpoint path (HTTP mode)              |
-| `timeout`          | string | Request deadline. Default: `5s`                      |
+| `decisionTimeout`          | string | Request deadline. Default: `5s`                      |
 | `failureModeAllow` | bool   | Allow requests when the authz service is unreachable |
 | `includeBody`      | bool   | Forward the request body to the authz service        |
 | `onCheck`          | object | What to send in the check request                    |
@@ -1185,7 +1241,7 @@ Sends request/response data to an external HTTP or gRPC service for inspection o
   "extProc": {
     "destinationId": "processor-dest",
     "mode": "http",
-    "timeout": "10s",
+    "phaseTimeout": "10s",
     "phases": {
       "requestHeaders": "send",
       "responseHeaders": "send",
@@ -1218,7 +1274,7 @@ Sends request/response data to an external HTTP or gRPC service for inspection o
 | ------------------ | ------ | ------------------------------------------------------ |
 | `destinationId`    | string | **Required**. Destination hosting the processor        |
 | `mode`             | string | `http` or `grpc`. Default: `http`                      |
-| `timeout`          | string | Processing deadline. Default: `10s`                    |
+| `phaseTimeout`      | string | Per-phase processing deadline. Default: `200ms`                    |
 | `phases`           | object | Which phases to send to the processor                  |
 | `allowOnError`     | bool   | Continue if the processor fails                        |
 | `statusOnError`    | number | HTTP status to return on processor error. Default: 500 |
