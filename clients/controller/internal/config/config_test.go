@@ -128,3 +128,73 @@ func TestLoadInvalidYAML(t *testing.T) {
 		t.Fatal("expected error for invalid YAML")
 	}
 }
+
+func TestSnapshotAutoCreateDefaults(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte("{}"), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.SnapshotAutoCreate() {
+		t.Error("expected autoCreate true by default")
+	}
+	if !cfg.SnapshotAutoActivate() {
+		t.Error("expected autoActivate true by default")
+	}
+}
+
+func TestSnapshotAutoCreateFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(`
+snapshot:
+  autoCreate: false
+`), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.SnapshotAutoCreate() {
+		t.Error("expected autoCreate false")
+	}
+}
+
+func TestSnapshotAutoActivateFalse(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(`
+snapshot:
+  autoCreate: true
+  autoActivate: false
+`), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.SnapshotAutoCreate() {
+		t.Error("expected autoCreate true")
+	}
+	if cfg.SnapshotAutoActivate() {
+		t.Error("expected autoActivate false")
+	}
+}
+
+func TestSnapshotAutoActivateTrueAutoCreateFalseRejectsConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(`
+snapshot:
+  autoCreate: false
+  autoActivate: true
+`), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected validation error for autoActivate=true with autoCreate=false")
+	}
+}

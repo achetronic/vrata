@@ -369,7 +369,7 @@ func TestE2E_Controller_BatchSnapshot(t *testing.T) {
 	vrataClient := vrata.NewClient("http://localhost:8080")
 	rec := reconciler.NewReconciler(vrataClient, testLogger())
 	rec.Init(ctx)
-	bat := batcher.New(vrataClient, 500*time.Millisecond, 1000, testLogger())
+	bat := batcher.New(vrataClient, 500*time.Millisecond, 1000, true, true, testLogger())
 
 	// Apply 3 routes, signal batcher for each.
 	for i := 0; i < 3; i++ {

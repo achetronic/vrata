@@ -66,6 +66,19 @@ type SnapshotConfig struct {
 	// a snapshot even if changes keep arriving. Default: 100.
 	MaxBatch int `yaml:"maxBatch"`
 
+	// AutoCreate controls whether the controller automatically creates a
+	// snapshot when the batcher flushes. When false, the controller syncs
+	// all resources to the Vrata live config but never creates snapshots —
+	// an external process must create them via the API. Default: true.
+	AutoCreate *bool `yaml:"autoCreate,omitempty"`
+
+	// AutoActivate controls whether a newly created snapshot is immediately
+	// activated (pushed to proxies via SSE). Only has effect when AutoCreate
+	// is true. When false, the snapshot is created but left inactive — a
+	// human or external process must activate it via the API after review.
+	// Default: true.
+	AutoActivate *bool `yaml:"autoActivate,omitempty"`
+
 	// BatchIdleTimeout is how long to wait after the last HTTPRoute belonging
 	// to a vrata.io/batch group arrives before considering the group complete
 	// and creating a snapshot. The timeout resets on every new member arrival.
@@ -198,6 +211,24 @@ func (c *Config) DuplicatesMode() DuplicateMode {
 	return c.Duplicates.Mode
 }
 
+// SnapshotAutoCreate returns whether the batcher should create snapshots
+// automatically. Defaults to true for backwards compatibility.
+func (c *Config) SnapshotAutoCreate() bool {
+	if c.Snapshot.AutoCreate == nil {
+		return true
+	}
+	return *c.Snapshot.AutoCreate
+}
+
+// SnapshotAutoActivate returns whether the batcher should activate snapshots
+// immediately after creating them. Defaults to true for backwards compatibility.
+func (c *Config) SnapshotAutoActivate() bool {
+	if c.Snapshot.AutoActivate == nil {
+		return true
+	}
+	return *c.Snapshot.AutoActivate
+}
+
 // Load reads the YAML file at path, expands environment variables in its
 // raw content, unmarshals it into a Config, and applies defaults.
 func Load(path string) (*Config, error) {
@@ -267,6 +298,13 @@ func applyDefaults(cfg *Config) {
 func validate(cfg *Config) error {
 	if cfg.ControlPlaneURL == "" {
 		return fmt.Errorf("controlPlaneUrl is required")
+	}
+	// autoActivate only makes sense when autoCreate is true — you cannot
+	// activate a snapshot that was never created.
+	if !cfg.SnapshotAutoCreate() && cfg.SnapshotAutoActivate() {
+		if cfg.Snapshot.AutoActivate != nil && *cfg.Snapshot.AutoActivate {
+			return fmt.Errorf("snapshot.autoActivate cannot be true when snapshot.autoCreate is false")
+		}
 	}
 	return nil
 }
