@@ -30,6 +30,28 @@ snapshot:
   # Force a snapshot after this many changes even if more keep arriving.
   maxBatch: 100
 
+  # Batch deployment support (vrata.io/batch annotation).
+  #
+  # When HTTPRoutes carry the vrata.io/batch annotation, the controller groups
+  # them and waits for all members before creating a single atomic snapshot.
+  # batchIdleTimeout controls how long to wait after the last member arrives
+  # before considering the group complete. The timer resets on every new member.
+  batchIdleTimeout: "${BATCH_IDLE_TIMEOUT:-10s}"
+
+  # What to do when a batch with vrata.io/batch-size times out before all
+  # members arrive. This only applies when BOTH annotations are present —
+  # without batch-size the controller can't detect incomplete batches.
+  #
+  # "apply"  — log an error and create the snapshot with the members that
+  #            arrived. The proxy gets partially-applied config. Use this when
+  #            routes are independent and partial service is better than none.
+  #
+  # "reject" — log an error and discard the batch entirely. No snapshot is
+  #            created — the previous active snapshot stays in effect. Use this
+  #            when routes depend on each other and partial config would cause
+  #            errors. The operator must re-deploy to converge.
+  batchIncompletePolicy: "${BATCH_INCOMPLETE_POLICY:-apply}"
+
 # Duplicate/overlapping route detection.
 duplicates:
   # "off"    — disabled

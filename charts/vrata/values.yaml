@@ -166,6 +166,16 @@ controller:
     snapshot:
       debounce: "5s"
       maxBatch: 100
+      # How long to wait after the last HTTPRoute with vrata.io/batch arrives
+      # before considering the batch complete. Resets on every new member.
+      batchIdleTimeout: "10s"
+      # What to do when a batch with vrata.io/batch-size times out before all
+      # members arrive:
+      #   "apply"  — create the snapshot with whatever arrived (default)
+      #   "reject" — discard the batch, keep the previous snapshot active
+      # Only matters when both vrata.io/batch and vrata.io/batch-size are set.
+      # Without batch-size, the controller can't detect incomplete batches.
+      batchIncompletePolicy: "apply"
     duplicates:
       # off | warn | reject
       mode: warn
