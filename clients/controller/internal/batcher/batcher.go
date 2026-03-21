@@ -16,12 +16,16 @@ import (
 )
 
 // Batcher accumulates change signals and creates+activates a Vrata snapshot
-// when the batch is flushed.
+// when the batch is flushed. The autoCreate and autoActivate flags control
+// whether snapshots are created and activated automatically, or left for
+// an external process to manage via the Vrata API.
 type Batcher struct {
-	client   *vrata.Client
-	debounce time.Duration
-	maxBatch int
-	logger   *slog.Logger
+	client       *vrata.Client
+	debounce     time.Duration
+	maxBatch     int
+	autoCreate   bool
+	autoActivate bool
+	logger       *slog.Logger
 
 	mu      sync.Mutex
 	pending int
@@ -30,12 +34,14 @@ type Batcher struct {
 }
 
 // New creates a Batcher with the given debounce duration and max batch size.
-func New(client *vrata.Client, debounce time.Duration, maxBatch int, logger *slog.Logger) *Batcher {
+func New(client *vrata.Client, debounce time.Duration, maxBatch int, autoCreate, autoActivate bool, logger *slog.Logger) *Batcher {
 	return &Batcher{
-		client:   client,
-		debounce: debounce,
-		maxBatch: maxBatch,
-		logger:   logger,
+		client:       client,
+		debounce:     debounce,
+		maxBatch:     maxBatch,
+		autoCreate:   autoCreate,
+		autoActivate: autoActivate,
+		logger:       logger,
 	}
 }
 
@@ -88,11 +94,23 @@ func (b *Batcher) TotalSignals() int {
 	return b.counter
 }
 
-// flushLocked creates and activates a snapshot. Must be called with mu held.
+// flushLocked creates and optionally activates a snapshot. Must be called with mu held.
+// When autoCreate is false, pending changes are cleared without creating a snapshot.
+// When autoActivate is false, the snapshot is created but not activated.
 func (b *Batcher) flushLocked(ctx context.Context) {
 	if b.timer != nil {
 		b.timer.Stop()
 		b.timer = nil
+	}
+
+	changes := b.pending
+	b.pending = 0
+
+	if !b.autoCreate {
+		b.logger.Info("batcher: snapshot creation disabled, clearing pending changes",
+			slog.Int("changes", changes),
+		)
+		return
 	}
 
 	name := fmt.Sprintf("vrata-controller-%d", time.Now().UnixMilli())
@@ -100,7 +118,16 @@ func (b *Batcher) flushLocked(ctx context.Context) {
 	if err != nil {
 		b.logger.Error("batcher: failed to create snapshot",
 			slog.String("error", err.Error()),
-			slog.Int("pending", b.pending),
+			slog.Int("pending", changes),
+		)
+		return
+	}
+
+	if !b.autoActivate {
+		b.logger.Info("batcher: snapshot created (auto-activate disabled, awaiting manual activation)",
+			slog.String("id", snap.ID),
+			slog.String("name", name),
+			slog.Int("changes", changes),
 		)
 		return
 	}
@@ -116,8 +143,6 @@ func (b *Batcher) flushLocked(ctx context.Context) {
 	b.logger.Info("batcher: snapshot activated",
 		slog.String("id", snap.ID),
 		slog.String("name", name),
-		slog.Int("changes", b.pending),
+		slog.Int("changes", changes),
 	)
-
-	b.pending = 0
 }

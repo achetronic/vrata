@@ -166,6 +166,13 @@ controller:
     snapshot:
       debounce: "5s"
       maxBatch: 100
+      # Create snapshots automatically when the batcher flushes.
+      # Set to false to sync resources without creating snapshots (manual via API).
+      autoCreate: true
+      # Activate snapshots immediately after creation (push to proxies via SSE).
+      # Set to false to create snapshots for review before manual activation.
+      # Only applies when autoCreate is true.
+      autoActivate: true
       # How long to wait after the last HTTPRoute with vrata.io/batch arrives
       # before considering the batch complete. Resets on every new member.
       batchIdleTimeout: "10s"
