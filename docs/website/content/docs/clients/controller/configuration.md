@@ -22,6 +22,12 @@ watch:
 snapshot:
   debounce: "5s"          # Wait after last change before snapshot
   maxBatch: 100           # Force snapshot after this many changes
+  batchIdleTimeout: "10s" # Wait after last batch member arrives (vrata.io/batch)
+  # What to do when a batch with vrata.io/batch-size times out before all
+  # members arrive. Only applies when both annotations are present.
+  #   "apply"  — create the snapshot with whatever arrived (default)
+  #   "reject" — discard the incomplete batch, don't create a snapshot
+  batchIncompletePolicy: "apply"
 
 # Overlap detection.
 duplicates:
@@ -58,6 +64,8 @@ metrics:
 | `watch.gateways` | `true` | Watch Gateway resources |
 | `snapshot.debounce` | `5s` | Debounce before creating snapshot |
 | `snapshot.maxBatch` | `100` | Max changes before forced snapshot |
+| `snapshot.batchIdleTimeout` | `10s` | Idle wait for `vrata.io/batch` groups. See [Batch Deployments]({{< relref "batch-deployments" >}}) |
+| `snapshot.batchIncompletePolicy` | `apply` | `apply`: snapshot with partial set. `reject`: discard incomplete batch. See [Batch Deployments]({{< relref "batch-deployments" >}}) |
 | `duplicates.mode` | `warn` | `off`: disabled, `warn`: log only, `reject`: skip route |
 | `leaderElection.enabled` | `false` | Enable lease-based leader election |
 | `metrics.enabled` | `false` | Enable Prometheus metrics on `:9090` |

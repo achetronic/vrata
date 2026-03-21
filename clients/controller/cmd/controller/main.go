@@ -274,16 +274,23 @@ func run() error {
 				case workqueue.KindBatch:
 					bg := head.Batch
 					if !bg.IsReady(batchIdleTimeout) {
-						// Still accumulating — block the queue.
 						batchBlocking = true
 						logger.Debug("workqueue: batch group accumulating",
 							slog.String("batch", bg.Name),
 							slog.Int("members", len(bg.Members)),
 						)
 					} else {
-						// Ready — check for incomplete batch.
 						if bg.IsIncomplete() {
-							logger.Error("workqueue: batch group timed out before all members arrived, flushing with partial set",
+							if cfg.Snapshot.BatchIncompletePolicy == config.BatchIncompletePolicyReject {
+								logger.Error("workqueue: incomplete batch rejected, discarding",
+									slog.String("batch", bg.Name),
+									slog.Int("got", len(bg.Members)),
+									slog.Int("expected", bg.ExpectedSize),
+								)
+								wq.Pop()
+								break
+							}
+							logger.Error("workqueue: batch group timed out before all members arrived, applying partial set",
 								slog.String("batch", bg.Name),
 								slog.Int("got", len(bg.Members)),
 								slog.Int("expected", bg.ExpectedSize),
@@ -294,7 +301,6 @@ func run() error {
 								slog.Int("members", len(bg.Members)),
 							)
 						}
-						// Reconcile all members atomically, then flush a single snapshot.
 						for _, ref := range bg.Members {
 							refCopy := ref
 							_, gName, err := reconcileSingleRoute(ctx, informerCache, rec, bat, statusWriter, detector, dupMode, refGrantChecker, m, logger, &refCopy)

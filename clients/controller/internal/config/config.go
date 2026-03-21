@@ -71,7 +71,32 @@ type SnapshotConfig struct {
 	// and creating a snapshot. The timeout resets on every new member arrival.
 	// Default: "10s".
 	BatchIdleTimeout string `yaml:"batchIdleTimeout"`
+
+	// BatchIncompletePolicy controls what happens when a batch group with a
+	// known vrata.io/batch-size times out before all members arrive.
+	// "apply" (default): log an error and create the snapshot with whatever
+	//   members arrived — the proxy gets partially-applied config.
+	// "reject": discard the incomplete batch entirely, log an error, and do
+	//   not create a snapshot — the operator must re-deploy to converge.
+	// This setting only takes effect when both vrata.io/batch and
+	// vrata.io/batch-size annotations are present. Without batch-size, the
+	// controller cannot detect incomplete batches and always applies.
+	BatchIncompletePolicy BatchIncompletePolicy `yaml:"batchIncompletePolicy"`
 }
+
+// BatchIncompletePolicy controls the behaviour when a batch group with a known
+// expected size times out before all members arrive.
+type BatchIncompletePolicy string
+
+const (
+	// BatchIncompletePolicyApply logs an error and creates the snapshot with
+	// the members that arrived. This is the default.
+	BatchIncompletePolicyApply BatchIncompletePolicy = "apply"
+
+	// BatchIncompletePolicyReject discards the incomplete batch and does not
+	// create a snapshot. The operator must re-deploy to converge.
+	BatchIncompletePolicyReject BatchIncompletePolicy = "reject"
+)
 
 // DuplicateMode controls what happens when overlapping routes are detected.
 type DuplicateMode string
@@ -208,6 +233,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Snapshot.BatchIdleTimeout == "" {
 		cfg.Snapshot.BatchIdleTimeout = "10s"
+	}
+	if cfg.Snapshot.BatchIncompletePolicy == "" {
+		cfg.Snapshot.BatchIncompletePolicy = BatchIncompletePolicyApply
 	}
 	if cfg.Log.Format == "" {
 		cfg.Log.Format = "console"

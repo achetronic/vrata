@@ -116,16 +116,26 @@ own idle timeout until `v2.3` has completed.
 
 ```yaml
 snapshot:
-  debounce: "5s"              # existing: debounce for SingleRoute items
-  maxBatch: 100               # existing: max changes before forced flush
-  batchIdleTimeout: "10s"     # new: idle window after last member arrival
+  debounce: "5s"                  # existing: debounce for SingleRoute items
+  maxBatch: 100                   # existing: max changes before forced flush
+  batchIdleTimeout: "10s"         # new: idle window after last member arrival
+  batchIncompletePolicy: "apply"  # new: apply | reject for incomplete batches
 ```
+
+When a batch with `batch-size` times out before all members arrive, the
+`batchIncompletePolicy` controls what happens:
+
+- `apply` (default): log an error with the count (`got 80/200`), reconcile the
+  members that arrived, and create the snapshot. The proxy gets partial config.
+- `reject`: log an error, discard the batch entirely, do not create a snapshot.
+  The previous active snapshot stays in effect. The operator must re-deploy.
+
+Without `batch-size`, the policy is irrelevant — the controller cannot detect
+incomplete batches and always applies when the idle timeout expires.
 
 **Do not**: process batch groups out of order. Do not apply the batch annotation
 semantics to Gateways — only HTTPRoute and SuperHTTPRoute carry it. Do not create
-intermediate snapshots while a batch group is accumulating. Do not use a separate
-`batchTimeout` — the idle timeout is the only completion criterion; `batch-size`
-provides the interrupted-batch detection when needed.
+intermediate snapshots while a batch group is accumulating.
 
 ---
 
