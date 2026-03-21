@@ -233,3 +233,101 @@ func TestBatchGroup_IdleTimeoutResetsOnNewMember(t *testing.T) {
 		t.Error("idle timeout should have been reset by new member arrival")
 	}
 }
+
+func TestParseSize_Valid(t *testing.T) {
+	l := testLogger()
+	if n := parseSize("200", "test", l); n != 200 {
+		t.Errorf("expected 200, got %d", n)
+	}
+	if n := parseSize("0", "test", l); n != 0 {
+		t.Errorf("expected 0, got %d", n)
+	}
+	if n := parseSize("1", "test", l); n != 1 {
+		t.Errorf("expected 1, got %d", n)
+	}
+}
+
+func TestParseSize_Invalid(t *testing.T) {
+	l := testLogger()
+	if n := parseSize("abc", "test", l); n != 0 {
+		t.Errorf("expected 0 for non-numeric, got %d", n)
+	}
+	if n := parseSize("12x", "test", l); n != 0 {
+		t.Errorf("expected 0 for partially numeric, got %d", n)
+	}
+}
+
+func TestParseSize_Empty(t *testing.T) {
+	l := testLogger()
+	if n := parseSize("", "test", l); n != 0 {
+		t.Errorf("expected 0 for empty string, got %d", n)
+	}
+}
+
+func TestBatchGroup_MarkReady(t *testing.T) {
+	bg := &BatchGroup{
+		Name:     "test",
+		lastSeen: time.Now(),
+	}
+	if bg.IsReady(10 * time.Second) {
+		t.Error("should not be ready before MarkReady")
+	}
+	bg.MarkReady()
+	if !bg.IsReady(10 * time.Second) {
+		t.Error("should be ready after MarkReady")
+	}
+}
+
+func TestQueue_InconsistentBatchSize(t *testing.T) {
+	q := New(testLogger())
+	known := make(map[string]bool)
+
+	q.Observe(RouteRef{Namespace: "default", Name: "route-a"}, map[string]string{
+		AnnotationBatch:     "rel-1",
+		AnnotationBatchSize: "10",
+	}, known)
+
+	// Second member with different batch-size — should use first value.
+	q.Observe(RouteRef{Namespace: "default", Name: "route-b"}, map[string]string{
+		AnnotationBatch:     "rel-1",
+		AnnotationBatchSize: "20",
+	}, known)
+
+	bg := q.Head().Batch
+	if bg.ExpectedSize != 10 {
+		t.Errorf("expected first seen size 10, got %d", bg.ExpectedSize)
+	}
+}
+
+func TestQueue_BatchSizeFromLaterMember(t *testing.T) {
+	q := New(testLogger())
+	known := make(map[string]bool)
+
+	// First member without batch-size.
+	q.Observe(RouteRef{Namespace: "default", Name: "route-a"}, map[string]string{
+		AnnotationBatch: "rel-1",
+	}, known)
+
+	// Second member with batch-size — should be picked up.
+	q.Observe(RouteRef{Namespace: "default", Name: "route-b"}, map[string]string{
+		AnnotationBatch:     "rel-1",
+		AnnotationBatchSize: "5",
+	}, known)
+
+	bg := q.Head().Batch
+	if bg.ExpectedSize != 5 {
+		t.Errorf("expected size 5 from second member, got %d", bg.ExpectedSize)
+	}
+}
+
+func TestQueue_SuperRouteRef(t *testing.T) {
+	q := New(testLogger())
+	known := make(map[string]bool)
+
+	q.Observe(RouteRef{Namespace: "default", Name: "super-a", Super: true}, nil, known)
+
+	head := q.Head()
+	if head.Kind != KindSingle || !head.Single.Super {
+		t.Error("expected SuperHTTPRoute flag to be preserved")
+	}
+}
