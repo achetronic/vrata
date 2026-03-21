@@ -22,6 +22,14 @@ rules:
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["referencegrants"]
     verbs: ["get", "list", "watch"]
+  {{- if .Values.controller.config.watch.superHttpRoutes }}
+  - apiGroups: ["vrata.io"]
+    resources: ["superhttproutes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["vrata.io"]
+    resources: ["superhttproutes/status"]
+    verbs: ["get", "patch", "update"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
