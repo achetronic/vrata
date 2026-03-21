@@ -1,6 +1,9 @@
 // Copyright 2026 The Vrata Authors
 // SPDX-License-Identifier: Apache-2.0
 
+// Copyright 2026 The Vrata Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import "testing"

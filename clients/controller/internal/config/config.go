@@ -65,6 +65,12 @@ type SnapshotConfig struct {
 	// MaxBatch is the maximum number of accumulated changes before forcing
 	// a snapshot even if changes keep arriving. Default: 100.
 	MaxBatch int `yaml:"maxBatch"`
+
+	// BatchIdleTimeout is how long to wait after the last HTTPRoute belonging
+	// to a vrata.io/batch group arrives before considering the group complete
+	// and creating a snapshot. The timeout resets on every new member arrival.
+	// Default: "10s".
+	BatchIdleTimeout string `yaml:"batchIdleTimeout"`
 }
 
 // DuplicateMode controls what happens when overlapping routes are detected.
@@ -199,6 +205,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Snapshot.MaxBatch == 0 {
 		cfg.Snapshot.MaxBatch = 100
+	}
+	if cfg.Snapshot.BatchIdleTimeout == "" {
+		cfg.Snapshot.BatchIdleTimeout = "10s"
 	}
 	if cfg.Log.Format == "" {
 		cfg.Log.Format = "console"
