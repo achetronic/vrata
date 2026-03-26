@@ -15,6 +15,8 @@ CONFIG          ?= config.yaml
 CONTROLLER_GEN_VERSION := v0.20.1
 KIND_VERSION           := v0.31.0
 SWAG_VERSION           := v2.0.0-rc5
+HUGO_VERSION           := 0.147.6
+HELM_VERSION           := 3.18.4
 
 # Kind / Helm settings for e2e.
 KIND_CLUSTER   := vrata-dev
@@ -39,6 +41,7 @@ AGENTIC_CRDS_BASE   := https://raw.githubusercontent.com/kubernetes-sigs/kube-ag
 # Tool resolution — local ./bin/tools/ first, then system PATH.
 KIND := $(shell command -v $(TOOLS_DIR)/kind 2>/dev/null || command -v kind 2>/dev/null)
 HELM := $(shell command -v $(TOOLS_DIR)/helm 2>/dev/null || command -v helm 2>/dev/null)
+HUGO := $(shell command -v $(abspath $(TOOLS_DIR))/hugo 2>/dev/null || command -v hugo 2>/dev/null)
 SWAG := $(TOOLS_DIR)/swag
 SWAG_FLAGS := -d $(SERVER_DIR) -g cmd/vrata/main.go -o $(SERVER_DIR)/docs --parseInternal
 
@@ -72,7 +75,7 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 ## deps: install all development tools into ./bin/tools/
-deps: $(TOOLS_DIR)/controller-gen $(TOOLS_DIR)/kind $(TOOLS_DIR)/swag $(TOOLS_DIR)/protoc-gen-go $(TOOLS_DIR)/protoc-gen-go-grpc
+deps: $(TOOLS_DIR)/controller-gen $(TOOLS_DIR)/kind $(TOOLS_DIR)/swag $(TOOLS_DIR)/protoc-gen-go $(TOOLS_DIR)/protoc-gen-go-grpc $(TOOLS_DIR)/hugo $(TOOLS_DIR)/helm
 	@echo "✓ All tools installed in $(TOOLS_DIR)/"
 
 $(TOOLS_DIR)/controller-gen:
@@ -94,6 +97,16 @@ $(TOOLS_DIR)/protoc-gen-go:
 $(TOOLS_DIR)/protoc-gen-go-grpc:
 	@mkdir -p $(TOOLS_DIR)
 	GOBIN=$(abspath $(TOOLS_DIR)) $(GO) install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+$(TOOLS_DIR)/hugo:
+	@mkdir -p $(TOOLS_DIR)
+	@echo "→ Installing Hugo $(HUGO_VERSION)..."
+	@curl -sSL https://github.com/gohugoio/hugo/releases/download/v$(HUGO_VERSION)/hugo_extended_$(HUGO_VERSION)_linux-amd64.tar.gz | tar -xz -C $(TOOLS_DIR) hugo
+
+$(TOOLS_DIR)/helm:
+	@mkdir -p $(TOOLS_DIR)
+	@echo "→ Installing Helm $(HELM_VERSION)..."
+	@curl -sSL https://get.helm.sh/helm-v$(HELM_VERSION)-linux-amd64.tar.gz | tar -xz --strip-components=1 -C $(TOOLS_DIR) linux-amd64/helm
 
 ###############################################################################
 ## Docker
@@ -267,11 +280,11 @@ DOCS_URL    ?= https://achetronic.github.io/vrata/
 
 ## docs-serve: run Hugo development server with live reload
 docs-serve:
-	cd $(DOCS_DIR) && hugo server --baseURL http://localhost:1313/ --bind 0.0.0.0
+	cd $(DOCS_DIR) && $(HUGO) server --baseURL http://localhost:1313/ --bind 0.0.0.0
 
 ## docs-build: build the static site for deployment
 docs-build:
-	cd $(DOCS_DIR) && hugo --minify --baseURL $(DOCS_URL)
+	cd $(DOCS_DIR) && $(HUGO) --minify --baseURL $(DOCS_URL)
 
 ## docs-deploy: build and push to gh-pages branch
 docs-deploy: docs-build

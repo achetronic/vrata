@@ -42,8 +42,17 @@ Conditions are set in `middlewareOverrides` on a route or group:
 | `request.headers` | map[string]string | `request.headers["authorization"]` |
 | `request.queryParams` | map[string]string | `request.queryParams["token"]` |
 | `request.clientIp` | string | `"10.0.0.1"` |
+| `request.body.raw` | string | Raw request body (up to `celBodyMaxSize`) |
+| `request.body.json` | map | Parsed JSON body (only when Content-Type is `application/json`) |
+| `request.tls.peerCertificate.uris` | list(string) | URI SANs from client cert (includes SPIFFE IDs) |
+| `request.tls.peerCertificate.dnsNames` | list(string) | DNS SANs from client cert |
+| `request.tls.peerCertificate.subject` | string | Client cert Distinguished Name |
 
 CEL expressions are compiled once at routing table build time — no per-request compile cost.
+
+Body variables are lazy: the request body is only buffered when a CEL expression references `request.body`. Routes without body-referencing expressions have zero overhead. Use `has(request.body)` and `has(request.body.json)` to guard access.
+
+TLS variables are only populated when the client presents a certificate via mTLS. Use `has(request.tls)` to guard access.
 
 ## Examples
 
@@ -170,6 +179,38 @@ Skip external auth for a specific tenant:
 ```
 
 Skip if the path is `/health` OR `/ready` OR `/metrics` OR the method is OPTIONS. Any match skips.
+
+### skipWhen — skip auth for safe MCP methods (body inspection)
+
+```json
+{
+  "middlewareOverrides": {
+    "mcp-guard": {
+      "skipWhen": [
+        "has(request.body) && has(request.body.json) && request.body.json.method in ['initialize', 'notifications/initialized', 'tools/list']"
+      ]
+    }
+  }
+}
+```
+
+Skip the authorization middleware when the MCP request is a session initialization or tool listing. The body is only buffered when a condition references `request.body`.
+
+### onlyWhen — only run auth for tools/call (body inspection)
+
+```json
+{
+  "middlewareOverrides": {
+    "tool-guard": {
+      "onlyWhen": [
+        "has(request.body) && has(request.body.json) && request.body.json.method == 'tools/call'"
+      ]
+    }
+  }
+}
+```
+
+The authorization middleware only runs when the request is a `tools/call`. All other MCP methods pass through without authorization.
 
 ## Precedence
 
