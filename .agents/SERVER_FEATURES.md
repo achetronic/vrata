@@ -109,8 +109,10 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | ExtProc HTTP (buffered + bufferedPartial + streamed)         | 100%   | Unit (19) + E2E (2) |
 | ExtProc gRPC                                                 | 100%   | Unit                |
 | Middleware chain ordering                                    | 100%   | Unit                |
-| Middleware skipWhen (CEL condition to skip)                  | 100%   | E2E (3)             |
-| Middleware onlyWhen (CEL condition to activate)              | 100%   | E2E (3)             |
+| Middleware skipWhen (CEL condition to skip)                  | 100%   | Unit + E2E (3)      |
+| Middleware skipWhen with request.body                        | 100%   | Unit                |
+| Middleware onlyWhen (CEL condition to activate)              | 100%   | Unit + E2E (3)      |
+| Middleware onlyWhen with request.body                        | 100%   | Unit                |
 | Middleware disable per-route                                 | 100%   | Unit + E2E          |
 | Middleware override merge                                    | 100%   | Unit                |
 | Cleanup on table swap (JWT refresh, rate limiter)            | 100%   | Code review         |
@@ -222,15 +224,15 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Gateway                                                            | 2       | 2       |
 | K8s watcher                                                        | 4       | 4       |
 | Session store (Redis)                                              | 5       | 5       |
-| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 70      | 70      |
-| CEL eval                                                           | 36      | 36      |
+| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 83      | 83      |
+| CEL eval                                                           | 40      | 40      |
 | Proxy middlewares                                                  | 74      | 74      |
 | Raft (FSM, cluster, peers)                                         | 7       | 7       |
 | Sync client                                                        | 2       | 2       |
-| **Unit total**                                                     | **292** | **292** |
+| **Unit total**                                                     | **305** | **305** |
 | E2E (proxy, live)                                                  | 73      | 73      |
 | E2E (metrics)                                                      | 5       | 5       |
-| E2E (onError)                                                      | 6       | 6       |
+| E2E (onError)                                                      | 6       | 6      |
 | E2E (agentic features: CEL body + inlineAuthz)                     | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
 | **E2E total**                                                      | **96**  | **96**  |

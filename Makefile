@@ -29,8 +29,12 @@ KIND_NODE_IP   := $(shell kubectl --context kind-$(KIND_CLUSTER) get nodes -o js
 GATEWAY_API_VERSION  ?= v1.5.1
 GATEWAY_API_CRDS_URL := https://github.com/kubernetes-sigs/gateway-api/releases/download/$(GATEWAY_API_VERSION)/standard-install.yaml
 
-# Kube Agentic Networking CRDs (local copy).
-AGENTIC_CRDS_DIR := $(shell pwd)/3rdparty-crds/agentic
+# Kube Agentic Networking CRDs.
+# The project has no releases yet (v0alpha0 prototype). Pinned to a commit on main.
+# When a release is published, replace AGENTIC_NET_COMMIT with a version variable
+# and switch to the release asset URL, same pattern as GATEWAY_API_CRDS_URL above.
+AGENTIC_NET_COMMIT  ?= c5185a7666ac1ebd1b2eefc8d7ca06e15e49c4e9
+AGENTIC_CRDS_BASE   := https://raw.githubusercontent.com/kubernetes-sigs/kube-agentic-networking/$(AGENTIC_NET_COMMIT)/k8s/crds
 
 # Tool resolution — local ./bin/tools/ first, then system PATH.
 KIND := $(shell command -v $(TOOLS_DIR)/kind 2>/dev/null || command -v kind 2>/dev/null)
@@ -247,9 +251,9 @@ controller-deploy-gateway-api-crds:
 
 ## controller-deploy-agentic-crds: install Kube Agentic Networking CRDs into the current cluster
 controller-deploy-agentic-crds:
-	@echo "→ Installing Kube Agentic Networking CRDs..."
-	@kubectl apply --server-side -f /home/ahernandez/Documents/Git/3rdparty/kube-agentic-networking/k8s/crds/agentic.prototype.x-k8s.io_xbackends.yaml
-	@kubectl apply --server-side -f /home/ahernandez/Documents/Git/3rdparty/kube-agentic-networking/k8s/crds/agentic.prototype.x-k8s.io_xaccesspolicies.yaml
+	@echo "→ Installing Kube Agentic Networking CRDs ($(AGENTIC_NET_COMMIT))..."
+	@kubectl apply --server-side -f $(AGENTIC_CRDS_BASE)/agentic.prototype.x-k8s.io_xbackends.yaml
+	@kubectl apply --server-side -f $(AGENTIC_CRDS_BASE)/agentic.prototype.x-k8s.io_xaccesspolicies.yaml
 	@kubectl wait --for condition=Established crd/xbackends.agentic.prototype.x-k8s.io --timeout=30s
 	@kubectl wait --for condition=Established crd/xaccesspolicies.agentic.prototype.x-k8s.io --timeout=30s
 	@echo "✓ Kube Agentic Networking CRDs installed"

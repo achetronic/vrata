@@ -42,7 +42,7 @@ match CEL, skipWhen/onlyWhen, and inlineAuthz rules.
 
 See `SERVER_DECISIONS.md` for design rationale.
 
-**Tests**: 18 unit (body buffer) + 3 router integration + 2 e2e.
+**Tests**: 22 unit (body buffer + edge cases) + 3 router integration + 1 combined body+TLS + 2 e2e.
 
 ### mTLS client authentication on listeners
 
@@ -55,7 +55,7 @@ spoof protection. API validation rejects unknown modes and missing caFile.
 
 See `SERVER_DECISIONS.md` for design rationale.
 
-**Tests**: 7 CEL cert + 4 XFCC + 6 listener diffing + 6 API validation.
+**Tests**: 8 CEL cert + 4 XFCC + 6 listener diffing + 6 API validation.
 
 ### Inline authorization middleware (`inlineAuthz`)
 
@@ -69,4 +69,5 @@ and invalid CEL at creation time.
 
 See `SERVER_DECISIONS.md` for design rationale.
 
-**Tests**: 14 unit + 8 API validation + 2 e2e (incl. full MCP scenario).
+**Tests**: 14 unit + 8 API validation + 5 router integration (MCP body rules,
+skipWhen body, onlyWhen body, middleware disabled) + 2 e2e (full MCP scenario).

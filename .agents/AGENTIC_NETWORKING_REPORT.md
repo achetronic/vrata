@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-25
 **Source**: `/home/ahernandez/Documents/Git/3rdparty/kube-agentic-networking` (actual repo)
-**Status**: Analysis — proxy features implemented, controller wiring pending
+**Status**: Fully implemented (proxy + controller)
 
 ---
 
@@ -240,5 +240,6 @@ MiddlewareOverride, metrics).
 | Policy evaluation order | 0% | 100% | Controller orders middleware chain by seniority |
 | Max 5 policies per target | 0% | 100% | Controller enforces limit |
 
-**Proxy features**: all implemented and tested (292 unit + 96 e2e).
-**Controller wiring**: pending — see `CONTROLLER_TODO.md`.
+**Proxy features**: all implemented and tested (305 server unit + 96 server e2e).
+**Controller wiring**: all implemented and tested (19 mapper unit + 5 controller e2e).
+See `SERVER_TODO.md` and `CONTROLLER_TODO.md` for full implementation details.
