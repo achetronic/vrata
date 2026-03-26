@@ -202,4 +202,21 @@ type ListenerTLS struct {
 	// MaxVersion is the maximum TLS protocol version to accept.
 	// Accepted values: same as MinVersion. If empty, no upper bound is set.
 	MaxVersion string `json:"maxVersion,omitempty" yaml:"maxVersion,omitempty"`
+
+	// ClientAuth configures mutual TLS (mTLS) client certificate
+	// verification. When nil, no client certificate is requested.
+	ClientAuth *ListenerClientAuth `json:"clientAuth,omitempty" yaml:"clientAuth,omitempty"`
+}
+
+// ListenerClientAuth configures client certificate verification on a Listener.
+type ListenerClientAuth struct {
+	// Mode controls whether client certificates are requested:
+	//   "none"     — do not request (default, same as nil ClientAuth)
+	//   "optional" — request but do not reject if absent
+	//   "require"  — reject the TLS handshake if absent
+	Mode string `json:"mode" yaml:"mode"`
+
+	// CAFile is the path to a PEM-encoded CA bundle used to verify
+	// client certificates. Required when Mode is "optional" or "require".
+	CAFile string `json:"caFile,omitempty" yaml:"caFile,omitempty"`
 }

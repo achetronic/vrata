@@ -953,3 +953,150 @@ routes — they belong on the destination. The route only controls the external
 watchdog (`forward.timeouts.request`).
 
 ---
+
+## CEL body access: `request.body.raw` and `request.body.json`
+
+**Date**: 2026-03-25
+**Status**: Decided — not yet implemented
+
+`request.body` exposes two fields in the CEL evaluation context:
+
+- `request.body.raw` — `string`. Always populated (up to `celBodyMaxSize`, default
+  64KB) when a CEL program in the request path references `request.body`. Contains
+  the raw bytes of the request body as a string. Works for any content type.
+- `request.body.json` — `map(string, dyn)`. Populated only when `Content-Type` is
+  `application/json` and the JSON parses successfully. Otherwise the field does not
+  exist (`has(request.body.json)` returns false).
+
+Body buffering is **lazy**: the body is only read when a compiled CEL program in the
+matched route (route match CEL, middleware `skipWhen`/`onlyWhen`, or `inlineAuthz`
+rules) references `request.body`. The `needsBody` flag is determined at routing table
+build time from the CEL AST — it is a static boolean, not a runtime check. If no
+CEL in the routing table references `request.body`, there is zero overhead.
+
+The buffered body is stored in request context and re-used across all CEL evaluations
+in the same request. `r.Body` is replaced with an `io.NopCloser` over the buffer so
+the body remains available for upstream forwarding.
+
+Bodies exceeding `celBodyMaxSize` are truncated in `raw` and `json` is not populated.
+The request is NOT rejected (fail-open). A `slog.Warn` is emitted.
+
+**Reasoning**: protocol-agnostic body inspection enables authorization and routing
+decisions based on request content (MCP tool filtering, GraphQL operation gating,
+JSON-RPC dispatch) without protocol-specific code in the proxy. Separating `raw`
+(always available) from `json` (conditional) avoids the confusion of a magic `map`
+that silently becomes empty when the body is not JSON. The user explicitly chooses
+which representation to use and protects non-JSON access with `has()`.
+
+**Do not**: auto-parse bodies without checking Content-Type. Do not register custom
+CEL functions (`parseJSON`, etc.) — use native CEL field access on the pre-parsed map.
+Do not buffer bodies for routes whose CEL programs do not reference `request.body`.
+Do not fail-closed on body parse errors — log and continue.
+
+---
+
+## mTLS client authentication: `clientAuth` on ListenerTLS
+
+**Date**: 2026-03-25
+**Status**: Decided — not yet implemented
+
+`ListenerTLS` gains a `clientAuth` object:
+
+```json
+{
+  "clientAuth": {
+    "mode": "require",
+    "caFile": "/certs/trusted-clients-ca.pem"
+  }
+}
+```
+
+Modes:
+
+- `"none"` (default) — do not request client certificates. Identical to current behavior.
+- `"optional"` — request a client certificate but do not reject if absent. Useful for
+  mixed traffic (some clients have certs, others don't; authorization is per-route).
+- `"require"` — reject the TLS handshake if the client does not present a valid cert.
+
+`caFile` is required when mode is `optional` or `require`. It points to a CA bundle
+(PEM) used to verify client certificates.
+
+When a client cert is verified, its metadata is exposed in CEL:
+
+- `request.tls.peerCertificate.uris` — `list(string)` — URI SANs (SPIFFE IDs are URI SANs with `spiffe://` scheme)
+- `request.tls.peerCertificate.dnsNames` — `list(string)` — DNS SANs
+- `request.tls.peerCertificate.subject` — `string` — Distinguished Name
+- `request.tls.peerCertificate.serial` — `string` — Serial number (hex)
+
+All fields are empty when no client cert is presented. Lazy: only populated when a CEL
+program references `request.tls.*`.
+
+The proxy automatically injects `X-Forwarded-Client-Cert` (XFCC) header with the URI
+SANs from the client cert (semicolon-separated). Any incoming XFCC header from the
+client is stripped before injection to prevent spoofing. ExtAuthz can forward XFCC
+via `onCheck.forwardHeaders` without any ExtAuthz changes.
+
+**Reasoning**: mTLS completes the listener TLS story (server-side TLS already exists).
+Exposing cert fields in CEL enables transport-level identity verification for SPIFFE,
+custom PKI, device certificates — without coupling to any identity framework. The
+`clientAuth` object is preferred over flat fields because mode and caFile are logically
+coupled and the object signals that clearly.
+
+**Do not**: couple any proxy code to SPIFFE. The proxy extracts X.509 fields generically.
+A SPIFFE ID is just a URI SAN — the proxy does not know or care about the `spiffe://`
+scheme. Do not remove the `optional` mode — it enables mixed-auth listeners.
+
+---
+
+## Inline authorization middleware: `inlineAuthz`
+
+**Date**: 2026-03-25
+**Status**: Decided — not yet implemented
+
+New middleware type `inlineAuthz`. Symmetric pair of `extAuthz`: where `extAuthz`
+delegates authorization to an external service, `inlineAuthz` evaluates authorization
+locally using ordered CEL rules.
+
+```json
+{
+  "type": "inlineAuthz",
+  "inlineAuthz": {
+    "rules": [
+      { "cel": "<expression>", "action": "allow" },
+      { "cel": "<expression>", "action": "deny" }
+    ],
+    "defaultAction": "deny",
+    "denyStatus": 403,
+    "denyBody": "{\"error\": \"access denied\"}"
+  }
+}
+```
+
+Semantics: first-match wins. Each rule has a CEL expression and an action (`allow` or
+`deny`). If no rule matches, `defaultAction` applies. On deny, the proxy responds with
+`denyStatus` (default 403) and `denyBody` (default `{"error":"access denied"}`).
+
+CEL expressions in `inlineAuthz` rules have access to the full `request.*` map,
+including `request.body.raw`, `request.body.json`, and `request.tls.peerCertificate.*`
+when the corresponding features are active.
+
+The middleware participates in the standard middleware lifecycle: `skipWhen`/`onlyWhen`
+conditions, `MiddlewareOverride` (disable per-route), per-middleware metrics (duration,
+passed, rejections), and cleanup callbacks.
+
+**Reasoning**: authorization logic that can be expressed as CEL rules should not require
+a network hop to an external service. `inlineAuthz` covers use cases where the decision
+depends on request data available locally: caller identity (from mTLS cert), request
+body content (tool name, operation type), headers, path, method. It complements
+`extAuthz` — complex decisions that need external state (user databases, dynamic
+policies) still use `extAuthz`. Simple rules stay local.
+
+The name `inlineAuthz` was chosen because it forms a symmetric pair with `extAuthz`:
+external authorization vs inline authorization. Both are authorization middlewares
+with different evaluation strategies.
+
+**Do not**: add protocol-specific logic to `inlineAuthz`. The middleware evaluates
+generic CEL expressions — what those expressions inspect (MCP bodies, GraphQL queries,
+JWT headers) is determined by whoever writes the rules (user or controller), not by
+the middleware. Do not add non-CEL rule types (regex, glob, etc.) — CEL covers all
+cases and adding alternatives fragments the evaluation model.

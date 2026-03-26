@@ -127,6 +127,13 @@ type ProxyConfig struct {
 	// ReconnectInterval is how long to wait before reconnecting after a
 	// stream disconnection. Accepts Go duration strings. Default: "5s".
 	ReconnectInterval string `yaml:"reconnectInterval"`
+
+	// CELBodyMaxSize is the maximum request body size (in bytes) buffered
+	// for CEL expressions that reference request.body. Bodies exceeding
+	// this limit are truncated in request.body.raw and request.body.json
+	// is not populated. Set to 0 to disable body access in CEL.
+	// Default: 65536 (64KB).
+	CELBodyMaxSize int `yaml:"celBodyMaxSize"`
 }
 
 // LogConfig controls logging format and verbosity.
@@ -210,6 +217,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
+	}
+	if cfg.Proxy.CELBodyMaxSize == 0 {
+		cfg.Proxy.CELBodyMaxSize = 65536
 	}
 }
 

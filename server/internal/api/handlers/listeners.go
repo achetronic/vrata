@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/achetronic/vrata/internal/api/respond"
@@ -47,6 +48,11 @@ func (d *Dependencies) CreateListener(w http.ResponseWriter, r *http.Request) {
 	var listener model.Listener
 	if err := json.NewDecoder(r.Body).Decode(&listener); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		return
+	}
+
+	if err := validateListener(listener); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
 		return
 	}
 
@@ -117,6 +123,11 @@ func (d *Dependencies) UpdateListener(w http.ResponseWriter, r *http.Request) {
 	}
 	listener.ID = listenerID
 
+	if err := validateListener(listener); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		return
+	}
+
 	if listener.Address == "" {
 		listener.Address = "0.0.0.0"
 	}
@@ -149,4 +160,21 @@ func (d *Dependencies) DeleteListener(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateListener checks that the listener configuration is valid.
+func validateListener(l model.Listener) error {
+	if l.TLS != nil && l.TLS.ClientAuth != nil {
+		ca := l.TLS.ClientAuth
+		switch ca.Mode {
+		case "", "none":
+		case "optional", "require":
+			if ca.CAFile == "" {
+				return fmt.Errorf("clientAuth.caFile is required when mode is %q", ca.Mode)
+			}
+		default:
+			return fmt.Errorf("unknown clientAuth.mode %q: must be \"none\", \"optional\", or \"require\"", ca.Mode)
+		}
+	}
+	return nil
 }
