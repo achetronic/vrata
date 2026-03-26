@@ -31,8 +31,8 @@ server/
 │   ├── store/                  # Persistence: bolt (prod), memory (test), raftstore (HA)
 │   ├── model/                  # Domain types: Route, Group, Destination, Listener, Middleware, Snapshot
 │   ├── proxy/                  # Native reverse proxy: router, balancers, circuit breaker, health, outlier, metrics
-│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog
-│   │   └── celeval/            # CEL compiler + evaluator
+│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz
+│   │   └── celeval/            # CEL compiler + evaluator (request matching, body access, TLS cert access)
 │   ├── gateway/                # Watches store, rebuilds routing table, reconciles listeners
 │   ├── raft/                   # Embedded Raft HA (hashicorp/raft)
 │   ├── k8s/                    # EndpointSlice + ExternalName watcher
@@ -73,6 +73,9 @@ Documented in detail in `SERVER_DECISIONS.md`. Highlights:
 - httpsnoop for all ResponseWriter interception — never manual wrappers
 - Per-entity fault isolation — one broken route never takes down the proxy
 - Cleanup callbacks on routing table swap — no leaked goroutines
+- CEL body access (request.body.raw + request.body.json) for body-based routing and authz
+- mTLS client authentication with cert metadata exposed in CEL
+- Inline authorization middleware (inlineAuthz) — CEL-based access control without external services
 
 ## Code conventions
 
@@ -86,7 +89,7 @@ Documented in `CONVENTIONS.md`. Key rules:
 ## Pending work
 
 - `SERVER_TODO.md` — API auth, multi-value matchers, proxy fleets
-- `CONTROLLER_TODO.md` — TLS gap, regex overlap detection
+- `CONTROLLER_TODO.md` — TLS gap, regex overlap detection, Kube Agentic Networking support
 
 ## Build
 

@@ -10,10 +10,10 @@
 ### Kube Agentic Networking support
 
 Watch `XBackend` and `XAccessPolicy` from `agentic.prototype.x-k8s.io/v0alpha0`
-and map them to Vrata entities. Depends on three generic proxy features in
-`SERVER_TODO.md` (CEL body access, mTLS client auth, and `inlineAuthz`
+and map them to Vrata entities. Uses three generic proxy features already
+implemented in the server (CEL body access, mTLS client auth, and `inlineAuthz`
 middleware) for InlineTools and SPIFFE/ServiceAccount identity. ExternalAuth
-and XBackend work without any proxy changes.
+and XBackend work with existing Vrata entities without any additional proxy changes.
 
 See `AGENTIC_NETWORKING_REPORT.md` for the full spec analysis.
 See `SERVER_DECISIONS.md` for the proxy feature design rationale.

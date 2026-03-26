@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-25
 **Source**: `/home/ahernandez/Documents/Git/3rdparty/kube-agentic-networking` (actual repo)
-**Status**: Analysis
+**Status**: Analysis — proxy features implemented, controller wiring pending
 
 ---
 
@@ -115,45 +115,36 @@ No gaps.
 The gateway-level scope gap is a controller concern: attach the middleware to all
 groups under that gateway. No proxy change needed.
 
-### XAccessPolicy with InlineTools — Requires: CEL body access (0% covered)
+### XAccessPolicy with InlineTools — Uses: CEL body access + inlineAuthz (implemented)
 
-| Requirement | Generic Vrata feature needed | Status |
+| Requirement | Vrata feature | Status |
 |---|---|---|
-| Parse JSON-RPC request body | CEL `request.body` as parsed JSON map | **Gap** |
-| Extract tool name from body | CEL: `request.body.params.name` | **Gap** |
-| Match tool name against allowlist | CEL: `request.body.params.name in ["add", "subtract"]` | **Gap** |
-| Always allow initialize/list/close | CEL: `request.body.method in ["initialize", ...]` | **Gap** |
-| Deny unmatched tools/call | Default deny via middleware/route logic | **Gap** |
+| Parse JSON-RPC request body | CEL `request.body.json` | **Implemented** |
+| Extract tool name from body | CEL: `request.body.json.params.name` | **Implemented** |
+| Match tool name against allowlist | CEL: `request.body.json.params.name in ["add"]` | **Implemented** |
+| Always allow initialize/list/close | CEL rule in inlineAuthz middleware | **Implemented** |
+| Deny unmatched tools/call | inlineAuthz defaultAction: deny | **Implemented** |
 
-The generic feature: **CEL access to parsed request body**. Vrata's CEL evaluator
-already exposes `request.method`, `request.path`, `request.headers`, `request.queryParams`,
-`request.clientIp`, `request.scheme`. Adding `request.body` (buffered, parsed as JSON
-map) is a natural extension that works for any JSON protocol (MCP, GraphQL, custom RPCs).
+The controller maps InlineTools to `inlineAuthz` middleware rules with generated
+CEL expressions — the proxy never knows about MCP.
 
-The controller maps InlineTools to CEL expressions — the proxy never knows about MCP.
+### SPIFFE/ServiceAccount identity — Uses: mTLS client auth (implemented)
 
-### SPIFFE/ServiceAccount identity — Requires: mTLS client auth (0% covered)
-
-| Requirement | Generic Vrata feature needed | Status |
+| Requirement | Vrata feature | Status |
 |---|---|---|
-| Require/verify client certificates | `ListenerTLS.ClientAuth` (mode + CA) | **Gap** |
-| Extract SPIFFE ID from client cert | CEL `request.tls.peerCertificate.uris` | **Gap** |
-| Match SPIFFE ID in authorization | CEL expression on cert URI | **Gap** |
-| ServiceAccount → SPIFFE conversion | Controller logic (not proxy) | **Gap** |
-| Forward client cert to ExtAuthz | XFCC header injection | **Gap** |
-
-The generic feature: **mTLS client authentication on listeners with cert info exposed
-in CEL**. Vrata already has `ListenerTLS` with `CertPath`/`KeyPath`/`MinVersion`/
-`MaxVersion`. Adding `ClientAuth` (mode + CA file) completes the TLS story. Exposing
-certificate fields in CEL is a natural extension of the existing `request.*` map.
+| Require/verify client certificates | `ListenerTLS.ClientAuth` (mode + CA) | **Implemented** |
+| Extract SPIFFE ID from client cert | CEL `request.tls.peerCertificate.uris` | **Implemented** |
+| Match SPIFFE ID in authorization | CEL expression in inlineAuthz | **Implemented** |
+| ServiceAccount → SPIFFE conversion | Controller logic (not proxy) | Controller TODO |
+| Forward client cert to ExtAuthz | XFCC header injection | **Implemented** |
 
 ---
 
-## Generic proxy features needed (3 total)
+## Generic proxy features used (3 total, all implemented)
 
 All features are protocol-agnostic extensions of existing Vrata capabilities.
-None contains any MCP-specific logic. See `SERVER_DECISIONS.md` for the full
-design rationale and constraints.
+None contains any MCP-specific logic. See `SERVER_DECISIONS.md` for design.
+See `SERVER_TODO.md` (Done section) for implementation details and test counts.
 
 ### Feature 1: CEL body access (`request.body.raw` + `request.body.json`)
 
@@ -241,10 +232,13 @@ MiddlewareOverride, metrics).
 |---|---|---|---|
 | XBackend → Destination | 95% | 100% | Controller mapper only |
 | ExternalAuth → ExtAuthz | 85% | 100% | Controller mapper only |
-| InlineTools (body-based authz) | 0% | 100% | CEL body access + `inlineAuthz` middleware + controller ||
-| SPIFFE identity | 0% | 100% | mTLS client auth + CEL cert access + `inlineAuthz` + controller |
+| InlineTools (body-based authz) | 0% | 100% | CEL body access + `inlineAuthz` middleware (implemented) + controller |
+| SPIFFE identity | 0% | 100% | mTLS client auth (implemented) + CEL cert access + controller |
 | ServiceAccount identity | 0% | 100% | Controller converts SA → SPIFFE URI, same mechanism |
 | Gateway-level policies | 0% | 100% | Controller attaches `inlineAuthz`/`extAuthz` to all groups |
 | Always-allow MCP methods | 0% | 100% | Controller generates allow rules in `inlineAuthz` |
 | Policy evaluation order | 0% | 100% | Controller orders middleware chain by seniority |
 | Max 5 policies per target | 0% | 100% | Controller enforces limit |
+
+**Proxy features**: all implemented and tested (292 unit + 96 e2e).
+**Controller wiring**: pending — see `CONTROLLER_TODO.md`.
