@@ -108,7 +108,69 @@ Block `/admin/*` paths, allow everything else.
 
 Only allow internal IPs.
 
-### MCP tool authorization (JSON body inspection)
+### JSON body field matching
+
+Any JSON body field is accessible via `request.body.json`. This works with any protocol that sends JSON (JSON-RPC, GraphQL, REST, custom APIs).
+
+```json
+{
+  "name": "rpc-guard",
+  "type": "inlineAuthz",
+  "inlineAuthz": {
+    "rules": [
+      {
+        "cel": "request.method == 'GET'",
+        "action": "allow"
+      },
+      {
+        "cel": "has(request.body) && has(request.body.json) && request.body.json.action in ['read', 'list', 'ping']",
+        "action": "allow"
+      },
+      {
+        "cel": "has(request.body) && has(request.body.json) && request.body.json.action == 'execute' && request.body.json.params.name in ['report', 'export']",
+        "action": "allow"
+      }
+    ],
+    "defaultAction": "deny"
+  }
+}
+```
+
+Allows safe read-only actions and only specific execute operations. All other requests are denied.
+
+### Client identity + operation authorization (mTLS + body)
+
+When mTLS is enabled on the listener, you can combine identity verification with body-based authorization:
+
+```json
+{
+  "name": "service-access",
+  "type": "inlineAuthz",
+  "inlineAuthz": {
+    "rules": [
+      {
+        "cel": "request.method == 'GET'",
+        "action": "allow"
+      },
+      {
+        "cel": "has(request.tls) && request.tls.peerCertificate.dnsNames.exists(d, d == 'admin.internal') && has(request.body) && has(request.body.json) && request.body.json.params.operation in ['read', 'write']",
+        "action": "allow"
+      },
+      {
+        "cel": "has(request.tls) && request.tls.peerCertificate.dnsNames.exists(d, d == 'viewer.internal') && has(request.body) && has(request.body.json) && request.body.json.params.operation in ['read']",
+        "action": "allow"
+      }
+    ],
+    "defaultAction": "deny"
+  }
+}
+```
+
+The admin service (identified by DNS SAN) can read and write. The viewer service can only read.
+
+### MCP tool authorization
+
+For [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) backends, you can control which tools each caller can invoke:
 
 ```json
 {
@@ -125,7 +187,7 @@ Only allow internal IPs.
         "action": "allow"
       },
       {
-        "cel": "has(request.body) && has(request.body.json) && request.body.json.method == 'tools/call' && request.body.json.params.name in ['add', 'subtract']",
+        "cel": "has(request.tls) && request.tls.peerCertificate.uris.exists(u, u == 'spiffe://cluster.local/ns/default/sa/agent-a') && has(request.body) && has(request.body.json) && (request.body.json.method != 'tools/call' || request.body.json.params.name in ['add', 'subtract'])",
         "action": "allow"
       }
     ],
@@ -134,37 +196,7 @@ Only allow internal IPs.
 }
 ```
 
-Allows MCP session management and only the `add` and `subtract` tools. All other `tools/call` invocations are denied.
-
-### SPIFFE identity + tool authorization (mTLS)
-
-```json
-{
-  "name": "agent-access",
-  "type": "inlineAuthz",
-  "inlineAuthz": {
-    "rules": [
-      {
-        "cel": "request.method == 'GET' || request.method == 'DELETE'",
-        "action": "allow"
-      },
-      {
-        "cel": "has(request.tls) && request.tls.peerCertificate.uris.exists(u, u == 'spiffe://cluster.local/ns/default/sa/agent-a') && has(request.body) && has(request.body.json) && (request.body.json.method != 'tools/call' || request.body.json.params.name in ['add', 'subtract'])",
-        "action": "allow"
-      },
-      {
-        "cel": "has(request.tls) && request.tls.peerCertificate.uris.exists(u, u == 'spiffe://cluster.local/ns/default/sa/agent-b') && has(request.body) && has(request.body.json) && (request.body.json.method != 'tools/call' || request.body.json.params.name in ['subtract'])",
-        "action": "allow"
-      }
-    ],
-    "defaultAction": "deny",
-    "denyStatus": 403,
-    "denyBody": "{\"error\": \"tool access denied\"}"
-  }
-}
-```
-
-Agent A can use `add` and `subtract`. Agent B can only use `subtract`. Both are identified by their SPIFFE ID from the mTLS client certificate.
+This allows MCP session setup for everyone, and only the `add` and `subtract` tools for `agent-a` (identified by SPIFFE URI SAN from mTLS). The Vrata controller generates these rules automatically from `XAccessPolicy` resources — see [Agentic Networking]({{< relref "/docs/clients/controller/agentic-networking" >}}).
 
 ### GraphQL operation filtering
 
