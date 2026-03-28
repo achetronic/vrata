@@ -31,8 +31,8 @@ server/
 │   ├── store/                  # Persistence: bolt (prod), memory (test), raftstore (HA)
 │   ├── model/                  # Domain types: Route, Group, Destination, Listener, Middleware, Snapshot
 │   ├── proxy/                  # Native reverse proxy: router, balancers, circuit breaker, health, outlier, metrics
-│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog
-│   │   └── celeval/            # CEL compiler + evaluator
+│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz
+│   │   └── celeval/            # CEL compiler + evaluator (request matching, body access, TLS cert access)
 │   ├── gateway/                # Watches store, rebuilds routing table, reconciles listeners
 │   ├── raft/                   # Embedded Raft HA (hashicorp/raft)
 │   ├── k8s/                    # EndpointSlice + ExternalName watcher
@@ -51,7 +51,7 @@ clients/controller/
 ├── internal/
 │   ├── config/                 # Controller config loader
 │   ├── vrata/                  # Typed HTTP client for Vrata REST API
-│   ├── mapper/                 # HTTPRoute/Gateway → Vrata entities (pure, no I/O)
+│   ├── mapper/                 # HTTPRoute/Gateway/XBackend/XAccessPolicy → Vrata entities (pure, no I/O)
 │   ├── reconciler/             # Apply/delete with dependency ordering + refcount
 │   ├── batcher/                # Debounce + max batch → snapshot create+activate
 │   ├── dedup/                  # Semantic overlap detection (path, headers, methods)
@@ -59,6 +59,7 @@ clients/controller/
 │   ├── refgrant/               # ReferenceGrant cross-namespace checker
 │   └── metrics/                # 8 Prometheus metrics
 ├── apis/v1/                    # SuperHTTPRoute CRD types
+├── apis/agentic/               # XBackend + XAccessPolicy CRD types (Kube Agentic Networking)
 ├── scripts/                    # crdclean + helmwrap for CRD generation pipeline
 └── test/e2e/                   # End-to-end tests
 ```
@@ -73,6 +74,9 @@ Documented in detail in `SERVER_DECISIONS.md`. Highlights:
 - httpsnoop for all ResponseWriter interception — never manual wrappers
 - Per-entity fault isolation — one broken route never takes down the proxy
 - Cleanup callbacks on routing table swap — no leaked goroutines
+- CEL body access (request.body.raw + request.body.json) for body-based routing and authz
+- mTLS client authentication with cert metadata exposed in CEL
+- Inline authorization middleware (inlineAuthz) — CEL-based access control without external services
 
 ## Code conventions
 

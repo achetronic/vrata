@@ -139,8 +139,9 @@ proxy:
   extraVolumes: []
   extraVolumeMounts: []
 
-# Controller watches Gateway API resources (HTTPRoute, Gateway) in Kubernetes
-# and synchronises them to the Vrata control plane via REST API.
+# Controller watches Gateway API resources (HTTPRoute, Gateway) and Kube Agentic
+# Networking resources (XBackend, XAccessPolicy) in Kubernetes and synchronises
+# them to the Vrata control plane via REST API.
 # Set enabled: false if you manage Vrata config entirely via the API.
 controller:
   enabled: false
@@ -163,6 +164,10 @@ controller:
       httpRoutes: true
       superHttpRoutes: false
       gateways: true
+      # Kube Agentic Networking resources (agentic.prototype.x-k8s.io/v0alpha0).
+      # Requires the CRDs to be installed: make controller-deploy-agentic-crds
+      xBackends: false
+      xAccessPolicies: false
     snapshot:
       debounce: "5s"
       maxBatch: 100
@@ -192,6 +197,12 @@ controller:
     metrics:
       enabled: false
       address: ":9090"
+    # Kube Agentic Networking settings. Only needed when xBackends or
+    # xAccessPolicies watching is enabled.
+    agentic:
+      # SPIFFE trust domain for converting ServiceAccount sources to SPIFFE URIs.
+      # Example: "cluster.local"
+      trustDomain: ""
 
   resources: {}
   terminationGracePeriodSeconds: 15

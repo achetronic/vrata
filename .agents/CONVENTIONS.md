@@ -90,7 +90,7 @@
 
 ## Testing
 
-226 unit tests + 92 e2e tests. See FEATURES.md for full breakdown.
+305 unit tests + 96 e2e tests. See FEATURES.md for full breakdown.
 
 ## Configuration
 

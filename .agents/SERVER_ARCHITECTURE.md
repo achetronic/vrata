@@ -36,8 +36,8 @@ Pure domain types. No business logic, no I/O. Key types:
 - **Route** — matching rules + action (forward/redirect/directResponse) + onError fallbacks.
 - **RouteGroup** — a named collection of routes with shared matchers.
 - **Destination** — an upstream target with endpoints, timeouts, TLS, balancing, circuit breaker, health checks, outlier detection.
-- **Listener** — a network entry point with optional TLS, HTTP/2, metrics.
-- **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog.
+- **Listener** — a network entry point with optional TLS (including mTLS client auth), HTTP/2, metrics.
+- **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz.
 - **Snapshot** — immutable point-in-time capture of all configuration.
 
 ### internal/store
@@ -84,7 +84,11 @@ Each middleware that launches goroutines returns a stop function for cleanup on 
 
 ### internal/proxy/celeval
 
-CEL expression compiler and evaluator for route matching, skipWhen/onlyWhen, and JWT assertClaims.
+CEL expression compiler and evaluator for route matching, skipWhen/onlyWhen,
+JWT assertClaims, and inlineAuthz rules. The `request` map exposes method, path,
+host, scheme, headers, queryParams, clientIp, and optionally:
+- `request.body.raw` (string) + `request.body.json` (map) — lazy body buffering
+- `request.tls.peerCertificate.{uris, dnsNames, subject, serial}` — mTLS client cert
 
 ### internal/gateway
 

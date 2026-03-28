@@ -31,6 +31,7 @@ type Dependencies struct {
 	OutlierDetector   *proxy.OutlierDetector
 	SessionStore      proxy.SessionStore
 	Logger            *slog.Logger
+	CELBodyMaxSize    int
 }
 
 // Client connects to the control plane SSE stream and applies configuration
@@ -141,7 +142,7 @@ func (c *Client) applySnapshot(data []byte) error {
 
 	snap := vs.Snapshot
 
-	table, err := proxy.BuildTable(snap.Routes, snap.Groups, snap.Destinations, snap.Middlewares, c.deps.SessionStore)
+	table, err := proxy.BuildTable(snap.Routes, snap.Groups, snap.Destinations, snap.Middlewares, c.deps.SessionStore, c.deps.CELBodyMaxSize)
 	if err != nil {
 		return fmt.Errorf("building routing table: %w", err)
 	}

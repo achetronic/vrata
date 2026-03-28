@@ -1,6 +1,6 @@
 # Feature Coverage Report — Vrata
 
-Generated: 2026-03-19
+Generated: 2026-03-25
 Method: Line-by-line source audit + unit tests + e2e tests
 
 ## API CRUD
@@ -14,6 +14,8 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Middlewares CRUD         | 100%   | Unit + E2E  |
 | Config dump              | 100%   | Unit + E2E  |
 | Route action validation  | 100%   | Unit        |
+| Listener clientAuth validation | 100% | Unit (6)   |
+| Middleware inlineAuthz validation | 100% | Unit (8) |
 | Invalid JSON → 400       | 100%   | Unit        |
 | Handlers use r.Context() | 100%   | Code review |
 
@@ -43,6 +45,8 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Hostname match                         | 100%   | Unit + E2E |
 | Query param match (pre-compiled regex) | 100%   | Unit + E2E |
 | CEL expression match                   | 100%   | Unit + E2E |
+| CEL body JSON match                    | 100%   | Unit + E2E |
+| CEL body raw match                     | 100%   | Unit + E2E |
 | gRPC content-type match                | 100%   | Unit + E2E |
 | Group composition (8 cases)            | 100%   | Unit + E2E |
 
@@ -105,23 +109,31 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | ExtProc HTTP (buffered + bufferedPartial + streamed)         | 100%   | Unit (19) + E2E (2) |
 | ExtProc gRPC                                                 | 100%   | Unit                |
 | Middleware chain ordering                                    | 100%   | Unit                |
-| Middleware skipWhen (CEL condition to skip)                  | 100%   | E2E (3)             |
-| Middleware onlyWhen (CEL condition to activate)              | 100%   | E2E (3)             |
+| Middleware skipWhen (CEL condition to skip)                  | 100%   | Unit + E2E (3)      |
+| Middleware skipWhen with request.body                        | 100%   | Unit                |
+| Middleware onlyWhen (CEL condition to activate)              | 100%   | Unit + E2E (3)      |
+| Middleware onlyWhen with request.body                        | 100%   | Unit                |
 | Middleware disable per-route                                 | 100%   | Unit + E2E          |
 | Middleware override merge                                    | 100%   | Unit                |
 | Cleanup on table swap (JWT refresh, rate limiter)            | 100%   | Code review         |
+| InlineAuthz (CEL rules, first-match-wins, allow/deny)       | 100%   | Unit (14) + E2E (2) |
+| InlineAuthz body-based rules                                | 100%   | Unit + E2E          |
+| InlineAuthz TLS cert rules                                  | 100%   | Unit                |
 
 ## Proxy Infrastructure
 
 | Feature                                                        | Status | Tests      |
 | -------------------------------------------------------------- | ------ | ---------- |
 | Atomic routing table swap (with cleanup callbacks)             | 100%   | Unit + E2E |
-| Listener management (detects TLS changes)                      | 100%   | E2E        |
+| Listener management (detects TLS + clientAuth changes)        | 100%   | Unit (6) + E2E |
+| mTLS client authentication (optional/require + CA)            | 100%   | Unit (6)       |
+| X-Forwarded-Client-Cert injection (spoof-protected)           | 100%   | Unit (4)       |
 | Circuit breaker (configurable failureThreshold + openDuration) | 100%   | Unit       |
 | Health checks (thresholds, per-dest interval)                  | 100%   | Unit       |
 | Outlier detection (wired via OnResponse, race-free)            | 100%   | Unit       |
 | TLS upstream                                                   | 100%   | Unit       |
 | TLS downstream                                                 | 100%   | Unit       |
+| mTLS client cert fields in CEL                                 | 100%   | Unit (7)   |
 | HTTP/2 (ALPN configured)                                       | 100%   | Unit       |
 
 ## Timeouts
@@ -205,24 +217,25 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | ------------------------------------------------------------------ | ------- | ------- |
 | Model                                                              | 3       | 3       |
 | Store (bolt + memory)                                              | 9       | 9       |
-| API handlers                                                       | 34      | 34      |
+| API handlers                                                       | 48      | 48      |
 | API middleware                                                     | 3       | 3       |
 | Respond                                                            | 2       | 2       |
 | Config                                                             | 14      | 14      |
 | Gateway                                                            | 2       | 2       |
 | K8s watcher                                                        | 4       | 4       |
 | Session store (Redis)                                              | 5       | 5       |
-| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 54      | 54      |
-| CEL eval                                                           | 11      | 11      |
-| Proxy middlewares                                                  | 60      | 60      |
+| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 83      | 83      |
+| CEL eval                                                           | 40      | 40      |
+| Proxy middlewares                                                  | 74      | 74      |
 | Raft (FSM, cluster, peers)                                         | 7       | 7       |
 | Sync client                                                        | 2       | 2       |
-| **Unit total**                                                     | **226** | **226** |
+| **Unit total**                                                     | **305** | **305** |
 | E2E (proxy, live)                                                  | 73      | 73      |
 | E2E (metrics)                                                      | 5       | 5       |
-| E2E (onError)                                                      | 6       | 6       |
+| E2E (onError)                                                      | 6       | 6      |
+| E2E (agentic features: CEL body + inlineAuthz)                     | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
-| **E2E total**                                                      | **92**  | **92**  |
+| **E2E total**                                                      | **96**  | **96**  |
 
 ## Known Remaining Issues
 

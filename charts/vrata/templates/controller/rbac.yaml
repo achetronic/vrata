@@ -22,6 +22,12 @@ rules:
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["referencegrants"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentic.prototype.x-k8s.io"]
+    resources: ["xbackends", "xaccesspolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["agentic.prototype.x-k8s.io"]
+    resources: ["xbackends/status", "xaccesspolicies/status"]
+    verbs: ["get", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

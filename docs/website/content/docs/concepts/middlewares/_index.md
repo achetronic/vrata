@@ -38,6 +38,7 @@ Set `type` to the middleware type and populate the matching field. See each type
   "cors": { ... },
   "rateLimit": { ... },
   "extAuthz": { ... },
+  "inlineAuthz": { ... },
   "extProc": { ... },
   "headers": { ... },
   "accessLog": { ... }
@@ -61,6 +62,7 @@ Set `type` and populate only the matching field. All other type fields are ignor
 | `cors` | [CORS]({{< relref "cors" >}}) | Cross-Origin Resource Sharing with preflight handling |
 | `rateLimit` | [Rate Limiting]({{< relref "rate-limit" >}}) | Token bucket per client IP |
 | `extAuthz` | [External Authorization]({{< relref "ext-authz" >}}) | Delegate auth decisions to an external HTTP/gRPC service |
+| `inlineAuthz` | [Inline Authorization]({{< relref "inline-authz" >}}) | Evaluate auth rules locally with CEL expressions |
 | `extProc` | [External Processor]({{< relref "ext-proc" >}}) | Send request/response phases to a service for inspection and mutation |
 | `headers` | [Header Manipulation]({{< relref "headers" >}}) | Add/remove request and response headers |
 | `accessLog` | [Access Log]({{< relref "access-log" >}}) | Structured access logging per route |

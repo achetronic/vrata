@@ -3,8 +3,9 @@
 ## Overview
 
 The Controller is a Kubernetes controller that watches Gateway API resources
-(`Gateway`, `HTTPRoute`, and future `SuperHTTPRoute`) and synchronises them
-to Vrata via its REST API. It is a separate binary that lives in `clients/controller/`.
+(`Gateway`, `HTTPRoute`, `SuperHTTPRoute`) and Kube Agentic Networking resources
+(`XBackend`, `XAccessPolicy`) and synchronises them to Vrata via its REST API.
+It is a separate binary that lives in `clients/controller/`.
 Its only contract with Vrata is the OpenAPI spec — no shared code, no imports.
 
 The controller is unidirectional: it reads from Kubernetes and writes to Vrata.
@@ -112,7 +113,9 @@ clients/controller/
 │       └── main.go              # flags, scheme registration, informers, start
 ├── internal/
 │   ├── mapper/
-│   │   └── mapper.go            # Gateway API types → Vrata API types (pure, no I/O)
+│   │   ├── mapper.go            # Gateway API types → Vrata API types (pure, no I/O)
+│   │   ├── xbackend.go          # XBackend → Destination + Route
+│   │   └── xaccess_policy.go    # XAccessPolicy → inlineAuthz / extAuthz middleware
 │   ├── reconciler/
 │   │   ├── gateway.go           # Gateway → Listener reconciliation
 │   │   ├── httproute.go         # HTTPRoute → Route + Group + Destination reconciliation
@@ -160,12 +163,13 @@ full reference with inline comments.
 | Section | Key fields | Description |
 |---------|-----------|-------------|
 | `vrata` | `url` | Base URL of the Vrata control plane API |
-| `watch` | `namespaces`, `httpRoutes`, `superHttpRoutes`, `gateways` | Which k8s resources to watch and optional namespace filter |
+| `watch` | `namespaces`, `httpRoutes`, `superHttpRoutes`, `gateways`, `xBackends`, `xAccessPolicies` | Which k8s resources to watch and optional namespace filter |
 | `snapshot` | `debounce`, `maxBatch` | Batching before creating a Vrata snapshot |
 | `duplicates` | `mode` (`off` / `warn` / `reject`) | Overlap detection with semantic path matching |
 | `log` | `format`, `level` | Structured logging (console/json, debug/info/warn/error) |
 | `leaderElection` | `enabled`, `leaseName`, `leaseNamespace`, durations | Lease-based leader election for multiple replicas |
 | `metrics` | `enabled`, `address` | Prometheus metrics endpoint |
+| `agentic` | `trustDomain` | SPIFFE trust domain for ServiceAccount → SPIFFE ID conversion |
 
 ## Status Writing
 

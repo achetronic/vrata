@@ -42,8 +42,17 @@ Conditions are set in `middlewareOverrides` on a route or group:
 | `request.headers` | map[string]string | `request.headers["authorization"]` |
 | `request.queryParams` | map[string]string | `request.queryParams["token"]` |
 | `request.clientIp` | string | `"10.0.0.1"` |
+| `request.body.raw` | string | Raw request body (up to `celBodyMaxSize`) |
+| `request.body.json` | map | Parsed JSON body (only when Content-Type is `application/json`) |
+| `request.tls.peerCertificate.uris` | list(string) | URI SANs from client cert |
+| `request.tls.peerCertificate.dnsNames` | list(string) | DNS SANs from client cert |
+| `request.tls.peerCertificate.subject` | string | Client cert Distinguished Name |
 
 CEL expressions are compiled once at routing table build time — no per-request compile cost.
+
+Body variables are lazy: the request body is only buffered when a CEL expression references `request.body`. Routes without body-referencing expressions have zero overhead. Use `has(request.body)` and `has(request.body.json)` to guard access.
+
+TLS variables are only populated when the client presents a certificate via mTLS. Use `has(request.tls)` to guard access.
 
 ## Examples
 
@@ -170,6 +179,40 @@ Skip external auth for a specific tenant:
 ```
 
 Skip if the path is `/health` OR `/ready` OR `/metrics` OR the method is OPTIONS. Any match skips.
+
+### skipWhen — skip auth for safe body methods (body inspection)
+
+```json
+{
+  "middlewareOverrides": {
+    "rpc-guard": {
+      "skipWhen": [
+        "has(request.body) && has(request.body.json) && request.body.json.method in ['ping', 'health', 'list']"
+      ]
+    }
+  }
+}
+```
+
+Skip the authorization middleware for safe read-only methods. The body is only buffered when a condition references `request.body`.
+
+This works with any JSON protocol. For example, with MCP you would list `['initialize', 'notifications/initialized', 'tools/list']`.
+
+### onlyWhen — only run auth for write operations (body inspection)
+
+```json
+{
+  "middlewareOverrides": {
+    "write-guard": {
+      "onlyWhen": [
+        "has(request.body) && has(request.body.json) && request.body.json.method == 'execute'"
+      ]
+    }
+  }
+}
+```
+
+The authorization middleware only runs when the request is an `execute` operation. Read-only methods pass through.
 
 ## Precedence
 
