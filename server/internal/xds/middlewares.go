@@ -34,11 +34,19 @@ import (
 // buildHTTPFilters builds the ordered list of Envoy HTTP filters for an HCM.
 // withXFCC injects the xfcc Go filter first (when listener has mTLS).
 // The router filter is always last.
-func buildHTTPFilters(middlewares []model.Middleware, withXFCC bool) []*httpmgr.HttpFilter {
-	filters := make([]*httpmgr.HttpFilter, 0, len(middlewares)+3)
+func buildHTTPFilters(middlewares []model.Middleware, withXFCC bool, withSticky bool) []*httpmgr.HttpFilter {
+	filters := make([]*httpmgr.HttpFilter, 0, len(middlewares)+4)
 
 	if withXFCC {
 		if f := buildGoPluginFilter("vrata.xfcc", "/etc/envoy/extensions/xfcc.so"); f != nil {
+			filters = append(filters, f)
+		}
+	}
+
+	// Sticky filter runs early — before auth/rate-limit — so it can override
+	// the upstream before other filters run.
+	if withSticky {
+		if f := buildGoPluginFilter("vrata.sticky", "/etc/envoy/extensions/sticky.so"); f != nil {
 			filters = append(filters, f)
 		}
 	}

@@ -23,7 +23,7 @@ import (
 // route config name, HTTP filters, access logs, and listener timeouts.
 func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter, accessLogs []*accesslogv3.AccessLog, timeouts *model.ListenerTimeouts) *listenerv3.Filter {
 	if len(filters) == 0 {
-		filters = buildHTTPFilters(nil, false)
+		filters = buildHTTPFilters(nil, false, false)
 	}
 
 	hcm := &httpmgr.HttpConnectionManager{

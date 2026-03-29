@@ -370,7 +370,25 @@ func buildListenersAndRoutes(
 			}
 		}
 
-		envoyListeners = append(envoyListeners, buildEnvoyListener(l, rcName, activeMWs))
+		// Detect if any route in this listener uses STICKY destination balancing.
+		// If so, the sticky Go plugin must be injected into the HCM filter chain.
+		hasSticky := false
+		for _, g := range targetGroups {
+			for _, rid := range g.RouteIDs {
+				if r, ok := routeByID[rid]; ok {
+					if r.Forward != nil && r.Forward.DestinationBalancing != nil &&
+						r.Forward.DestinationBalancing.Algorithm == model.DestinationLBSticky {
+						hasSticky = true
+						break
+					}
+				}
+			}
+			if hasSticky {
+				break
+			}
+		}
+
+		envoyListeners = append(envoyListeners, buildEnvoyListener(l, rcName, activeMWs, hasSticky))
 	}
 
 	// Check all routes for STICKY destination balancing to inject Go plugin.
@@ -631,7 +649,7 @@ func buildRouteMatch(r model.Route, g model.RouteGroup) *routev3.RouteMatch {
 }
 
 // buildEnvoyListener constructs an Envoy Listener with HCM, TLS, and middleware filters.
-func buildEnvoyListener(l model.Listener, rcName string, activeMWs []model.Middleware) *listenerv3.Listener {
+func buildEnvoyListener(l model.Listener, rcName string, activeMWs []model.Middleware, hasSticky bool) *listenerv3.Listener {
 	addr := l.Address
 	if addr == "" {
 		addr = "0.0.0.0"
@@ -639,7 +657,7 @@ func buildEnvoyListener(l model.Listener, rcName string, activeMWs []model.Middl
 
 	// Build HTTP filters: inject xfcc when mTLS is configured.
 	hasMTLS := l.TLS != nil && l.TLS.ClientAuth != nil && l.TLS.ClientAuth.CAFile != ""
-	httpFilters := buildHTTPFilters(activeMWs, hasMTLS)
+	httpFilters := buildHTTPFilters(activeMWs, hasMTLS, hasSticky)
 	accessLogs := buildAccessLogs(activeMWs)
 	hcm := buildHCM(rcName, httpFilters, accessLogs, l.Timeouts)
 
