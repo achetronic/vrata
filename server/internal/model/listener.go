@@ -44,6 +44,11 @@ type Listener struct {
 	// Timeouts controls how long the listener waits at each stage of the
 	// client connection lifecycle. When nil, sensible defaults are used.
 	Timeouts *ListenerTimeouts `json:"timeouts,omitempty" yaml:"timeouts,omitempty"`
+
+	// GroupIDs lists the IDs of the RouteGroups that this listener serves.
+	// When empty, the xDS translator attaches all groups to this listener
+	// (catch-all behaviour, same as the native proxy).
+	GroupIDs []string `json:"groupIds,omitempty" yaml:"groupIds,omitempty"`
 }
 
 // ListenerTimeouts configures timeout durations for client connections.

@@ -1,9 +1,10 @@
 // Copyright 2026 The Vrata Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Vrata is a programmable HTTP reverse proxy with a REST API for configuration.
-// It manages routes, destinations, listeners, and middlewares — all applied in
-// real time without restarts.
+// Vrata is a programmable HTTP reverse proxy control plane with a REST API.
+// It manages routes, destinations, listeners, and middlewares — all applied
+// in real time without restarts. Configuration is distributed to a fleet of
+// Envoy proxies via xDS (ADS).
 //
 // Usage:
 //
@@ -11,8 +12,9 @@
 //
 //	@title			Vrata API
 //	@version		1.0
-//	@description	Programmable HTTP reverse proxy. Manage routes, destinations,
-//	@description	listeners, and middlewares via REST API. Changes apply instantly.
+//	@description	Programmable HTTP reverse proxy control plane. Manage routes,
+//	@description	destinations, listeners, and middlewares via REST API.
+//	@description	Changes are pushed to Envoy instances via xDS instantly.
 //	@contact.name	Vrata project
 //	@contact.url	https://github.com/achetronic/vrata
 //	@license.name	Apache 2.0
@@ -40,13 +42,11 @@ import (
 	"github.com/achetronic/vrata/internal/config"
 	"github.com/achetronic/vrata/internal/gateway"
 	"github.com/achetronic/vrata/internal/k8s"
-	"github.com/achetronic/vrata/internal/proxy"
 	raftnode "github.com/achetronic/vrata/internal/raft"
-	sessionredis "github.com/achetronic/vrata/internal/session/redis"
 	"github.com/achetronic/vrata/internal/store"
 	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 	"github.com/achetronic/vrata/internal/store/raftstore"
-	rtsync "github.com/achetronic/vrata/internal/sync"
+	"github.com/achetronic/vrata/internal/xds"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -71,23 +71,16 @@ func run() error {
 	}
 
 	logger := buildLogger(cfg)
-
-	switch cfg.Mode {
-	case config.ModeControlPlane:
-		return runControlPlane(cfg, logger)
-	case config.ModeProxy:
-		return runProxy(cfg, logger)
-	default:
-		return fmt.Errorf("unknown mode %q", cfg.Mode)
-	}
+	return runControlPlane(cfg, logger)
 }
 
 // runControlPlane starts the control plane: REST API, persistent store, and
-// the SSE sync endpoint for proxy instances. No proxy, no listeners.
+// the xDS gRPC server for Envoy nodes.
 func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 	boltPath := cfg.ControlPlane.BoltDBPath()
-	logger.Info("vrata starting in control plane mode",
+	logger.Info("vrata starting",
 		slog.String("http", cfg.ControlPlane.Address),
+		slog.String("xds", cfg.ControlPlane.XDSAddress),
 		slog.String("store", boltPath),
 	)
 
@@ -130,25 +123,16 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		)
 	}
 
+	// xDS server — Envoy nodes connect here to receive configuration.
+	xdsSrv := xds.New(logger)
+
+	// REST API.
 	router := api.NewRouter(activeStore, logger, raftApplier)
 	httpSrv := &http.Server{
 		Addr:    cfg.ControlPlane.Address,
 		Handler: router,
 	}
-
 	httpSrv.BaseContext = func(_ net.Listener) context.Context { return ctx }
-
-	// Proxy gateway: watches store events, rebuilds routing table, manages listeners.
-	proxyRouter := proxy.NewRouter()
-	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
-	healthChecker := proxy.NewHealthChecker(logger)
-	outlierDetector := proxy.NewOutlierDetector(logger)
-
-	sessStore, err := buildSessionStore(cfg, logger)
-	if err != nil {
-		logger.Warn("session store unavailable, STICKY will fall back to WEIGHTED_CONSISTENT_HASH",
-			slog.String("error", err.Error()))
-	}
 
 	// Kubernetes endpoint discovery (non-fatal if no kubeconfig available).
 	var epProvider gateway.EndpointProvider
@@ -169,11 +153,7 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 
 	gw := gateway.New(gateway.Dependencies{
 		Store:            activeStore,
-		Router:           proxyRouter,
-		ListenerManager:  listenerMgr,
-		HealthChecker:    healthChecker,
-		OutlierDetector:  outlierDetector,
-		SessionStore:     sessStore,
+		XDS:              xdsSrv,
 		EndpointProvider: epProvider,
 		Logger:           logger,
 	})
@@ -184,17 +164,23 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		}
 	}
 
-	errCh := make(chan error, 4)
+	errCh := make(chan error, 3)
 
-	healthChecker.Start(ctx)
-	outlierDetector.Start(ctx)
+	// Start xDS gRPC server.
+	go func() {
+		if err := xdsSrv.Run(ctx, cfg.ControlPlane.XDSAddress); err != nil {
+			errCh <- fmt.Errorf("xds server: %w", err)
+		}
+	}()
 
+	// Start gateway (store watcher → xDS push).
 	go func() {
 		if err := gw.Run(ctx); err != nil {
 			errCh <- fmt.Errorf("gateway: %w", err)
 		}
 	}()
 
+	// Start REST API.
 	go func() {
 		logger.Info("http server listening", slog.String("address", cfg.ControlPlane.Address))
 		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -205,72 +191,9 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 	select {
 	case <-ctx.Done():
 		logger.Info("shutdown signal received")
-		healthChecker.Stop()
-		outlierDetector.Stop()
-		listenerMgr.Shutdown()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
 		_ = httpSrv.Shutdown(shutdownCtx)
-		return nil
-	case err := <-errCh:
-		return err
-	}
-}
-
-// runProxy starts the proxy-only mode. No local store, no REST API. Connects
-// to a remote control plane via SSE and applies configuration snapshots.
-func runProxy(cfg *config.Config, logger *slog.Logger) error {
-	logger.Info("vrata starting in proxy mode",
-		slog.String("controlPlane", cfg.Proxy.ControlPlaneURL),
-	)
-
-	reconnect, err := time.ParseDuration(cfg.Proxy.ReconnectInterval)
-	if err != nil {
-		return fmt.Errorf("parsing reconnectInterval: %w", err)
-	}
-
-	proxyRouter := proxy.NewRouter()
-	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
-	healthChecker := proxy.NewHealthChecker(logger)
-	outlierDetector := proxy.NewOutlierDetector(logger)
-
-	sessStore, err := buildSessionStore(cfg, logger)
-	if err != nil {
-		logger.Warn("session store unavailable, STICKY will fall back to WEIGHTED_CONSISTENT_HASH",
-			slog.String("error", err.Error()))
-	}
-
-	syncClient := rtsync.New(rtsync.Dependencies{
-		ControlPlaneAddr:  cfg.Proxy.ControlPlaneURL,
-		ReconnectInterval: reconnect,
-		Router:            proxyRouter,
-		ListenerManager:   listenerMgr,
-		HealthChecker:     healthChecker,
-		OutlierDetector:   outlierDetector,
-		SessionStore:      sessStore,
-		Logger:            logger,
-	})
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	errCh := make(chan error, 2)
-
-	healthChecker.Start(ctx)
-	outlierDetector.Start(ctx)
-
-	go func() {
-		if err := syncClient.Run(ctx); err != nil {
-			errCh <- fmt.Errorf("sync client: %w", err)
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		logger.Info("shutdown signal received")
-		healthChecker.Stop()
-		outlierDetector.Stop()
-		listenerMgr.Shutdown()
 		return nil
 	case err := <-errCh:
 		return err
@@ -301,33 +224,6 @@ func buildLogger(cfg *config.Config) *slog.Logger {
 	}
 
 	return slog.New(handler)
-}
-
-// buildSessionStore creates a session store from the config.
-// Returns nil (not an error) if no session store is configured.
-func buildSessionStore(cfg *config.Config, logger *slog.Logger) (proxy.SessionStore, error) {
-	if cfg.SessionStore == nil || cfg.SessionStore.Type == "" {
-		return nil, nil
-	}
-	switch cfg.SessionStore.Type {
-	case config.SessionStoreRedis:
-		if cfg.SessionStore.Redis == nil {
-			return nil, fmt.Errorf("sessionStore.redis config is required when type is %q", config.SessionStoreRedis)
-		}
-		rc := cfg.SessionStore.Redis
-		addr := rc.Address
-		if addr == "" {
-			addr = "localhost:6379"
-		}
-		store, err := sessionredis.New(addr, rc.Password, rc.DB)
-		if err != nil {
-			return nil, fmt.Errorf("connecting to Redis at %s: %w", addr, err)
-		}
-		logger.Info("session store connected", slog.String("type", "redis"), slog.String("address", addr))
-		return store, nil
-	default:
-		return nil, fmt.Errorf("unknown sessionStore.type %q", cfg.SessionStore.Type)
-	}
 }
 
 // buildK8sClient creates a Kubernetes client from in-cluster config or
@@ -365,4 +261,3 @@ func buildK8sClient(logger *slog.Logger) (kubernetes.Interface, error) {
 	logger.Info("k8s client created from kubeconfig", slog.String("path", kubeconfig))
 	return client, nil
 }
-

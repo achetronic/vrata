@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package gateway orchestrates the bridge between the Vrata store and the
-// native proxy. It subscribes to store events, rebuilds the routing table on
-// every change, and applies it to the proxy atomically.
+// Envoy xDS control plane. It subscribes to store events, rebuilds the xDS
+// snapshot on every change, and pushes it to connected Envoy instances.
 package gateway
 
 import (
@@ -12,8 +12,8 @@ import (
 	"log/slog"
 
 	"github.com/achetronic/vrata/internal/model"
-	"github.com/achetronic/vrata/internal/proxy"
 	"github.com/achetronic/vrata/internal/store"
+	"github.com/achetronic/vrata/internal/xds"
 )
 
 // EndpointProvider supplies dynamically resolved endpoints keyed by Destination ID.
@@ -25,16 +25,13 @@ type EndpointProvider interface {
 // Dependencies holds the external collaborators required by the Gateway.
 type Dependencies struct {
 	Store            store.Store
-	Router           *proxy.Router
-	ListenerManager  *proxy.ListenerManager
-	HealthChecker    *proxy.HealthChecker
-	OutlierDetector  *proxy.OutlierDetector
-	SessionStore     proxy.SessionStore
+	XDS              *xds.Server
 	EndpointProvider EndpointProvider
 	Logger           *slog.Logger
 }
 
-// Gateway listens for store change events and keeps the proxy config up to date.
+// Gateway listens for store change events and keeps the Envoy xDS snapshot
+// up to date.
 type Gateway struct {
 	deps Dependencies
 }
@@ -45,7 +42,7 @@ func New(deps Dependencies) *Gateway {
 }
 
 // Rebuild is a public wrapper around rebuild, allowing external components
-// to trigger a full proxy config rebuild.
+// (e.g. the k8s watcher) to trigger a full xDS snapshot rebuild.
 func (gw *Gateway) Rebuild(ctx context.Context) error {
 	return gw.rebuild(ctx)
 }
@@ -59,7 +56,8 @@ func (gw *Gateway) Run(ctx context.Context) error {
 
 	gw.deps.Logger.Info("gateway started: watching store events")
 
-	// Push an initial config.
+	// Push an initial snapshot so Envoy nodes that connect before any change
+	// still get a valid config.
 	if err := gw.rebuild(ctx); err != nil {
 		gw.deps.Logger.Warn("gateway: initial rebuild failed",
 			slog.String("error", err.Error()),
@@ -89,7 +87,8 @@ func (gw *Gateway) Run(ctx context.Context) error {
 	}
 }
 
-// rebuild fetches all resources from the store and rebuilds the proxy config.
+// rebuild fetches all resources from the store and pushes a new xDS snapshot
+// to all connected Envoy nodes.
 func (gw *Gateway) rebuild(ctx context.Context) error {
 	listeners, err := gw.deps.Store.ListListeners(ctx)
 	if err != nil {
@@ -126,42 +125,11 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 		}
 	}
 
-	// Build new routing table.
-	table, err := proxy.BuildTable(routes, groups, destinations, middlewares, gw.deps.SessionStore)
-	if err != nil {
-		return fmt.Errorf("building routing table: %w", err)
+	if err := gw.deps.XDS.PushSnapshot(ctx, listeners, groups, routes, destinations, middlewares); err != nil {
+		return fmt.Errorf("pushing xds snapshot: %w", err)
 	}
 
-	// Atomic swap.
-	gw.deps.Router.SwapTable(table)
-
-	// Update health checker with new upstreams.
-	if gw.deps.HealthChecker != nil {
-		gw.deps.HealthChecker.Update(table.Pools())
-	}
-	if gw.deps.OutlierDetector != nil {
-		gw.deps.OutlierDetector.Update(table.Pools())
-		od := gw.deps.OutlierDetector
-		for _, pool := range table.Pools() {
-			for _, ep := range pool.Endpoints {
-				ep.OnResponse = od.RecordResponse
-			}
-			pool.OnResponse = od.RecordResponse
-		}
-	}
-
-	// Reconcile listeners.
-	gw.deps.ListenerManager.Reconcile(listeners)
-
-	// Update metrics collectors with the new pool snapshot and wire them
-	// into the router so ServeHTTP can record per-route metrics.
-	mcs := gw.deps.ListenerManager.MetricsCollectors()
-	for _, mc := range mcs {
-		mc.UpdatePools(table.Pools())
-	}
-	gw.deps.Router.SetMetricsCollectors(mcs)
-
-	gw.deps.Logger.Info("gateway: config applied",
+	gw.deps.Logger.Info("gateway: xds snapshot pushed",
 		slog.Int("listeners", len(listeners)),
 		slog.Int("routes", len(routes)),
 		slog.Int("groups", len(groups)),

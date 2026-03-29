@@ -55,6 +55,11 @@ type ControlPlaneConfig struct {
 	// Default: ":8080"
 	Address string `yaml:"address"`
 
+	// XDSAddress is the host:port the xDS gRPC server listens on.
+	// Envoy nodes connect here to receive configuration via ADS.
+	// Default: ":18000"
+	XDSAddress string `yaml:"xdsAddress"`
+
 	// StorePath is the root directory for all control plane state. Vrata
 	// places the bbolt database at <storePath>/vrata.db and, when Raft is
 	// enabled, Raft logs and snapshots at <storePath>/raft/.
@@ -199,6 +204,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.ControlPlane.Address == "" {
 		cfg.ControlPlane.Address = ":8080"
 	}
+	if cfg.ControlPlane.XDSAddress == "" {
+		cfg.ControlPlane.XDSAddress = ":18000"
+	}
 	if cfg.ControlPlane.StorePath == "" {
 		cfg.ControlPlane.StorePath = "/data"
 	}
@@ -219,9 +227,6 @@ func Validate(cfg *Config) error {
 	case ModeControlPlane, ModeProxy:
 	default:
 		return fmt.Errorf("unknown mode %q: must be %q or %q", cfg.Mode, ModeControlPlane, ModeProxy)
-	}
-	if cfg.Mode == ModeProxy && cfg.Proxy.ControlPlaneURL == "" {
-		return fmt.Errorf("proxy mode requires proxy.controlPlaneUrl to be set")
 	}
 	if cfg.ControlPlane.Raft != nil {
 		r := cfg.ControlPlane.Raft
