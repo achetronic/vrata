@@ -1,23 +1,21 @@
 // Copyright 2026 The Vrata Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package sticky implements an Envoy Go HTTP filter that provides external
-// sticky session routing backed by Redis.
+// Package main is the entrypoint for the sticky Envoy Go filter plugin.
+// It is compiled as a shared object (.so) and loaded by Envoy at startup.
 //
-// When a request arrives, the filter checks a session cookie (or header,
-// configurable via env vars) against Redis. If a pinned destination exists,
-// it injects the x-envoy-upstream-alt-stat-name header so Envoy routes to
-// the specific endpoint. If no pin exists, the request is forwarded normally
-// and the first response pins the session.
+// Build:
 //
-// Configuration (via environment variables):
+//	go build -buildmode=plugin -o sticky.so .
+//
+// Configuration (via environment variables in the Envoy container):
 //
 //	VRATA_STICKY_REDIS_ADDR    Redis address (default: localhost:6379)
 //	VRATA_STICKY_REDIS_PASS    Redis password (default: "")
 //	VRATA_STICKY_REDIS_DB      Redis database number (default: 0)
 //	VRATA_STICKY_COOKIE_NAME   Cookie name to read/write (default: "vrata-session")
 //	VRATA_STICKY_TTL_SECONDS   Session TTL in seconds (default: 3600)
-package sticky
+package main
 
 import (
 	"context"
@@ -140,4 +138,27 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// main is required for plugin build mode but does nothing.
+// The filter is registered via init().
+func main() {}
+
+// newFilter creates a new filter instance per request.
+func newFilter(callbacks api.FilterCallbackHandler) api.HttpFilter {
+	return &filter{
+		callbacks: callbacks,
+		config:    globalConfig,
+		client:    globalClient,
+	}
+}
+
+func init() {
+	api.RegisterHttpFilterFactoryAndConfigParser(
+		"vrata.sticky",
+		func(callbacks api.FilterCallbackHandler) api.HttpFilter {
+			return newFilter(callbacks)
+		},
+		&api.EmptyConfig{},
+	)
 }

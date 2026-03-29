@@ -1,22 +1,21 @@
 // Copyright 2026 The Vrata Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package inlineauthz implements an Envoy Go HTTP filter that evaluates
-// authorization rules locally using CEL expressions, equivalent to Vrata's
-// inlineAuthz middleware.
+// Package main is the entrypoint for the inlineauthz Envoy Go filter plugin.
+// Compiled as a shared object (.so) and loaded by Envoy at startup.
 //
-// Rules are evaluated in order; the first match wins. If no rule matches,
-// the defaultAction applies. Body access is lazy: the body is only buffered
-// when at least one rule references request.body.
+// Build:
 //
-// Rule configuration is loaded from environment variables at startup:
+//	go build -buildmode=plugin -o inlineauthz.so .
+//
+// Configuration (via environment variables):
 //
 //	VRATA_AUTHZ_RULES_JSON   JSON-encoded array of rules (see Rule type)
 //	VRATA_AUTHZ_DEFAULT      Default action: "allow" or "deny" (default: "deny")
 //	VRATA_AUTHZ_DENY_STATUS  HTTP status for deny (default: 403)
 //	VRATA_AUTHZ_DENY_BODY    Response body for deny (default: {"error":"access denied"})
 //	VRATA_AUTHZ_MAX_BODY     Max bytes to buffer for body access (default: 65536)
-package inlineauthz
+package main
 
 import (
 	"context"
@@ -243,3 +242,23 @@ func envOr(key, fallback string) string {
 
 // unused import guard for context
 var _ = context.Background
+
+// main is required for plugin build mode but does nothing.
+func main() {}
+
+func newFilter(callbacks api.FilterCallbackHandler) api.HttpFilter {
+	return &filter{
+		callbacks: callbacks,
+		config:    globalConfig,
+	}
+}
+
+func init() {
+	api.RegisterHttpFilterFactoryAndConfigParser(
+		"vrata.inlineauthz",
+		func(callbacks api.FilterCallbackHandler) api.HttpFilter {
+			return newFilter(callbacks)
+		},
+		&api.EmptyConfig{},
+	)
+}

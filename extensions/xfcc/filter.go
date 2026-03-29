@@ -1,23 +1,17 @@
 // Copyright 2026 The Vrata Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package xfcc implements an Envoy Go HTTP filter that injects the
-// X-Forwarded-Client-Cert (XFCC) header from the verified TLS client
-// certificate, stripping any incoming XFCC to prevent spoofing.
+// Package main is the entrypoint for the xfcc Envoy Go filter plugin.
+// Compiled as a shared object (.so) and loaded by Envoy at startup.
 //
-// When a client presents a certificate that Envoy has verified (mTLS),
-// this filter:
-//  1. Strips any incoming x-forwarded-client-cert header (spoof protection).
-//  2. Builds a new XFCC header from the verified cert metadata.
-//  3. Injects it into the request before forwarding to the upstream.
+// Build:
 //
-// The upstream (or inlineauthz filter) can then read the XFCC header to
-// make authorization decisions based on the client's identity without
-// having direct access to the TLS layer.
+//	go build -buildmode=plugin -o xfcc.so .
 //
-// No configuration required. The filter reads cert metadata from Envoy's
-// dynamic metadata (populated by the TLS inspector).
-package xfcc
+// No configuration required. Reads verified TLS client cert metadata
+// from Envoy dynamic metadata and injects the X-Forwarded-Client-Cert
+// header, stripping any incoming XFCC to prevent spoofing.
+package main
 
 import (
 	"fmt"
@@ -83,4 +77,21 @@ func buildXFCC(certInfo any) string {
 	}
 
 	return strings.Join(parts, ";")
+}
+
+// main is required for plugin build mode but does nothing.
+func main() {}
+
+func newFilter(callbacks api.FilterCallbackHandler) api.HttpFilter {
+	return &filter{callbacks: callbacks}
+}
+
+func init() {
+	api.RegisterHttpFilterFactoryAndConfigParser(
+		"vrata.xfcc",
+		func(callbacks api.FilterCallbackHandler) api.HttpFilter {
+			return newFilter(callbacks)
+		},
+		&api.EmptyConfig{},
+	)
 }
