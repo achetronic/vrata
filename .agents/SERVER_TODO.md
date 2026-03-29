@@ -4,12 +4,12 @@
 
 ### xDS Translation Gaps
 
-- [ ] **ExtProc native Envoy filter** — translate `extProc` middleware to `envoy.filters.http.ext_proc`. The model is ready, the xDS translation is missing.
+- [x] **ExtProc native Envoy filter** — `envoy.filters.http.ext_proc`, full phase config (request/response headers/body modes, timeouts, failure mode)
 - [ ] **CEL route matching** — `MatchRule.CEL` is in the model but not translated to xDS. Options: `envoy.filters.http.rbac` with CEL conditions, or a custom Go plugin that evaluates CEL.
-- [ ] **Query param matchers** — `MatchRule.QueryParams` not translated to Envoy `QueryParameterMatcher`.
-- [ ] **Port matchers** — `MatchRule.Ports` not translated.
-- [ ] **gRPC content-type match** — `MatchRule.GRPC` not translated.
-- [ ] **Listener timeouts in HCM** — `ListenerTimeouts` fields exist in the model but not mapped to Envoy HCM settings.
+- [x] **Query param matchers** — `MatchRule.QueryParams` → Envoy `QueryParameterMatcher` (exact, regex, presence)
+- [~] **Port matchers** — not applicable in Envoy (port is a Listener property, not a route matcher)
+- [x] **gRPC content-type match** — `MatchRule.GRPC` → `content-type: application/grpc` header matcher
+- [x] **Listener timeouts in HCM** — `ListenerTimeouts.ClientHeader` → `request_headers_timeout`, `ClientRequest` → `request_timeout`, `IdleBetweenRequests` → `stream_idle_timeout`
 - [ ] **Listener.GroupIDs redesign** — owner doesn't like GroupIDs on Listener because routes are first-class citizens. Needs rethinking before touching code.
 
 ### Sticky sessions

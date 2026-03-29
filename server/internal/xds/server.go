@@ -568,12 +568,61 @@ func buildRouteMatch(r model.Route, g model.RouteGroup) *routev3.RouteMatch {
 		})
 	}
 
-	// Method matcher.
-	if len(r.Match.Methods) > 0 {
+	// Method matcher — all methods as :method header matchers (OR semantics
+	// via multiple routes is handled at the group level; here we take all methods).
+	for _, method := range r.Match.Methods {
 		match.Headers = append(match.Headers, &routev3.HeaderMatcher{
 			Name: ":method",
 			HeaderMatchSpecifier: &routev3.HeaderMatcher_ExactMatch{
-				ExactMatch: r.Match.Methods[0],
+				ExactMatch: method,
+			},
+		})
+	}
+
+	// Query parameter matchers.
+	for _, qp := range r.Match.QueryParams {
+		var qm *routev3.QueryParameterMatcher
+		if qp.Regex {
+			qm = &routev3.QueryParameterMatcher{
+				Name: qp.Name,
+				QueryParameterMatchSpecifier: &routev3.QueryParameterMatcher_StringMatch{
+					StringMatch: &matcherv3.StringMatcher{
+						MatchPattern: &matcherv3.StringMatcher_SafeRegex{
+							SafeRegex: &matcherv3.RegexMatcher{
+								EngineType: &matcherv3.RegexMatcher_GoogleRe2{GoogleRe2: &matcherv3.RegexMatcher_GoogleRE2{}},
+								Regex:      qp.Value,
+							},
+						},
+					},
+				},
+			}
+		} else if qp.Value != "" {
+			qm = &routev3.QueryParameterMatcher{
+				Name: qp.Name,
+				QueryParameterMatchSpecifier: &routev3.QueryParameterMatcher_StringMatch{
+					StringMatch: &matcherv3.StringMatcher{
+						MatchPattern: &matcherv3.StringMatcher_Exact{Exact: qp.Value},
+					},
+				},
+			}
+		} else {
+			// Presence-only matcher (parameter exists, any value).
+			qm = &routev3.QueryParameterMatcher{
+				Name: qp.Name,
+				QueryParameterMatchSpecifier: &routev3.QueryParameterMatcher_PresentMatch{PresentMatch: true},
+			}
+		}
+		match.QueryParameters = append(match.QueryParameters, qm)
+	}
+
+	// gRPC matcher — sets content-type: application/grpc header match.
+	if r.Match.GRPC {
+		match.Headers = append(match.Headers, &routev3.HeaderMatcher{
+			Name: "content-type",
+			HeaderMatchSpecifier: &routev3.HeaderMatcher_StringMatch{
+				StringMatch: &matcherv3.StringMatcher{
+					MatchPattern: &matcherv3.StringMatcher_Prefix{Prefix: "application/grpc"},
+				},
 			},
 		})
 	}
@@ -592,7 +641,7 @@ func buildEnvoyListener(l model.Listener, rcName string, activeMWs []model.Middl
 	hasMTLS := l.TLS != nil && l.TLS.ClientAuth != nil && l.TLS.ClientAuth.CAFile != ""
 	httpFilters := buildHTTPFilters(activeMWs, hasMTLS)
 	accessLogs := buildAccessLogs(activeMWs)
-	hcm := buildHCM(rcName, httpFilters, accessLogs)
+	hcm := buildHCM(rcName, httpFilters, accessLogs, l.Timeouts)
 
 	filterChain := &listenerv3.FilterChain{
 		Filters: []*listenerv3.Filter{hcm},

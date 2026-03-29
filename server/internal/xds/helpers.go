@@ -15,11 +15,13 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 	durationpbpkg "google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
+
+	"github.com/achetronic/vrata/internal/model"
 )
 
 // buildHCM builds an Envoy HTTP Connection Manager filter with the given
-// route config name, HTTP filters (middlewares + router), and access logs.
-func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter, accessLogs []*accesslogv3.AccessLog) *listenerv3.Filter {
+// route config name, HTTP filters, access logs, and listener timeouts.
+func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter, accessLogs []*accesslogv3.AccessLog, timeouts *model.ListenerTimeouts) *listenerv3.Filter {
 	if len(filters) == 0 {
 		filters = buildHTTPFilters(nil, false)
 	}
@@ -37,6 +39,25 @@ func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter, accessLogs 
 		},
 		HttpFilters: filters,
 		AccessLog:   accessLogs,
+	}
+
+	// Listener timeouts → HCM fields.
+	if timeouts != nil {
+		if timeouts.ClientHeader != "" {
+			if d, err := parseDuration(timeouts.ClientHeader); err == nil {
+				hcm.RequestHeadersTimeout = d
+			}
+		}
+		if timeouts.ClientRequest != "" {
+			if d, err := parseDuration(timeouts.ClientRequest); err == nil {
+				hcm.RequestTimeout = d
+			}
+		}
+		if timeouts.IdleBetweenRequests != "" {
+			if d, err := parseDuration(timeouts.IdleBetweenRequests); err == nil {
+				hcm.StreamIdleTimeout = d
+			}
+		}
 	}
 
 	hcmAny, _ := anypb.New(hcm)

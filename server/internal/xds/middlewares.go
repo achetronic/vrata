@@ -11,6 +11,7 @@ import (
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	corsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/cors/v3"
+	extprocv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_proc/v3"
 	extauthzv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_authz/v3"
 	mutationrulesv3 "github.com/envoyproxy/go-control-plane/envoy/config/common/mutation_rules/v3"
 	headermutationv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/header_mutation/v3"
@@ -57,6 +58,8 @@ func buildHTTPFilters(middlewares []model.Middleware, withXFCC bool) []*httpmgr.
 			f = buildHeadersFilter(mw)
 		case model.MiddlewareTypeAccessLog:
 			// AccessLog is handled at the HCM level, not as an HTTP filter.
+		case model.MiddlewareTypeExtProc:
+			f = buildExtProcFilter(mw)
 		case "inlineAuthz":
 			f = buildGoPluginFilter("vrata.inlineauthz", "/etc/envoy/extensions/inlineauthz.so")
 		}
@@ -457,4 +460,75 @@ func joinStrings(ss []string) string {
 // structpbFromMap creates a structpb.Struct from a map. Alias for clarity.
 func structpbFromMap(m map[string]interface{}) (*structpb.Struct, error) {
 	return structpb.NewStruct(m)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ExtProc
+// ─────────────────────────────────────────────────────────────────────────────
+
+func buildExtProcFilter(mw model.Middleware) *httpmgr.HttpFilter {
+	if mw.ExtProc == nil || mw.ExtProc.DestinationID == "" {
+		return nil
+	}
+
+	timeout := 200 * time.Millisecond
+	if mw.ExtProc.PhaseTimeout != "" {
+		if d, err := time.ParseDuration(mw.ExtProc.PhaseTimeout); err == nil {
+			timeout = d
+		}
+	}
+
+	cfg := &extprocv3.ExternalProcessor{
+		GrpcService: &corev3.GrpcService{
+			TargetSpecifier: &corev3.GrpcService_EnvoyGrpc_{
+				EnvoyGrpc: &corev3.GrpcService_EnvoyGrpc{
+					ClusterName: clusterName(mw.ExtProc.DestinationID),
+				},
+			},
+			Timeout: durationpbpkg.New(timeout),
+		},
+		FailureModeAllow: mw.ExtProc.AllowOnError,
+	}
+
+	// Phase configuration.
+	if mw.ExtProc.Phases != nil {
+		processing := &extprocv3.ProcessingMode{}
+		if mw.ExtProc.Phases.RequestHeaders == "skip" {
+			processing.RequestHeaderMode = extprocv3.ProcessingMode_SKIP
+		} else {
+			processing.RequestHeaderMode = extprocv3.ProcessingMode_SEND
+		}
+		if mw.ExtProc.Phases.ResponseHeaders == "skip" {
+			processing.ResponseHeaderMode = extprocv3.ProcessingMode_SKIP
+		} else {
+			processing.ResponseHeaderMode = extprocv3.ProcessingMode_SEND
+		}
+		switch mw.ExtProc.Phases.RequestBody {
+		case "buffered":
+			processing.RequestBodyMode = extprocv3.ProcessingMode_BUFFERED
+		case "bufferedPartial":
+			processing.RequestBodyMode = extprocv3.ProcessingMode_BUFFERED_PARTIAL
+		case "streamed":
+			processing.RequestBodyMode = extprocv3.ProcessingMode_STREAMED
+		default:
+			processing.RequestBodyMode = extprocv3.ProcessingMode_NONE
+		}
+		switch mw.ExtProc.Phases.ResponseBody {
+		case "buffered":
+			processing.ResponseBodyMode = extprocv3.ProcessingMode_BUFFERED
+		case "bufferedPartial":
+			processing.ResponseBodyMode = extprocv3.ProcessingMode_BUFFERED_PARTIAL
+		case "streamed":
+			processing.ResponseBodyMode = extprocv3.ProcessingMode_STREAMED
+		default:
+			processing.ResponseBodyMode = extprocv3.ProcessingMode_NONE
+		}
+		cfg.ProcessingMode = processing
+	}
+
+	cfgAny, _ := anypb.New(cfg)
+	return &httpmgr.HttpFilter{
+		Name:       "envoy.filters.http.ext_proc",
+		ConfigType: &httpmgr.HttpFilter_TypedConfig{TypedConfig: cfgAny},
+	}
 }
