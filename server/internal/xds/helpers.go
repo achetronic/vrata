@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	accesslogv3 "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	listenerv3 "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	httpmgr "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
@@ -17,9 +18,8 @@ import (
 )
 
 // buildHCM builds an Envoy HTTP Connection Manager filter with the given
-// route config name and HTTP filters (middlewares + router).
-func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter) *listenerv3.Filter {
-	// Default to just router if no filters provided.
+// route config name, HTTP filters (middlewares + router), and access logs.
+func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter, accessLogs []*accesslogv3.AccessLog) *listenerv3.Filter {
 	if len(filters) == 0 {
 		filters = buildHTTPFilters(nil, false)
 	}
@@ -36,6 +36,7 @@ func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter) *listenerv3
 			},
 		},
 		HttpFilters: filters,
+		AccessLog:   accessLogs,
 	}
 
 	hcmAny, _ := anypb.New(hcm)

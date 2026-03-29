@@ -2,16 +2,19 @@
 
 ## Overview
 
-Vrata is a programmable HTTP reverse proxy with a REST API. It has two modes:
+Vrata is a programmable HTTP reverse proxy with a REST API. It operates as
+an xDS control plane that manages a fleet of Envoy proxy instances:
 
 - **Control plane** — exposes the REST API, stores configuration in bbolt,
-  and pushes active snapshots to connected proxies via SSE. Optionally runs
-  with Raft consensus for HA (3-5 nodes).
-- **Proxy** — stateless, connects to a control plane via SSE, receives
-  configuration snapshots, and routes traffic. Horizontally scalable.
+  translates Vrata model entities to Envoy xDS resources, and pushes them
+  to connected Envoy instances via ADS (gRPC). Optionally runs with Raft
+  consensus for HA (3-5 nodes).
+- **Envoy fleet** — stateless Envoy instances connect to the control plane's
+  xDS gRPC port (:18000), receive configuration dynamically, and route
+  traffic. Horizontally scalable.
 
-In development, a single process runs both modes. In production, the control
-plane runs as a StatefulSet and proxies as a Deployment.
+In development, the control plane runs as a single process. In production,
+the control plane runs as a StatefulSet and Envoy as a DaemonSet or Deployment.
 
 ## Components
 
@@ -20,14 +23,24 @@ plane runs as a StatefulSet and proxies as a Deployment.
 Entry point. Responsible for:
 
 - Parsing the `--config` flag and loading configuration.
-- Instantiating all dependencies (store, gateway, proxy router, listeners).
-- Starting the REST API server and the proxy gateway.
+- Instantiating all dependencies (store, xDS server, gateway, k8s watcher).
+- Starting the REST API server (:8080) and the xDS gRPC server (:18000).
+- Starting the gateway event loop.
 - Handling OS signals for graceful shutdown.
 
 ### internal/config
 
 Loads and validates the `config.yaml` file. Applies `os.ExpandEnv` to the raw
 YAML bytes before unmarshalling so that `${ENV_VAR}` references are resolved.
+
+Key config sections:
+
+- `controlPlane.address` — REST API listen address
+- `controlPlane.xdsAddress` — xDS gRPC listen address
+- `controlPlane.storePath` — bbolt + Raft data directory
+- `controlPlane.raft` — optional Raft HA config
+- `log` — format (text/json) and level (debug/info/warn/error)
+- `sessionStore` — optional Redis for STICKY balancing
 
 ### internal/model
 
@@ -36,7 +49,7 @@ Pure domain types. No business logic, no I/O. Key types:
 - **Route** — matching rules + action (forward/redirect/directResponse) + onError fallbacks.
 - **RouteGroup** — a named collection of routes with shared matchers.
 - **Destination** — an upstream target with endpoints, timeouts, TLS, balancing, circuit breaker, health checks, outlier detection.
-- **Listener** — a network entry point with optional TLS, HTTP/2, metrics.
+- **Listener** — a network entry point with optional TLS/mTLS, GroupIDs for explicit routing topology.
 - **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog.
 - **Snapshot** — immutable point-in-time capture of all configuration.
 
@@ -53,58 +66,40 @@ Pluggable persistence interface. Implementations:
 REST API built on `net/http`. Structured as:
 
 - **router** — registers all routes, applies middleware chain.
-- **handlers/** — one handler file per resource.
-- **middleware/** — request logging (httpsnoop), panic recovery.
+- **handlers/** — one handler file per resource (routes, groups, destinations, listeners, middlewares, snapshots, sync, raft, debug).
+- **middleware/** — request logging, panic recovery.
 - **respond/** — JSON response helpers.
 
-### internal/proxy
+### internal/xds
 
-The native HTTP reverse proxy. Core files:
+The Envoy xDS translator and ADS server. Core files:
 
-- **router.go** — atomic routing table swap, request matching, metrics injection.
-- **table.go** — compiles routes, groups, destinations into a RoutingTable.
-- **handler.go** — forward/redirect/directResponse handlers, onError evaluation, middleware chain.
-- **endpoint.go** — creates Endpoints with Transport (all 7 destination timeouts wired).
-- **pool.go** — DestinationPool with balancer, circuit breaker, session store.
-- **balancer.go** — RoundRobin, Random, LeastRequest, RingHash, Maglev.
-- **pinning.go** — weighted consistent hash ring for destination pinning.
-- **retry.go** — retryTransport with backoff, per-attempt timeout, onRetry callback.
-- **listener.go** — ListenerManager (start/stop/reconcile HTTP servers, metrics, timeouts).
-- **circuit.go** — CircuitBreaker (configurable threshold and open duration).
-- **health.go** — HealthChecker (active HTTP probes with thresholds).
-- **outlier.go** — OutlierDetector (ejects endpoints by consecutive errors).
-- **errors.go** — ProxyError classification, onError rule evaluation, JSON error responses.
-- **metrics.go** — MetricsCollector (22 Prometheus metrics, per-listener registry).
-- **session.go** — SessionStore interface for sticky sessions.
-
-### internal/proxy/middlewares
-
-One file per middleware type. All use `httpsnoop` for response interception.
-Each middleware that launches goroutines returns a stop function for cleanup on table swap.
-
-### internal/proxy/celeval
-
-CEL expression compiler and evaluator for route matching, skipWhen/onlyWhen, and JWT assertClaims.
+- **server.go** — gRPC ADS server, `PushSnapshot` entry point, cluster builder (LB policy, circuit breaker, outlier detection, health checks, upstream TLS, HTTP/2), route builder (forward with retry/rewrite/mirror/hash policy, redirect, direct response), listener builder (TLS/mTLS, HCM).
+- **helpers.go** — HCM builder with access logs, downstream TLS builder, TLS params mapper, naming helpers, protobuf duration helpers.
+- **middlewares.go** — translates Vrata Middleware entities to Envoy HTTP filters: CORS (native), JWT (native), ExtAuthz (native HTTP + gRPC), RateLimit (native local), Headers (native header_mutation), AccessLog (file access logger on HCM), InlineAuthz (Go plugin), XFCC (Go plugin, auto on mTLS).
 
 ### internal/gateway
 
-Orchestrator. Subscribes to store events, rebuilds the routing table, swaps it atomically, reconciles listeners, updates health checker and outlier detector.
+Orchestrator. Subscribes to store events, fetches all resources, merges
+dynamically discovered endpoints, calls `xds.PushSnapshot` to push the
+full xDS snapshot to all connected Envoy nodes. Every store mutation
+triggers a full rebuild.
 
 ### internal/raft
 
-Embedded Raft consensus via hashicorp/raft. FSM backed by bbolt. Peer discovery via static list or DNS. Write-forwarding from followers to leader.
+Embedded Raft consensus via hashicorp/raft. FSM backed by bbolt. Peer
+discovery via static list or DNS. Write-forwarding from followers to leader.
 
 ### internal/k8s
 
-Kubernetes EndpointSlice and ExternalName Service watcher. Resolves pod IPs for destinations with `discovery.type: "kubernetes"`.
-
-### internal/sync
-
-SSE client for proxy-mode instances. Connects to `GET /api/v1/sync/snapshot`, receives versioned snapshots, applies them atomically.
+Kubernetes EndpointSlice and ExternalName Service watcher. Resolves pod IPs
+for destinations with `discovery.type: "kubernetes"`. Triggers gateway
+rebuild on changes.
 
 ### internal/session
 
-Session store interface and Redis implementation for STICKY balancing.
+Session store interface and Redis implementation for STICKY balancing
+(used by the sticky Envoy Go filter extension).
 
 ## Data Flow
 
@@ -112,24 +107,23 @@ Session store interface and Redis implementation for STICKY balancing.
 Operator (API calls)
         │
         ▼
-  REST API (net/http)
+  REST API (net/http, :8080)
         │  validates, writes
         ▼
      Store (bbolt) ───── Raft log (HA) ───── Other CP nodes
         │  publishes StoreEvent
         ▼
     Gateway
-        │  rebuilds routing table
+        │  rebuilds xDS snapshot
         ▼
-   Proxy Router ←── Listeners (0..N ports)
-        │                    ↑
-        │              Users connect here
+   xDS Server (gRPC, :18000)
+        │  ADS push
+        ▼
+  Envoy fleet ←── Users connect here
+        │
         ▼
   Destinations (upstream services)
 ```
-
-In proxy mode, the Gateway is replaced by the SSE sync client which receives
-snapshots from the control plane and applies them.
 
 ## Folder Structure
 
@@ -141,13 +135,10 @@ server/
 │   ├── model/                  # Pure domain types
 │   ├── store/                  # Store interface + bolt + memory + raftstore
 │   ├── api/                    # REST API (handlers, middleware, respond, router)
-│   ├── proxy/                  # Native HTTP proxy
-│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog
-│   │   └── celeval/            # CEL expression evaluation
-│   ├── gateway/gateway.go      # Store → proxy bridge
+│   ├── xds/                    # Envoy xDS translator + ADS server
+│   ├── gateway/gateway.go      # Store → xDS bridge
 │   ├── raft/                   # Raft consensus (FSM, node, peer discovery)
 │   ├── k8s/watcher.go          # Kubernetes endpoint discovery
-│   ├── sync/client.go          # SSE sync client (proxy mode)
 │   └── session/                # Session store interface + Redis
 ├── proto/                      # gRPC proto definitions (extproc, extauthz)
 ├── test/e2e/                   # End-to-end tests
@@ -155,3 +146,12 @@ server/
 ├── Dockerfile
 └── go.mod
 ```
+
+## What does NOT exist in this branch
+
+The following packages from the main branch were removed:
+
+- `internal/proxy/` — the native Go reverse proxy (replaced by Envoy fleet)
+- `internal/sync/` — SSE client for proxy-mode instances (replaced by xDS ADS)
+- `internal/proxy/middlewares/` — Go middleware implementations (replaced by Envoy native filters + Go plugins)
+- `internal/proxy/celeval/` — CEL compiler/evaluator (moved to extensions/inlineauthz for Envoy)

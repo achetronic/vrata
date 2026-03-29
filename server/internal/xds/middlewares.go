@@ -7,15 +7,19 @@ package xds
 import (
 	"time"
 
+	accesslogv3 "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
-	stringmatcherv3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	corsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/cors/v3"
 	extauthzv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/ext_authz/v3"
+	mutationrulesv3 "github.com/envoyproxy/go-control-plane/envoy/config/common/mutation_rules/v3"
+	headermutationv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/header_mutation/v3"
 	jwtv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/jwt_authn/v3"
 	ratelimitv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/local_ratelimit/v3"
 	routerv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/http/router/v3"
+	fileaccesslogv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/access_loggers/file/v3"
 	httpmgr "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+	stringmatcherv3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	matcherv3 "github.com/envoyproxy/go-control-plane/envoy/type/matcher/v3"
 	typev3 "github.com/envoyproxy/go-control-plane/envoy/type/v3"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -49,6 +53,10 @@ func buildHTTPFilters(middlewares []model.Middleware, withXFCC bool) []*httpmgr.
 			f = buildExtAuthzFilter(mw)
 		case model.MiddlewareTypeRateLimit:
 			f = buildRateLimitFilter(mw)
+		case model.MiddlewareTypeHeaders:
+			f = buildHeadersFilter(mw)
+		case model.MiddlewareTypeAccessLog:
+			// AccessLog is handled at the HCM level, not as an HTTP filter.
 		case "inlineAuthz":
 			f = buildGoPluginFilter("vrata.inlineauthz", "/etc/envoy/extensions/inlineauthz.so")
 		}
@@ -271,6 +279,163 @@ func buildGoPluginFilter(pluginName, libPath string) *httpmgr.HttpFilter {
 	return &httpmgr.HttpFilter{
 		Name:       "envoy.filters.http.dynamic_modules",
 		ConfigType: &httpmgr.HttpFilter_TypedConfig{TypedConfig: cfgAny},
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Headers (header mutation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+func buildHeadersFilter(mw model.Middleware) *httpmgr.HttpFilter {
+	if mw.Headers == nil {
+		return nil
+	}
+
+	cfg := &headermutationv3.HeaderMutation{
+		Mutations: &headermutationv3.Mutations{},
+	}
+
+	for _, h := range mw.Headers.RequestHeadersToAdd {
+		cfg.Mutations.RequestMutations = append(cfg.Mutations.RequestMutations,
+			&mutationrulesv3.HeaderMutation{
+				Action: &mutationrulesv3.HeaderMutation_Append{
+					Append: &corev3.HeaderValueOption{
+						Header:       &corev3.HeaderValue{Key: h.Key, Value: h.Value},
+						AppendAction: corev3.HeaderValueOption_APPEND_IF_EXISTS_OR_ADD,
+					},
+				},
+			},
+		)
+	}
+	for _, name := range mw.Headers.RequestHeadersToRemove {
+		cfg.Mutations.RequestMutations = append(cfg.Mutations.RequestMutations,
+			&mutationrulesv3.HeaderMutation{
+				Action: &mutationrulesv3.HeaderMutation_Remove{Remove: name},
+			},
+		)
+	}
+	for _, h := range mw.Headers.ResponseHeadersToAdd {
+		cfg.Mutations.ResponseMutations = append(cfg.Mutations.ResponseMutations,
+			&mutationrulesv3.HeaderMutation{
+				Action: &mutationrulesv3.HeaderMutation_Append{
+					Append: &corev3.HeaderValueOption{
+						Header:       &corev3.HeaderValue{Key: h.Key, Value: h.Value},
+						AppendAction: corev3.HeaderValueOption_APPEND_IF_EXISTS_OR_ADD,
+					},
+				},
+			},
+		)
+	}
+	for _, name := range mw.Headers.ResponseHeadersToRemove {
+		cfg.Mutations.ResponseMutations = append(cfg.Mutations.ResponseMutations,
+			&mutationrulesv3.HeaderMutation{
+				Action: &mutationrulesv3.HeaderMutation_Remove{Remove: name},
+			},
+		)
+	}
+
+	cfgAny, _ := anypb.New(cfg)
+	return &httpmgr.HttpFilter{
+		Name:       "envoy.filters.http.header_mutation",
+		ConfigType: &httpmgr.HttpFilter_TypedConfig{TypedConfig: cfgAny},
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AccessLog (file-based, translated to HCM access_log config)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// buildAccessLogs translates Vrata AccessLog middlewares into Envoy access log
+// configs that are attached to the HCM, not as HTTP filters.
+func buildAccessLogs(middlewares []model.Middleware) []*accesslogv3.AccessLog {
+	var logs []*accesslogv3.AccessLog
+	for _, mw := range middlewares {
+		if mw.Type != model.MiddlewareTypeAccessLog || mw.AccessLog == nil {
+			continue
+		}
+
+		path := mw.AccessLog.Path
+		if path == "" || path == "stdout" {
+			path = "/dev/stdout"
+		}
+
+		var fileCfg *fileaccesslogv3.FileAccessLog
+		if mw.AccessLog.JSON {
+			fields := map[string]interface{}{}
+			if mw.AccessLog.OnResponse != nil {
+				for k, v := range mw.AccessLog.OnResponse.Fields {
+					fields[k] = envoyAccessLogVar(v)
+				}
+			}
+			if mw.AccessLog.OnRequest != nil {
+				for k, v := range mw.AccessLog.OnRequest.Fields {
+					fields[k] = envoyAccessLogVar(v)
+				}
+			}
+			if len(fields) == 0 {
+				fields = defaultAccessLogFields()
+			}
+			jsonFormat, _ := structpb.NewStruct(fields)
+			fileCfg = &fileaccesslogv3.FileAccessLog{
+				Path: path,
+				AccessLogFormat: &fileaccesslogv3.FileAccessLog_LogFormat{
+					LogFormat: &corev3.SubstitutionFormatString{
+						Format: &corev3.SubstitutionFormatString_JsonFormat{JsonFormat: jsonFormat},
+					},
+				},
+			}
+		} else {
+			fileCfg = &fileaccesslogv3.FileAccessLog{
+				Path: path,
+			}
+		}
+
+		fileAny, err := anypb.New(fileCfg)
+		if err != nil {
+			continue
+		}
+		logs = append(logs, &accesslogv3.AccessLog{
+			Name:       "envoy.access_loggers.file",
+			ConfigType: &accesslogv3.AccessLog_TypedConfig{TypedConfig: fileAny},
+		})
+	}
+	return logs
+}
+
+// envoyAccessLogVar translates Vrata access log variables to Envoy command operators.
+func envoyAccessLogVar(v string) string {
+	replacements := map[string]string{
+		"${request.method}":    "%REQ(:METHOD)%",
+		"${request.path}":      "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%",
+		"${request.host}":      "%REQ(:AUTHORITY)%",
+		"${request.authority}":  "%REQ(:AUTHORITY)%",
+		"${request.scheme}":    "%REQ(X-FORWARDED-PROTO)%",
+		"${request.clientIp}":  "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%",
+		"${response.status}":   "%RESPONSE_CODE%",
+		"${response.bytes}":    "%BYTES_SENT%",
+		"${duration.ms}":       "%DURATION%",
+		"${duration.us}":       "%DURATION%",
+		"${duration.s}":        "%DURATION%",
+	}
+	for from, to := range replacements {
+		if v == from {
+			return to
+		}
+	}
+	return v
+}
+
+// defaultAccessLogFields returns a sensible set of access log fields.
+func defaultAccessLogFields() map[string]interface{} {
+	return map[string]interface{}{
+		"method":     "%REQ(:METHOD)%",
+		"path":       "%REQ(X-ENVOY-ORIGINAL-PATH?:PATH)%",
+		"authority":  "%REQ(:AUTHORITY)%",
+		"status":     "%RESPONSE_CODE%",
+		"duration":   "%DURATION%",
+		"bytes_sent": "%BYTES_SENT%",
+		"upstream":   "%UPSTREAM_HOST%",
+		"client_ip":  "%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%",
 	}
 }
 
