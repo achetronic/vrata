@@ -7,27 +7,35 @@ import (
 	"fmt"
 	"time"
 
+	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	listenerv3 "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
-	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	httpmgr "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
+	tlsv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/transport_sockets/tls/v3"
 	"google.golang.org/protobuf/types/known/anypb"
 	durationpbpkg "google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
-// buildHCM builds an Envoy HTTP Connection Manager filter that references an
-// RDS route configuration by name.
-func buildHCM(routeConfigName string) *listenerv3.Filter {
+// buildHCM builds an Envoy HTTP Connection Manager filter with the given
+// route config name and HTTP filters (middlewares + router).
+func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter) *listenerv3.Filter {
+	// Default to just router if no filters provided.
+	if len(filters) == 0 {
+		filters = buildHTTPFilters(nil, false)
+	}
+
 	hcm := &httpmgr.HttpConnectionManager{
 		StatPrefix: "ingress_http",
 		RouteSpecifier: &httpmgr.HttpConnectionManager_Rds{
 			Rds: &httpmgr.Rds{
 				RouteConfigName: routeConfigName,
+				ConfigSource: &corev3.ConfigSource{
+					ConfigSourceSpecifier: &corev3.ConfigSource_Ads{Ads: &corev3.AggregatedConfigSource{}},
+					ResourceApiVersion:    corev3.ApiVersion_V3,
+				},
 			},
 		},
-		HttpFilters: []*httpmgr.HttpFilter{
-			{Name: "envoy.filters.http.router"},
-		},
+		HttpFilters: filters,
 	}
 
 	hcmAny, _ := anypb.New(hcm)
@@ -37,28 +45,73 @@ func buildHCM(routeConfigName string) *listenerv3.Filter {
 	}
 }
 
-// weightedCluster holds a cluster name and its relative weight.
+// buildDownstreamTLS builds an Envoy DownstreamTlsContext for TLS termination.
+// certPath and keyPath are paths inside the Envoy container.
+// minVersion/maxVersion map to TLS protocol versions ("TLSv1_2", "TLSv1_3", ...).
+// If requireClientCert is true, mTLS client auth is enabled with the given caPath.
+func buildDownstreamTLS(certPath, keyPath, caPath, minVersion, maxVersion string, requireClientCert bool) (*anypb.Any, error) {
+	tlsContext := &tlsv3.DownstreamTlsContext{
+		CommonTlsContext: &tlsv3.CommonTlsContext{
+			TlsCertificates: []*tlsv3.TlsCertificate{
+				{
+					CertificateChain: &corev3.DataSource{
+						Specifier: &corev3.DataSource_Filename{Filename: certPath},
+					},
+					PrivateKey: &corev3.DataSource{
+						Specifier: &corev3.DataSource_Filename{Filename: keyPath},
+					},
+				},
+			},
+			TlsParams: buildTLSParams(minVersion, maxVersion),
+		},
+	}
+
+	if requireClientCert && caPath != "" {
+		tlsContext.RequireClientCertificate = wrapperspb.Bool(true)
+		tlsContext.CommonTlsContext.ValidationContextType = &tlsv3.CommonTlsContext_ValidationContext{
+			ValidationContext: &tlsv3.CertificateValidationContext{
+				TrustedCa: &corev3.DataSource{
+					Specifier: &corev3.DataSource_Filename{Filename: caPath},
+				},
+			},
+		}
+	}
+
+	a, err := anypb.New(tlsContext)
+	if err != nil {
+		return nil, fmt.Errorf("marshalling downstream TLS context: %w", err)
+	}
+	return a, nil
+}
+
+// buildTLSParams maps Vrata TLS version strings to Envoy TlsParameters.
+func buildTLSParams(minVersion, maxVersion string) *tlsv3.TlsParameters {
+	params := &tlsv3.TlsParameters{}
+
+	minMap := map[string]tlsv3.TlsParameters_TlsProtocol{
+		"TLSv1_0": tlsv3.TlsParameters_TLSv1_0,
+		"TLSv1_1": tlsv3.TlsParameters_TLSv1_1,
+		"TLSv1_2": tlsv3.TlsParameters_TLSv1_2,
+		"TLSv1_3": tlsv3.TlsParameters_TLSv1_3,
+	}
+
+	if v, ok := minMap[minVersion]; ok {
+		params.TlsMinimumProtocolVersion = v
+	} else {
+		params.TlsMinimumProtocolVersion = tlsv3.TlsParameters_TLSv1_2
+	}
+
+	if v, ok := minMap[maxVersion]; ok {
+		params.TlsMaximumProtocolVersion = v
+	}
+
+	return params
+}
+
+// weightedCluster holds a cluster name and its relative weight for weighted routing.
 type weightedCluster struct {
 	name   string
 	weight int
-}
-
-// buildWeightedClusters builds a weighted cluster action for load balancing
-// across multiple destinations. Used when a Group has multiple destinations
-// with weights.
-func buildWeightedClusters(clusters []weightedCluster) *routev3.RouteAction_WeightedClusters {
-	wc := make([]*routev3.WeightedCluster_ClusterWeight, 0, len(clusters))
-	for _, c := range clusters {
-		wc = append(wc, &routev3.WeightedCluster_ClusterWeight{
-			Name:   c.name,
-			Weight: wrapperspb.UInt32(uint32(c.weight)),
-		})
-	}
-	return &routev3.RouteAction_WeightedClusters{
-		WeightedClusters: &routev3.WeightedCluster{
-			Clusters: wc,
-		},
-	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,3 +143,4 @@ func parseDuration(s string) (*durationpbpkg.Duration, error) {
 	}
 	return durationpbpkg.New(d), nil
 }
+

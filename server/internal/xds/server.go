@@ -88,7 +88,7 @@ func (s *Server) PushSnapshot(
 	version := strconv.FormatInt(s.version.Add(1), 10)
 
 	clusters, eps := buildClusters(destinations)
-	envoyListeners, rcs := buildListenersAndRoutes(listeners, groups, routes)
+	envoyListeners, rcs := buildListenersAndRoutes(listeners, groups, routes, middlewares)
 
 	resources := map[string][]cachetypes.Resource{
 		resourcev3.ClusterType:  toResourceSlice(clusters),
@@ -148,7 +148,7 @@ func buildClusters(destinations []model.Destination) ([]*clusterv3.Cluster, []*e
 			Endpoints:   []*endpointv3.LocalityLbEndpoints{{LbEndpoints: lbeps}},
 		})
 
-		clusters = append(clusters, &clusterv3.Cluster{
+		cluster := &clusterv3.Cluster{
 			Name:                 cname,
 			ConnectTimeout:       durationpb(2),
 			ClusterDiscoveryType: &clusterv3.Cluster_Type{Type: clusterv3.Cluster_EDS},
@@ -158,7 +158,56 @@ func buildClusters(destinations []model.Destination) ([]*clusterv3.Cluster, []*e
 				},
 			},
 			LbPolicy: clusterv3.Cluster_ROUND_ROBIN,
-		})
+		}
+
+		// Circuit breaker.
+		if d.Options != nil && d.Options.CircuitBreaker != nil {
+			cb := d.Options.CircuitBreaker
+			threshold := &clusterv3.CircuitBreakers_Thresholds{}
+			if cb.MaxConnections > 0 {
+				threshold.MaxConnections = wrapperspb.UInt32(cb.MaxConnections)
+			}
+			if cb.MaxPendingRequests > 0 {
+				threshold.MaxPendingRequests = wrapperspb.UInt32(cb.MaxPendingRequests)
+			}
+			if cb.MaxRequests > 0 {
+				threshold.MaxRequests = wrapperspb.UInt32(cb.MaxRequests)
+			}
+			if cb.MaxRetries > 0 {
+				threshold.MaxRetries = wrapperspb.UInt32(cb.MaxRetries)
+			}
+			cluster.CircuitBreakers = &clusterv3.CircuitBreakers{
+				Thresholds: []*clusterv3.CircuitBreakers_Thresholds{threshold},
+			}
+		}
+
+		// Outlier detection.
+		if d.Options != nil && d.Options.OutlierDetection != nil {
+			od := d.Options.OutlierDetection
+			detection := &clusterv3.OutlierDetection{}
+			if od.Consecutive5xx > 0 {
+				detection.Consecutive_5Xx = wrapperspb.UInt32(od.Consecutive5xx)
+			}
+			if od.ConsecutiveGatewayErrors > 0 {
+				detection.ConsecutiveGatewayFailure = wrapperspb.UInt32(od.ConsecutiveGatewayErrors)
+			}
+			if od.MaxEjectionPercent > 0 {
+				detection.MaxEjectionPercent = wrapperspb.UInt32(od.MaxEjectionPercent)
+			}
+			if od.Interval != "" {
+				if dur, err := parseDuration(od.Interval); err == nil {
+					detection.Interval = dur
+				}
+			}
+			if od.BaseEjectionTime != "" {
+				if dur, err := parseDuration(od.BaseEjectionTime); err == nil {
+					detection.BaseEjectionTime = dur
+				}
+			}
+			cluster.OutlierDetection = detection
+		}
+
+		clusters = append(clusters, cluster)
 	}
 
 	return clusters, eps
@@ -172,7 +221,13 @@ func buildListenersAndRoutes(
 	listeners []model.Listener,
 	groups []model.RouteGroup,
 	routes []model.Route,
+	middlewares []model.Middleware,
 ) ([]*listenerv3.Listener, []*routev3.RouteConfiguration) {
+	// Index middlewares by ID.
+	mwByID := make(map[string]model.Middleware, len(middlewares))
+	for _, m := range middlewares {
+		mwByID[m.ID] = m
+	}
 	// Index routes by ID for O(1) lookup.
 	routeByID := make(map[string]model.Route, len(routes))
 	for _, r := range routes {
@@ -239,7 +294,21 @@ func buildListenersAndRoutes(
 			VirtualHosts: vhosts,
 		})
 
-		envoyListeners = append(envoyListeners, buildEnvoyListener(l, rcName))
+		// Collect middlewares active on any group attached to this listener.
+		activeMWIDs := make(map[string]struct{})
+		for _, g := range targetGroups {
+			for _, mid := range g.MiddlewareIDs {
+				activeMWIDs[mid] = struct{}{}
+			}
+		}
+		activeMWs := make([]model.Middleware, 0, len(activeMWIDs))
+		for mid := range activeMWIDs {
+			if mw, ok := mwByID[mid]; ok {
+				activeMWs = append(activeMWs, mw)
+			}
+		}
+
+		envoyListeners = append(envoyListeners, buildEnvoyListener(l, rcName, activeMWs))
 	}
 
 	return envoyListeners, rcs
@@ -340,11 +409,40 @@ func buildRouteMatch(r model.Route, g model.RouteGroup) *routev3.RouteMatch {
 	return match
 }
 
-// buildEnvoyListener constructs an Envoy Listener with HCM.
-func buildEnvoyListener(l model.Listener, rcName string) *listenerv3.Listener {
+// buildEnvoyListener constructs an Envoy Listener with HCM, TLS, and middleware filters.
+func buildEnvoyListener(l model.Listener, rcName string, activeMWs []model.Middleware) *listenerv3.Listener {
 	addr := l.Address
 	if addr == "" {
 		addr = "0.0.0.0"
+	}
+
+	// Build HTTP filters: inject xfcc when mTLS is configured.
+	hasMTLS := l.TLS != nil && l.TLS.ClientAuth != nil && l.TLS.ClientAuth.CAFile != ""
+	httpFilters := buildHTTPFilters(activeMWs, hasMTLS)
+	hcm := buildHCM(rcName, httpFilters)
+
+	filterChain := &listenerv3.FilterChain{
+		Filters: []*listenerv3.Filter{hcm},
+	}
+
+	// TLS termination.
+	if l.TLS != nil && l.TLS.CertPath != "" && l.TLS.KeyPath != "" {
+		caPath := ""
+		requireClient := false
+		if l.TLS.ClientAuth != nil {
+			caPath = l.TLS.ClientAuth.CAFile
+			requireClient = l.TLS.ClientAuth.Mode == "require" || l.TLS.ClientAuth.Mode == "optional"
+		}
+		if tlsAny, err := buildDownstreamTLS(
+			l.TLS.CertPath, l.TLS.KeyPath, caPath,
+			l.TLS.MinVersion, l.TLS.MaxVersion,
+			requireClient,
+		); err == nil {
+			filterChain.TransportSocket = &corev3.TransportSocket{
+				Name: "envoy.transport_sockets.tls",
+				ConfigType: &corev3.TransportSocket_TypedConfig{TypedConfig: tlsAny},
+			}
+		}
 	}
 
 	return &listenerv3.Listener{
@@ -357,9 +455,7 @@ func buildEnvoyListener(l model.Listener, rcName string) *listenerv3.Listener {
 				},
 			},
 		},
-		FilterChains: []*listenerv3.FilterChain{
-			{Filters: []*listenerv3.Filter{buildHCM(rcName)}},
-		},
+		FilterChains: []*listenerv3.FilterChain{filterChain},
 	}
 }
 
