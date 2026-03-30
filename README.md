@@ -66,14 +66,14 @@ Two independent balancing levels — the first picks which service (3 algorithms
 </details>
 
 <details>
-<summary>🔹 Resilience — retries, circuit breakers, fallback routes</summary>
+<summary>🔹 Resilience — retries, circuit breakers, structured error responses</summary>
 <br/>
 
 - **Retries** with exponential backoff and configurable conditions
 - **Circuit breaker** per destination with half-open probe
 - **Health checks** — active HTTP probes per endpoint
 - **Outlier detection** — passive ejection based on consecutive errors
-- **`onError` fallback routes** — forward to a fallback, return a custom response, or redirect when the upstream fails
+- **Structured proxy errors** — configurable detail level per listener (`minimal`, `standard`, `full`) for all infrastructure failures
 
 </details>
 
