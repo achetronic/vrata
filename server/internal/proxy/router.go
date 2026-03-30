@@ -158,7 +158,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	writeProxyError(w, http.StatusNotFound, "no matching route")
+	writeProxyError(w, req, &ProxyError{Type: "no_route", Status: http.StatusNotFound, Message: "no matching route"})
 }
 
 // match checks if the request matches this compiled route.

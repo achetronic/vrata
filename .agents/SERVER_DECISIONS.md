@@ -797,7 +797,7 @@ registry — each listener gets its own isolated registry.
 ## onError fallback actions on Route
 
 **Date**: 2026-03-19
-**Status**: Implemented
+**Status**: Superseded — removed on 2026-03-30. See "onError removed" decision below.
 
 `Route.OnError` is an ordered list of `OnErrorRule` entries evaluated when the
 forward action fails. Each rule has an `on` filter (list of `ProxyErrorType` values)
@@ -951,5 +951,69 @@ of the service they connect to.
 without adding them to this table. Do not put connection-level timeouts on
 routes — they belong on the destination. The route only controls the external
 watchdog (`forward.timeouts.request`).
+
+---
+
+## onError removed — proxy errors are structured responses, not fallback actions
+
+**Date**: 2026-03-30
+**Status**: Implemented (supersedes RouteAction refactor and original onError design)
+
+`Route.OnError` has been removed entirely. The `RouteAction` intermediate struct
+and `OnErrorRule` type no longer exist. The three action fields (`Forward`,
+`Redirect`, `DirectResponse`) live directly on `Route` as before.
+
+When a forward action fails (connection refused, timeout, circuit open, etc.),
+Vrata returns a structured JSON error response. The amount of detail is
+controlled by a `proxyErrors` configuration on the `Listener` entity.
+
+**Reasoning**: `onError` duplicated the entire route action model inside each
+rule. A forward fallback carried its own `ForwardAction` with destinations,
+balancing, retry, rewrite, mirror — all configuration that already existed on
+the primary route or on destinations. This caused structural duplication,
+bugs (degenerate sticky hashing, invisible metrics), and conceptual confusion
+(can a fallback forward have its own onError?). The feature tried to solve
+upstream failover at the wrong abstraction level. Upstream failover belongs
+in the destination layer (priority levels, aggregate destinations) — not as
+inline route actions. For the common case (return a meaningful error to the
+client), a structured JSON response with configurable detail level is simpler
+and sufficient.
+
+**Do not**: Re-introduce `onError` or any inline fallback action system on
+routes. Upstream failover should be implemented via destination priority
+levels when needed. Do not put proxy error formatting config on routes or
+groups — it belongs on the listener (the entry point that faces the client).
+
+---
+
+## Proxy error responses: structured JSON with configurable detail levels
+
+**Date**: 2026-03-30
+**Status**: Implemented
+
+All proxy-generated error responses (infrastructure failures, no matching
+route, request headers too large) return structured JSON with a classified
+error type. The detail level is configured per-listener via
+`listener.proxyErrors.detail`:
+
+| Level      | Fields                                            |
+|------------|---------------------------------------------------|
+| `minimal`  | `error`, `status`                                 |
+| `standard` | `error`, `status`, `message`                      |
+| `full`     | `error`, `status`, `message`, `destination`, `endpoint`, `timestamp` |
+
+Default: `standard`. The detail level is injected into the request context
+by the listener middleware and read by `writeProxyError`.
+
+**Reasoning**: A public-facing listener should expose minimal internal
+context (no destination IDs, no endpoint IPs). An internal listener used
+for debugging benefits from full context. Making it per-listener follows
+the same pattern as metrics (also per-listener) and allows a single proxy
+to serve both public and internal traffic with appropriate error verbosity.
+
+**Do not**: Add per-route or per-destination error detail overrides. Do not
+add a field-level configuration (individual bools per field) — the three
+levels cover all practical needs. If a new field is added in the future,
+assign it to the appropriate level.
 
 ---

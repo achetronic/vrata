@@ -44,6 +44,11 @@ type Listener struct {
 	// Timeouts controls how long the listener waits at each stage of the
 	// client connection lifecycle. When nil, sensible defaults are used.
 	Timeouts *ListenerTimeouts `json:"timeouts,omitempty" yaml:"timeouts,omitempty"`
+
+	// ProxyErrors configures how Vrata formats its own error responses
+	// (infrastructure failures, no matching route, etc.). When nil,
+	// "standard" detail level is used.
+	ProxyErrors *ProxyErrors `json:"proxyErrors,omitempty" yaml:"proxyErrors,omitempty"`
 }
 
 // ListenerTimeouts configures timeout durations for client connections.
@@ -202,4 +207,39 @@ type ListenerTLS struct {
 	// MaxVersion is the maximum TLS protocol version to accept.
 	// Accepted values: same as MinVersion. If empty, no upper bound is set.
 	MaxVersion string `json:"maxVersion,omitempty" yaml:"maxVersion,omitempty"`
+}
+
+// ProxyErrorDetail controls how much information Vrata includes in
+// proxy-generated error responses. Higher levels expose more internal
+// context, which is useful for debugging but may be sensitive in
+// public-facing listeners.
+type ProxyErrorDetail string
+
+const (
+	// ProxyErrorDetailMinimal includes only the error type and HTTP status.
+	ProxyErrorDetailMinimal ProxyErrorDetail = "minimal"
+
+	// ProxyErrorDetailStandard includes the error type, HTTP status, and
+	// a human-readable message. This is the default.
+	ProxyErrorDetailStandard ProxyErrorDetail = "standard"
+
+	// ProxyErrorDetailFull includes all available context: error type,
+	// HTTP status, message, destination ID, endpoint address, and
+	// timestamp.
+	ProxyErrorDetailFull ProxyErrorDetail = "full"
+)
+
+// ProxyErrors configures how Vrata formats proxy-generated error responses.
+type ProxyErrors struct {
+	// Detail controls how much information is included in error responses.
+	// Accepted values: "minimal", "standard", "full". Default: "standard".
+	Detail ProxyErrorDetail `json:"detail,omitempty" yaml:"detail,omitempty"`
+}
+
+// ResolvedDetail returns the effective detail level, defaulting to "standard".
+func (pe *ProxyErrors) ResolvedDetail() ProxyErrorDetail {
+	if pe == nil || pe.Detail == "" {
+		return ProxyErrorDetailStandard
+	}
+	return pe.Detail
 }

@@ -12,6 +12,7 @@ A Listener is the entry point to Vrata's proxy. It opens a TCP port, accepts HTT
 3. **Negotiates protocol** — HTTP/1.1 by default, HTTP/2 if enabled (required for gRPC)
 4. **Enforces limits** — max header size, connection timeouts, idle timeouts
 5. **Serves metrics** — optionally exposes a Prometheus scrape endpoint on this listener's port
+6. **Formats proxy errors** — controls how much detail Vrata includes in its own error responses
 
 Each listener is independent. You can run multiple listeners on different ports with different configurations — for example one for public HTTPS and another for internal plaintext.
 
@@ -51,7 +52,8 @@ This creates a plaintext HTTP/1.1 listener on `0.0.0.0:3000` with default timeou
   "serverName": "vrata",
   "maxRequestHeadersKB": 64,
   "timeouts": { ... },
-  "metrics": { ... }
+  "metrics": { ... },
+  "proxyErrors": { "detail": "standard" }
 }
 ```
 
@@ -68,6 +70,7 @@ This creates a plaintext HTTP/1.1 listener on `0.0.0.0:3000` with default timeou
 | `maxRequestHeadersKB` | number | `0` | Max request header size in KB (0 = Go default ~1MB) | — |
 | `timeouts` | object | — | Client connection timeouts | [Listener Timeouts]({{< relref "timeouts" >}}) |
 | `metrics` | object | — | Prometheus metrics config | [Listener Metrics]({{< relref "metrics" >}}) |
+| `proxyErrors` | object | — | Proxy error response format | [Proxy Error Responses]({{< relref "proxy-errors" >}}) |
 
 ## Multiple listeners
 

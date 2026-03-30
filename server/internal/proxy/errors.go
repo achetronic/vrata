@@ -8,18 +8,16 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/achetronic/vrata/internal/model"
 )
 
 // ProxyError holds the typed error context when a forward action fails.
-// It is passed to the onError evaluation logic and, if a fallback forward
-// is triggered, its fields are injected as X-Vrata-Error-* headers.
 type ProxyError struct {
 	Type        model.ProxyErrorType
 	Status      int
@@ -28,19 +26,77 @@ type ProxyError struct {
 	Message     string
 }
 
-// proxyErrorBody is the JSON structure returned to the client when no
-// onError rule matches and Vrata must respond with a default error.
-type proxyErrorBody struct {
-	Error string `json:"error"`
+type proxyErrorDetailKey struct{}
+
+// withProxyErrorDetail stores the detail level on the request context.
+func withProxyErrorDetail(ctx context.Context, detail model.ProxyErrorDetail) context.Context {
+	return context.WithValue(ctx, proxyErrorDetailKey{}, detail)
 }
 
-// writeProxyError writes a JSON error response with the given status and message.
-// All proxy-generated error responses go through this function to ensure
-// consistent Content-Type and body format.
-func writeProxyError(w http.ResponseWriter, status int, msg string) {
+// proxyErrorDetailFromCtx reads the detail level from the request context.
+func proxyErrorDetailFromCtx(ctx context.Context) model.ProxyErrorDetail {
+	if v, ok := ctx.Value(proxyErrorDetailKey{}).(model.ProxyErrorDetail); ok {
+		return v
+	}
+	return model.ProxyErrorDetailStandard
+}
+
+// proxyErrorMinimalBody is the JSON structure for "minimal" detail level.
+type proxyErrorMinimalBody struct {
+	Error  string `json:"error"`
+	Status int    `json:"status"`
+}
+
+// proxyErrorStandardBody is the JSON structure for "standard" detail level.
+type proxyErrorStandardBody struct {
+	Error   string `json:"error"`
+	Status  int    `json:"status"`
+	Message string `json:"message"`
+}
+
+// proxyErrorFullBody is the JSON structure for "full" detail level.
+type proxyErrorFullBody struct {
+	Error       string `json:"error"`
+	Status      int    `json:"status"`
+	Message     string `json:"message"`
+	Destination string `json:"destination,omitempty"`
+	Endpoint    string `json:"endpoint,omitempty"`
+	Timestamp   string `json:"timestamp"`
+}
+
+// writeProxyError writes a structured JSON error response. The detail level
+// is read from the request context (set by the listener middleware). When
+// no ProxyError is available (e.g. no matching route), callers pass a
+// simple status + message and the function builds a minimal ProxyError
+// internally.
+func writeProxyError(w http.ResponseWriter, r *http.Request, pe *ProxyError) {
+	detail := proxyErrorDetailFromCtx(r.Context())
+
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(proxyErrorBody{Error: msg})
+	w.WriteHeader(pe.Status)
+
+	switch detail {
+	case model.ProxyErrorDetailMinimal:
+		json.NewEncoder(w).Encode(proxyErrorMinimalBody{
+			Error:  string(pe.Type),
+			Status: pe.Status,
+		})
+	case model.ProxyErrorDetailFull:
+		json.NewEncoder(w).Encode(proxyErrorFullBody{
+			Error:       string(pe.Type),
+			Status:      pe.Status,
+			Message:     pe.Message,
+			Destination: pe.Destination,
+			Endpoint:    pe.Endpoint,
+			Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		})
+	default:
+		json.NewEncoder(w).Encode(proxyErrorStandardBody{
+			Error:   string(pe.Type),
+			Status:  pe.Status,
+			Message: pe.Message,
+		})
+	}
 }
 
 // classifyError inspects a transport-level error and returns the corresponding
@@ -101,54 +157,6 @@ func classifyError(err error) model.ProxyErrorType {
 	}
 
 	return model.ProxyErrConnectionRefused
-}
-
-// matchesOnError returns true if the given error type matches any entry in
-// the rule's On list, including wildcard expansion.
-func matchesOnError(rule model.OnErrorRule, errType model.ProxyErrorType) bool {
-	for _, on := range rule.On {
-		if on == model.ProxyErrAll {
-			return true
-		}
-		if on == model.ProxyErrInfrastructure {
-			switch errType {
-			case model.ProxyErrConnectionRefused, model.ProxyErrConnectionReset,
-				model.ProxyErrDNSFailure, model.ProxyErrTimeout,
-				model.ProxyErrTLSHandshakeFailure, model.ProxyErrCircuitOpen,
-				model.ProxyErrNoDestination, model.ProxyErrNoEndpoint:
-				return true
-			}
-		}
-		if on == errType {
-			return true
-		}
-	}
-	return false
-}
-
-// findOnErrorRule evaluates the route's onError rules in order and returns
-// the first rule that matches the error type. Returns nil if no rule matches.
-func findOnErrorRule(rules []model.OnErrorRule, errType model.ProxyErrorType) *model.OnErrorRule {
-	for i := range rules {
-		if matchesOnError(rules[i], errType) {
-			return &rules[i]
-		}
-	}
-	return nil
-}
-
-// injectErrorHeaders adds X-Vrata-Error-* headers to the request so the
-// fallback destination knows why the request was rerouted.
-func injectErrorHeaders(r *http.Request, pe *ProxyError) {
-	r.Header.Set("X-Vrata-Error", string(pe.Type))
-	r.Header.Set("X-Vrata-Error-Status", fmt.Sprintf("%d", pe.Status))
-	if pe.Destination != "" {
-		r.Header.Set("X-Vrata-Error-Destination", pe.Destination)
-	}
-	if pe.Endpoint != "" {
-		r.Header.Set("X-Vrata-Error-Endpoint", pe.Endpoint)
-	}
-	r.Header.Set("X-Vrata-Original-Path", r.URL.Path)
 }
 
 // statusForErrorType returns the default HTTP status code for a proxy error.

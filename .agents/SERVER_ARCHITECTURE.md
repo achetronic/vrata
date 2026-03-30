@@ -33,10 +33,10 @@ YAML bytes before unmarshalling so that `${ENV_VAR}` references are resolved.
 
 Pure domain types. No business logic, no I/O. Key types:
 
-- **Route** — matching rules + action (forward/redirect/directResponse) + onError fallbacks.
+- **Route** — matching rules + action (forward/redirect/directResponse).
 - **RouteGroup** — a named collection of routes with shared matchers.
 - **Destination** — an upstream target with endpoints, timeouts, TLS, balancing, circuit breaker, health checks, outlier detection.
-- **Listener** — a network entry point with optional TLS, HTTP/2, metrics.
+- **Listener** — a network entry point with optional TLS, HTTP/2, metrics, proxy error formatting.
 - **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog.
 - **Snapshot** — immutable point-in-time capture of all configuration.
 
@@ -63,17 +63,17 @@ The native HTTP reverse proxy. Core files:
 
 - **router.go** — atomic routing table swap, request matching, metrics injection.
 - **table.go** — compiles routes, groups, destinations into a RoutingTable.
-- **handler.go** — forward/redirect/directResponse handlers, onError evaluation, middleware chain.
+- **handler.go** — forward/redirect/directResponse handlers, middleware chain.
 - **endpoint.go** — creates Endpoints with Transport (all 7 destination timeouts wired).
 - **pool.go** — DestinationPool with balancer, circuit breaker, session store.
 - **balancer.go** — RoundRobin, Random, LeastRequest, RingHash, Maglev.
 - **pinning.go** — weighted consistent hash ring for destination pinning.
 - **retry.go** — retryTransport with backoff, per-attempt timeout, onRetry callback.
-- **listener.go** — ListenerManager (start/stop/reconcile HTTP servers, metrics, timeouts).
+- **listener.go** — ListenerManager (start/stop/reconcile HTTP servers, metrics, timeouts, proxy error detail injection).
 - **circuit.go** — CircuitBreaker (configurable threshold and open duration).
 - **health.go** — HealthChecker (active HTTP probes with thresholds).
 - **outlier.go** — OutlierDetector (ejects endpoints by consecutive errors).
-- **errors.go** — ProxyError classification, onError rule evaluation, JSON error responses.
+- **errors.go** — ProxyError classification, structured JSON error responses with detail levels.
 - **metrics.go** — MetricsCollector (22 Prometheus metrics, per-listener registry).
 - **session.go** — SessionStore interface for sticky sessions.
 

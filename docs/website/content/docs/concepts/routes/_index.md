@@ -10,7 +10,6 @@ A Route defines how to match incoming HTTP requests and what to do with them. It
 1. **Matches requests** — by path, headers, methods, hostnames, query params, gRPC flag, or CEL expressions
 2. **Decides what action to take** — forward to a backend, redirect, or return a fixed response
 3. **Applies middlewares** — any number of middlewares in order
-4. **Handles errors** — onError rules define fallback actions when the upstream fails
 
 Each route operates in exactly **one** of three modes: `forward`, `redirect`, or `directResponse`.
 
@@ -46,8 +45,7 @@ curl -X POST localhost:8080/api/v1/routes \
   "redirect": { ... },
   "directResponse": { ... },
   "middlewareIds": ["jwt-auth", "cors"],
-  "middlewareOverrides": { ... },
-  "onError": [{ ... }]
+  "middlewareOverrides": { ... }
 }
 ```
 
@@ -64,7 +62,6 @@ Only one of `forward`, `redirect`, or `directResponse` should be set.
 | `directResponse` | object | Return fixed response (`status`, `body`) | — |
 | `middlewareIds` | array | Middleware IDs to apply (in order) | — |
 | `middlewareOverrides` | map | Per-middleware overrides (skipWhen, onlyWhen, disabled) | — |
-| `onError` | array | Fallback rules when forward fails | [Error Handling]({{< relref "on-error" >}}) |
 
 ## Forward fields
 
@@ -87,4 +84,4 @@ Routes are evaluated in this order:
 3. Then regex matches (`pathRegex`)
 4. Within the same path type, more specific matchers (more headers, hostnames, etc.) win
 
-The first matching route handles the request. If no route matches, Vrata returns `404 Not Found`.
+The first matching route handles the request. If no route matches, Vrata returns a structured JSON error. The detail level is controlled by the listener's [`proxyErrors`]({{< relref "/docs/concepts/listeners/proxy-errors" >}}) setting.

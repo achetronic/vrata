@@ -22,7 +22,7 @@ How long each stage of the **upstream connection** takes. Configured on the dest
 
 | Field | Go field | Default | What happens when it fires |
 |-------|----------|---------|---------------------------|
-| `request` | `Client.Timeout` | `30s` | Total call exceeded → 502 or onError |
+| `request` | `Client.Timeout` | `30s` | Total call exceeded → structured error (502) |
 | `connect` | `Dialer.Timeout` | `5s` | TCP connect failed → connection_refused |
 | `dualStackFallback` | `Dialer.FallbackDelay` | `300ms` | Try other IP family (IPv4↔IPv6) |
 | `tlsHandshake` | `TLSHandshakeTimeout` | `5s` | TLS failed → tls_handshake_failure |

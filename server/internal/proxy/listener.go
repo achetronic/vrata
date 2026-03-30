@@ -154,11 +154,21 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 					}
 				}
 				if totalSize > int(l.MaxRequestHeadersKB)*1024 {
-					writeProxyError(w, http.StatusRequestHeaderFieldsTooLarge, "request headers too large")
+					writeProxyError(w, r, &ProxyError{Type: "request_headers_too_large", Status: http.StatusRequestHeaderFieldsTooLarge, Message: "request headers too large"})
 					return
 				}
 			}
 			original.ServeHTTP(w, r)
+		})
+	}
+
+	// Inject proxy error detail level into request context.
+	{
+		detail := l.ProxyErrors.ResolvedDetail()
+		original := srv.Handler
+		srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := withProxyErrorDetail(r.Context(), detail)
+			original.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 
@@ -264,6 +274,9 @@ func sameListener(a, b model.Listener) bool {
 		return false
 	}
 	if !sameTLS(a.TLS, b.TLS) {
+		return false
+	}
+	if a.ProxyErrors.ResolvedDetail() != b.ProxyErrors.ResolvedDetail() {
 		return false
 	}
 	return sameMetrics(a.Metrics, b.Metrics)
