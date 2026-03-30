@@ -44,7 +44,7 @@ func buildRouteHandler(
 	case route.Redirect != nil:
 		handler = redirectHandler(route.Redirect)
 	case route.Forward != nil:
-		handler = forwardHandler(route.Forward, route.OnError, pools, group, route.ID, route.Name, sessStore)
+		handler = forwardHandler(route.Forward, pools, group, route.ID, route.Name, sessStore)
 	default:
 		handler = http.NotFoundHandler()
 	}
@@ -296,7 +296,7 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 }
 
 // forwardHandler creates a handler that proxies to upstream destinations.
-func forwardHandler(fwd *model.ForwardAction, onError []model.OnErrorRule, pools map[string]*DestinationPool, group *model.RouteGroup, routeID string, routeName string, sessStore SessionStore) http.Handler {
+func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool, group *model.RouteGroup, routeID string, routeName string, sessStore SessionStore) http.Handler {
 	var pinRing *destinationRing
 	if fwd.DestinationBalancing != nil &&
 		(fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash ||
@@ -319,7 +319,7 @@ func forwardHandler(fwd *model.ForwardAction, onError []model.OnErrorRule, pools
 		pool := pickDestinationPool(fwd, pools, r, routeID, pinRing, w, sessStore)
 		if pool == nil {
 			pe := &ProxyError{Type: model.ProxyErrNoDestination, Status: http.StatusBadGateway, Message: "no destination available"}
-			handleProxyError(w, r, pe, onError, pools, sessStore)
+			writeProxyError(w, r, pe)
 			return
 		}
 
@@ -333,13 +333,13 @@ func forwardHandler(fwd *model.ForwardAction, onError []model.OnErrorRule, pools
 		}
 		if endpoint == nil {
 			pe := &ProxyError{Type: model.ProxyErrNoEndpoint, Status: http.StatusBadGateway, Destination: pool.Destination.ID, Message: "no healthy endpoint"}
-			handleProxyError(w, r, pe, onError, pools, sessStore)
+			writeProxyError(w, r, pe)
 			return
 		}
 
 		if pool.CircuitBreaker != nil && !pool.CircuitBreaker.Allow() {
 			pe := &ProxyError{Type: model.ProxyErrCircuitOpen, Status: http.StatusServiceUnavailable, Destination: pool.Destination.ID, Message: "circuit breaker open"}
-			handleProxyError(w, r, pe, onError, pools, sessStore)
+			writeProxyError(w, r, pe)
 			return
 		}
 		if pool.CircuitBreaker != nil {
@@ -432,7 +432,7 @@ func forwardHandler(fwd *model.ForwardAction, onError []model.OnErrorRule, pools
 			http.TimeoutHandler(proxy, requestTimeout, "").ServeHTTP(wrappedW, r)
 			if !headerWritten && transportErr != nil {
 				pe := &ProxyError{Type: model.ProxyErrTimeout, Status: http.StatusGatewayTimeout, Destination: destID, Endpoint: endpoint.ID, Message: "request timeout"}
-				handleProxyError(w, r, pe, onError, pools, sessStore)
+				writeProxyError(w, r, pe)
 			}
 			recordEndpointResult(endpoint, pool, capturedStatus, collectors, time.Since(upstreamStart))
 			return
@@ -444,40 +444,13 @@ func forwardHandler(fwd *model.ForwardAction, onError []model.OnErrorRule, pools
 		if transportErr != nil && !headerWritten {
 			errType := classifyError(transportErr)
 			pe := &ProxyError{Type: errType, Status: statusForErrorType(errType), Destination: destID, Endpoint: endpoint.ID, Message: transportErr.Error()}
-			handleProxyError(w, r, pe, onError, pools, sessStore)
+			writeProxyError(w, r, pe)
 			recordEndpointResult(endpoint, pool, pe.Status, collectors, upstreamDur)
 			return
 		}
 
 		recordEndpointResult(endpoint, pool, capturedStatus, collectors, upstreamDur)
 	})
-}
-
-// handleProxyError evaluates onError rules and either executes the matching
-// fallback action or writes a default JSON error response.
-func handleProxyError(w http.ResponseWriter, r *http.Request, pe *ProxyError, rules []model.OnErrorRule, pools map[string]*DestinationPool, sessStore SessionStore) {
-	if rule := findOnErrorRule(rules, pe.Type); rule != nil {
-		executeOnErrorRule(w, r, rule, pe, pools, sessStore)
-		return
-	}
-	writeProxyError(w, pe.Status, pe.Message)
-}
-
-// executeOnErrorRule executes the action defined by a matched onError rule.
-func executeOnErrorRule(w http.ResponseWriter, r *http.Request, rule *model.OnErrorRule, pe *ProxyError, pools map[string]*DestinationPool, sessStore SessionStore) {
-	switch {
-	case rule.DirectResponse != nil:
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(int(rule.DirectResponse.Status))
-		if rule.DirectResponse.Body != "" {
-			w.Write([]byte(rule.DirectResponse.Body))
-		}
-	case rule.Redirect != nil:
-		redirectHandler(rule.Redirect).ServeHTTP(w, r)
-	case rule.Forward != nil:
-		injectErrorHeaders(r, pe)
-		forwardHandler(rule.Forward, nil, pools, nil, "", "", sessStore).ServeHTTP(w, r)
-	}
 }
 
 func recordEndpointResult(ep *Endpoint, pool *DestinationPool, status int, collectors []*MetricsCollector, upstreamDur time.Duration) {

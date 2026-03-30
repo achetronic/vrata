@@ -46,7 +46,7 @@ type Route struct {
 	// MiddlewareIDs lists the IDs of Middleware entities active on this route.
 	// The builder activates them
 	// only for this route (other routes where the middleware is not listed
-	// are not active)..
+	// are not active).
 	MiddlewareIDs []string `json:"middlewareIds,omitempty" yaml:"middlewareIds,omitempty"`
 
 	// MiddlewareOverrides carries per-route overrides for active middlewares.
@@ -54,12 +54,6 @@ type Route struct {
 	// route itself carry an override for the same middleware, the route
 	// override wins entirely (more specific takes precedence).
 	MiddlewareOverrides map[string]MiddlewareOverride `json:"middlewareOverrides,omitempty" yaml:"middlewareOverrides,omitempty"`
-
-	// OnError defines fallback actions when the forward action fails.
-	// Rules are evaluated in order; the first rule whose On list matches
-	// the error type is executed. If no rule matches, Vrata returns a
-	// default JSON error response. Only meaningful when Forward is set.
-	OnError []OnErrorRule `json:"onError,omitempty" yaml:"onError,omitempty"`
 }
 
 // ProxyErrorType classifies an error that occurred during forwarding.
@@ -89,36 +83,8 @@ const (
 
 	// ProxyErrNoEndpoint — destination exists but all endpoints are down.
 	ProxyErrNoEndpoint ProxyErrorType = "no_endpoint"
-
-	// ProxyErrInfrastructure is a wildcard that matches all infrastructure
-	// errors.
-	ProxyErrInfrastructure ProxyErrorType = "infrastructure"
-
-	// ProxyErrAll is a wildcard that matches every error type.
-	ProxyErrAll ProxyErrorType = "all"
 )
 
-// OnErrorRule defines a fallback action for a specific set of proxy errors.
-// Exactly one of Forward, Redirect, or DirectResponse must be set.
-type OnErrorRule struct {
-	// On lists the error types that trigger this rule. Evaluated as OR:
-	// if the actual error matches any entry, the rule fires.
-	// Supports individual types and wildcards ("infrastructure", "all").
-	On []ProxyErrorType `json:"on" yaml:"on"`
-
-	// Forward proxies the original request to fallback destinations.
-	// Vrata injects X-Vrata-Error-* headers with the error context.
-	// Mutually exclusive with Redirect and DirectResponse.
-	Forward *ForwardAction `json:"forward,omitempty" yaml:"forward,omitempty"`
-
-	// Redirect returns an HTTP redirect to the client.
-	// Mutually exclusive with Forward and DirectResponse.
-	Redirect *RouteRedirect `json:"redirect,omitempty" yaml:"redirect,omitempty"`
-
-	// DirectResponse returns a fixed HTTP response.
-	// Mutually exclusive with Forward and Redirect.
-	DirectResponse *RouteDirectResponse `json:"directResponse,omitempty" yaml:"directResponse,omitempty"`
-}
 // receives each request (level 1 — before endpoint selection).
 type DestinationLBPolicy string
 

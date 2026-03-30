@@ -120,32 +120,12 @@ Setting `failureThreshold: 0` disables the error-based circuit. The breaker only
 
 Limits connections, pending requests, in-flight requests, and concurrent retries. Plus error-based tripping at 5 consecutive 5xx.
 
-## Interaction with onError
+## Interaction with proxy error responses
 
-When the circuit is open, Vrata classifies this as `circuit_open`. If the route has an `onError` rule matching this type, the fallback action runs instead of returning 503:
-
-```json
-{
-  "onError": [
-    {
-      "on": ["circuit_open"],
-      "directResponse": {"status": 503, "body": "{\"error\": \"service temporarily unavailable\", \"retry_after\": 30}"}
-    }
-  ]
-}
-```
-
-Or forward to a fallback service:
+When the circuit is open, Vrata classifies this as `circuit_open` and returns a structured JSON error with HTTP 503. The detail level depends on the listener's `proxyErrors.detail` setting:
 
 ```json
-{
-  "onError": [
-    {
-      "on": ["circuit_open"],
-      "forward": {"destinations": [{"destinationId": "<fallback-id>", "weight": 100}]}
-    }
-  ]
-}
+{"error": "circuit_open", "status": 503, "message": "circuit breaker open"}
 ```
 
 ## Monitoring

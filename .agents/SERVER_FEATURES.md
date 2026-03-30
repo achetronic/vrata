@@ -76,19 +76,14 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | IncludeAttemptCount (set per retry)                                 | 100%   | Unit                 |
 | LeastRequest balancer (Done wired)                                  | 100%   | Unit                 |
 
-## Error Handling (onError)
+## Proxy Error Responses
 
 | Feature                                                                                      | Status | Tests               |
 | -------------------------------------------------------------------------------------------- | ------ | ------------------- |
-| JSON default error responses (all proxy errors)                                              | 100%   | Unit + E2E          |
-| onError rules with type filtering                                                            | 100%   | Unit (20) + E2E (6) |
-| onError directResponse action                                                                | 100%   | Unit + E2E          |
-| onError redirect action                                                                      | 100%   | Unit + E2E          |
-| onError forward action with X-Vrata-Error-\* headers                                         | 100%   | Unit + E2E          |
-| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep) | 100%   | Unit (8)            |
-| Wildcard: infrastructure                                                                     | 100%   | Unit                |
-| Wildcard: all                                                                                | 100%   | Unit + E2E          |
-| No match falls back to default JSON                                                          | 100%   | Unit + E2E          |
+| Structured JSON error responses (all proxy errors)                                           | 100%   | Unit (4)            |
+| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep) | 100%   | Unit (12)           |
+| Per-listener detail level (minimal / standard / full)                                        | 100%   | Unit (4)            |
+| Default detail level is standard (via context)                                               | 100%   | Unit                |
 
 ## Middlewares
 
@@ -205,24 +200,24 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | ------------------------------------------------------------------ | ------- | ------- |
 | Model                                                              | 3       | 3       |
 | Store (bolt + memory)                                              | 9       | 9       |
-| API handlers                                                       | 34      | 34      |
+| API handlers                                                       | 39      | 39      |
 | API middleware                                                     | 3       | 3       |
 | Respond                                                            | 2       | 2       |
 | Config                                                             | 14      | 14      |
 | Gateway                                                            | 2       | 2       |
 | K8s watcher                                                        | 4       | 4       |
 | Session store (Redis)                                              | 5       | 5       |
-| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 54      | 54      |
+| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 61      | 61      |
 | CEL eval                                                           | 11      | 11      |
 | Proxy middlewares                                                  | 60      | 60      |
 | Raft (FSM, cluster, peers)                                         | 7       | 7       |
 | Sync client                                                        | 2       | 2       |
-| **Unit total**                                                     | **226** | **226** |
-| E2E (proxy, live)                                                  | 73      | 73      |
+| **Unit total**                                                     | **242** | **242** |
+| E2E (proxy, live)                                                  | 71      | 71      |
 | E2E (metrics)                                                      | 5       | 5       |
-| E2E (onError)                                                      | 6       | 6       |
+| E2E (proxy errors)                                                 | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
-| **E2E total**                                                      | **92**  | **92**  |
+| **E2E total**                                                      | **88**  | **88**  |
 
 ## Known Remaining Issues
 

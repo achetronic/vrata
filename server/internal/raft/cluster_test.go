@@ -150,7 +150,7 @@ func TestClusterThreeNodesReplication(t *testing.T) {
 	rs := raftstore.New(leaderStore, leader)
 	route := model.Route{
 		ID: "rep-route", Name: "replicated",
-		Match:          model.MatchRule{PathPrefix: "/rep"},
+		Match:       model.MatchRule{PathPrefix: "/rep"},
 		DirectResponse: &model.RouteDirectResponse{Status: 201},
 	}
 	if err := rs.SaveRoute(ctx, route); err != nil {
@@ -178,7 +178,7 @@ func TestClusterDumpRestore(t *testing.T) {
 
 	st1.SaveRoute(ctx, model.Route{
 		ID: "r1", Name: "original",
-		Match:          model.MatchRule{PathPrefix: "/"},
+		Match:       model.MatchRule{PathPrefix: "/"},
 		DirectResponse: &model.RouteDirectResponse{Status: 200},
 	})
 	st1.SaveDestination(ctx, model.Destination{ID: "d1", Name: "dest", Host: "10.0.0.1", Port: 80})

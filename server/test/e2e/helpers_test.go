@@ -107,6 +107,30 @@ func proxyGet(t *testing.T, path string, headers map[string]string) (int, http.H
 	return resp.StatusCode, resp.Header, string(data)
 }
 
+func proxyGetPort(t *testing.T, port int, path string, headers map[string]string) (int, http.Header, string) {
+	t.Helper()
+	url := fmt.Sprintf("http://localhost:%d%s", port, path)
+	req, _ := http.NewRequest("GET", url, nil)
+	for k, v := range headers {
+		if strings.EqualFold(k, "Host") {
+			req.Host = v
+		} else {
+			req.Header.Set(k, v)
+		}
+	}
+	client := &http.Client{
+		Timeout:       5 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("proxy GET %s (port %d): %v", path, port, err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, resp.Header, string(data)
+}
+
 func proxyRequest(t *testing.T, method, path string, body []byte, headers map[string]string) (int, http.Header, string) {
 	t.Helper()
 	var bodyReader io.Reader

@@ -33,7 +33,7 @@ Destination timeouts turn silence into a clean, fast failure.
 
 **Default: 30s** · Go field: `Client.Timeout`
 
-The absolute ceiling for the entire HTTP call: connect + TLS + send request + wait + receive response. If the total exceeds this, Vrata returns a 502 (or triggers your `onError` fallback).
+The absolute ceiling for the entire HTTP call: connect + TLS + send request + wait + receive response. If the total exceeds this, Vrata returns a structured JSON error with the appropriate status code.
 
 **When to change it:**
 - Uploads or streaming responses → increase to minutes
