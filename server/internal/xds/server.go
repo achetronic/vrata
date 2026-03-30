@@ -338,11 +338,10 @@ func buildListenersAndRoutes(
 				continue
 			}
 
-			// Domains: use group hostnames if set, else wildcard.
-			domains := g.Hostnames
-			if len(domains) == 0 {
-				domains = []string{"*"}
-			}
+			// Domains: merge group hostnames with route hostnames (union).
+			// Route-level hostnames come from MatchRule.Hostnames on the routes
+			// in this group. Group hostnames apply to all routes in the group.
+			domains := mergeHostnames(g, g.RouteIDs, routeByID)
 
 			vhosts = append(vhosts, &routev3.VirtualHost{
 				Name:    g.ID,
@@ -579,11 +578,9 @@ func buildRouteMatch(r model.Route, g model.RouteGroup) *routev3.RouteMatch {
 	}
 
 	// Header matchers (group headers appended to route headers).
+	// Supports exact match, presence-only (empty value), and regex.
 	for _, hm := range append(g.Headers, r.Match.Headers...) {
-		match.Headers = append(match.Headers, &routev3.HeaderMatcher{
-			Name:                 hm.Name,
-			HeaderMatchSpecifier: &routev3.HeaderMatcher_ExactMatch{ExactMatch: hm.Value},
-		})
+		match.Headers = append(match.Headers, buildHeaderMatcher(hm))
 	}
 
 	// Method matcher — all methods as :method header matchers (OR semantics
@@ -948,4 +945,71 @@ func toResourceSlice[T cachetypes.Resource](in []T) []cachetypes.Resource {
 		out[i] = v
 	}
 	return out
+}
+
+// mergeHostnames builds the VirtualHost domain list by merging group hostnames
+// with the union of all route-level hostnames (MatchRule.Hostnames).
+// Deduplication is applied. If the merged set is empty, wildcard "*" is used.
+func mergeHostnames(g model.RouteGroup, routeIDs []string, routeByID map[string]model.Route) []string {
+	seen := make(map[string]struct{})
+	var domains []string
+
+	add := func(h string) {
+		if _, ok := seen[h]; !ok {
+			seen[h] = struct{}{}
+			domains = append(domains, h)
+		}
+	}
+
+	// Group-level hostnames apply to all routes in the group.
+	for _, h := range g.Hostnames {
+		add(h)
+	}
+
+	// Route-level hostnames are merged (union) with the group's.
+	for _, rid := range routeIDs {
+		if r, ok := routeByID[rid]; ok {
+			for _, h := range r.Match.Hostnames {
+				add(h)
+			}
+		}
+	}
+
+	if len(domains) == 0 {
+		return []string{"*"}
+	}
+	return domains
+}
+
+// buildHeaderMatcher translates a Vrata HeaderMatcher into an Envoy HeaderMatcher.
+// Three modes:
+//   - Regex == true  → SafeRegex (RE2)
+//   - Value == ""    → present match (header must exist, any value)
+//   - otherwise      → exact match
+func buildHeaderMatcher(hm model.HeaderMatcher) *routev3.HeaderMatcher {
+	if hm.Regex {
+		return &routev3.HeaderMatcher{
+			Name: hm.Name,
+			HeaderMatchSpecifier: &routev3.HeaderMatcher_StringMatch{
+				StringMatch: &matcherv3.StringMatcher{
+					MatchPattern: &matcherv3.StringMatcher_SafeRegex{
+						SafeRegex: &matcherv3.RegexMatcher{
+							EngineType: &matcherv3.RegexMatcher_GoogleRe2{GoogleRe2: &matcherv3.RegexMatcher_GoogleRE2{}},
+							Regex:      hm.Value,
+						},
+					},
+				},
+			},
+		}
+	}
+	if hm.Value == "" {
+		return &routev3.HeaderMatcher{
+			Name:                 hm.Name,
+			HeaderMatchSpecifier: &routev3.HeaderMatcher_PresentMatch{PresentMatch: true},
+		}
+	}
+	return &routev3.HeaderMatcher{
+		Name:                 hm.Name,
+		HeaderMatchSpecifier: &routev3.HeaderMatcher_ExactMatch{ExactMatch: hm.Value},
+	}
 }
