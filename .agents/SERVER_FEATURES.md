@@ -1,7 +1,8 @@
 # Feature Coverage Report — Vrata (xDS Branch)
 
-Generated: 2026-03-29
+Generated: 2026-03-30
 Branch: `feat/envoy-xds-control-plane`
+Audit method: Line-by-line code inspection of `internal/xds/` against `internal/model/`.
 
 ## API CRUD
 
@@ -47,6 +48,11 @@ activate. Snapshot API exists for auditing/rollback but is not the gating mechan
 | HTTP/2 upstream                                         | Done   | Needs tests  |
 | Max requests per connection                             | Done   | Needs tests  |
 | Endpoints from store + k8s watcher merge                | Done   | Needs tests  |
+| LeastRequest.ChoiceCount                                | Gap    | —            |
+| RingHash/Maglev HashPolicy (cluster-level)              | Gap    | —            |
+| EndpointBalancing.Sticky (endpoint-level)               | Gap    | —            |
+| Destination Timeouts.Request (total)                    | Gap    | —            |
+| Destination Timeouts.IdleConnection                     | Gap    | —            |
 
 ## xDS Translation — Routes
 
@@ -55,9 +61,12 @@ activate. Snapshot API exists for auditing/rollback but is not the gating mechan
 | Path prefix match                                      | Done   | Needs tests  |
 | Path exact match                                       | Done   | Needs tests  |
 | Path regex match (SafeRegex RE2)                       | Done   | Needs tests  |
-| Header matchers (group + route merged)                 | Done   | Needs tests  |
+| Header matchers — exact, regex, presence (all 3 modes) | Done   | Needs tests  |
 | Method matcher                                         | Done   | Needs tests  |
-| Group path prefix composition                          | Done   | Needs tests  |
+| Query param matchers — exact, regex, presence (all 3)  | Done   | Needs tests  |
+| gRPC content-type match                                | Done   | Needs tests  |
+| Group PathPrefix composition                           | Done   | Needs tests  |
+| Hostname match (group + route merged into VirtualHost)  | Done   | Needs tests  |
 | Forward action (single cluster)                        | Done   | Needs tests  |
 | Forward action (weighted clusters)                     | Done   | Needs tests  |
 | Route timeout                                          | Done   | Needs tests  |
@@ -70,11 +79,15 @@ activate. Snapshot API exists for auditing/rollback but is not the gating mechan
 | Direct response action (status + body)                 | Done   | Needs tests  |
 | Hash policy (WCH cookie)                               | Done   | Needs tests  |
 | Hash policy (STICKY cookie)                            | Done   | Needs tests  |
-| Query param matchers                                   | Not done | —          |
-| Port matchers                                          | Not done | —          |
-| CEL expression match                                   | Not done | —          |
-| gRPC content-type match                                | Not done | —          |
-| Hostname match (wildcard)                              | Done   | Needs tests  |
+| Forward.MaxGRPCTimeout                                 | Gap    | —            |
+| Forward.Retry.RetriableCodes                           | Gap    | —            |
+| Redirect.URL (full URL)                                | Gap    | —            |
+| CEL expression match                                   | Gap    | Architecture decision needed |
+| Group PathRegex composition                            | Gap    | Only PathPrefix used |
+| RouteGroup RetryDefault → VirtualHost retry            | Gap    | —            |
+| RouteGroup IncludeAttemptCount                         | Gap    | —            |
+| Route-level MiddlewareIDs                              | Gap    | Only group-level read |
+| MiddlewareOverrides (route + group)                    | Gap    | Not translated to per-route config |
 
 ## xDS Translation — Listeners
 
@@ -87,28 +100,47 @@ activate. Snapshot API exists for auditing/rollback but is not the gating mechan
 | TLS version params (min/max)                           | Done   | Needs tests  |
 | GroupIDs → selective VirtualHost attachment             | Done   | Needs tests  |
 | Empty GroupIDs = catch-all (all groups)                | Done   | Needs tests  |
+| Timeouts.ClientHeader → RequestHeadersTimeout          | Done   | Needs tests  |
+| Timeouts.ClientRequest → RequestTimeout                | Done   | Needs tests  |
+| Timeouts.IdleBetweenRequests → StreamIdleTimeout       | Done   | Needs tests  |
+| HTTP2 (h2c)                                            | Gap    | —            |
+| ServerName → HCM server_name                           | Gap    | —            |
+| MaxRequestHeadersKB → HCM max_request_headers_kb       | Gap    | —            |
 
 ## xDS Translation — Middlewares → Envoy HTTP Filters
 
 | Feature                                                      | Status   | Tests        |
 | ------------------------------------------------------------ | -------- | ------------ |
-| CORS → `envoy.filters.http.cors`                            | Done     | Needs tests  |
-| JWT → `envoy.filters.http.jwt_authn` (local + remote JWKS)  | Done     | Needs tests  |
-| ExtAuthz → `envoy.filters.http.ext_authz` (HTTP + gRPC)     | Done     | Needs tests  |
-| RateLimit → `envoy.filters.http.local_ratelimit`            | Done     | Needs tests  |
-| Headers → `envoy.filters.http.header_mutation`               | Done     | Needs tests  |
+| CORS → `envoy.filters.http.cors`                            | Partial  | Needs tests  |
+| JWT → `envoy.filters.http.jwt_authn` (local + remote JWKS)  | Partial  | Needs tests  |
+| ExtAuthz → `envoy.filters.http.ext_authz` (HTTP + gRPC)     | Partial  | Needs tests  |
+| ExtProc → `envoy.filters.http.ext_proc` (gRPC, phases)      | Partial  | Needs tests  |
+| RateLimit → `envoy.filters.http.local_ratelimit`            | Partial  | Needs tests  |
+| Headers → `envoy.filters.http.header_mutation`               | Partial  | Needs tests  |
 | AccessLog → HCM `access_log` (file, JSON/text)              | Done     | Needs tests  |
 | InlineAuthz → Go plugin `vrata.inlineauthz`                 | Done     | Needs tests  |
 | XFCC → Go plugin `vrata.xfcc` (auto on mTLS)                | Done     | Needs tests  |
-| ExtProc → `envoy.filters.http.ext_proc`                     | Not done | —            |
+| Sticky → Go plugin `vrata.sticky` (auto on STICKY routes)    | Done     | Needs tests  |
 | Router filter always last                                    | Done     | Needs tests  |
+
+### Middleware field gaps detail
+
+| Middleware | Missing fields |
+|---|---|
+| CORS | `MaxAge`, `AllowCredentials` |
+| JWT | `JWKsRetrievalTimeout` (hardcoded 5s), `ForwardJWT`, `ClaimToHeaders`, `AssertClaims` |
+| ExtAuthz | `IncludeBody`, `OnCheck` (ForwardHeaders, InjectHeaders), `OnAllow` (CopyToUpstream), `OnDeny` (CopyToClient) |
+| ExtProc | `Mode` (http — gRPC only), `StatusOnError`, `AllowedMutations`, `ForwardRules`, `DisableReject`, `ObserveMode`, `MetricsPrefix`, `Phases.MaxBodyBytes` |
+| RateLimit | `TrustedProxies` |
+| Headers | Per-header `Append` flag (always APPEND_IF_EXISTS_OR_ADD) |
 
 ## Go Filter Extensions
 
 | Feature                                                      | Status   | Tests        |
 | ------------------------------------------------------------ | -------- | ------------ |
 | sticky: request-side Redis lookup + header injection         | Done     | Needs tests  |
-| sticky: response-side session pinning to Redis               | Not done | —            |
+| sticky: response-side session pinning to Redis (async)       | Done     | Needs tests  |
+| sticky: auto-injected in HCM for STICKY routes              | Done     | Code review  |
 | sticky: filter factory registration via init()               | Done     | Code review  |
 | inlineauthz: CEL evaluation with header + body access        | Done     | Needs tests  |
 | inlineauthz: lazy body buffering                             | Done     | Code review  |

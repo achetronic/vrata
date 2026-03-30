@@ -2,59 +2,77 @@
 
 ## Pending
 
-### xDS Translation Gaps
+### Quick wins — model fields not yet wired to xDS
 
-- [x] **ExtProc native Envoy filter** — `envoy.filters.http.ext_proc`, full phase config (request/response headers/body modes, timeouts, failure mode)
-- [ ] **CEL route matching** — `MatchRule.CEL` is in the model but not translated to xDS. Options: `envoy.filters.http.rbac` with CEL conditions, or a custom Go plugin that evaluates CEL.
-- [x] **Query param matchers** — `MatchRule.QueryParams` → Envoy `QueryParameterMatcher` (exact, regex, presence)
-- [~] **Port matchers** — not applicable in Envoy (port is a Listener property, not a route matcher)
-- [x] **gRPC content-type match** — `MatchRule.GRPC` → `content-type: application/grpc` header matcher
-- [x] **Listener timeouts in HCM** — `ListenerTimeouts.ClientHeader` → `request_headers_timeout`, `ClientRequest` → `request_timeout`, `IdleBetweenRequests` → `stream_idle_timeout`
-- [ ] **Listener.GroupIDs redesign** — owner doesn't like GroupIDs on Listener because routes are first-class citizens. Needs rethinking before touching code.
+- [ ] **CORS `MaxAge` + `AllowCredentials`** — wire to `CorsPolicy.MaxAge` and `CorsPolicy.AllowCredentials`
+- [ ] **JWT `JWKsRetrievalTimeout`** — use model field instead of hardcoded 5s in `buildJWTFilter`
+- [ ] **ExtProc `StatusOnError`** — wire to `ExternalProcessor.StatusOnError`
+- [ ] **ExtProc `MetricsPrefix`** — wire to `ExternalProcessor.StatPrefix`
+- [ ] **Forward `MaxGRPCTimeout`** — wire to `RouteAction.MaxGrpcTimeout`
+- [ ] **Forward `Retry.RetriableCodes`** — wire to `RetryPolicy.RetriableStatusCodes`
+- [ ] **Listener `ServerName`** — wire to HCM `server_name`
+- [ ] **Listener `MaxRequestHeadersKB`** — wire to HCM `max_request_headers_kb`
+- [ ] **RouteGroup `RetryDefault`** — wire to `VirtualHost.RetryPolicy`
+- [ ] **RouteGroup `IncludeAttemptCount`** — wire to `VirtualHost.IncludeRequestAttemptCount`
+- [ ] **EndpointBalancing `LeastRequest.ChoiceCount`** — wire to `LeastRequestLbConfig.ChoiceCount`
+- [ ] **Headers `Append` flag** — respect per-header `Append` field instead of always using APPEND_IF_EXISTS_OR_ADD
 
-### Sticky sessions
+### Middleware field gaps — medium effort
 
-- [ ] **Sticky response-side pinning** — `EncodeHeaders` in `extensions/sticky/filter.go` has a TODO: needs to extract upstream host from filter callbacks and write session→destination to Redis on first response.
-- [ ] **Sticky Go plugin injection in HCM** — the sticky Go plugin should be automatically injected into the HCM filter chain when any route uses STICKY destination balancing. Currently tracked but not injected.
+- [ ] **JWT `ForwardJWT`** — wire to `JwtProvider.Forward` or `ForwardPayloadHeader`
+- [ ] **JWT `ClaimToHeaders`** — wire to `JwtProvider.ClaimToHeaders`
+- [ ] **ExtAuthz `IncludeBody`** — wire request body forwarding to authz service
+- [ ] **ExtAuthz `OnCheck.ForwardHeaders`** — wire to `AuthorizationRequest.AllowedHeaders`
+- [ ] **ExtAuthz `OnCheck.InjectHeaders`** — wire to `AuthorizationRequest.HeadersToAdd`
+- [ ] **ExtAuthz `OnAllow.CopyToUpstream`** — wire to `AuthorizationResponse.AllowedUpstreamHeaders`
+- [ ] **ExtAuthz `OnDeny.CopyToClient`** — wire to `AuthorizationResponse.AllowedClientHeaders`
+- [ ] **ExtProc `AllowedMutations`** — wire to `ExternalProcessor.MutationRules`
+- [ ] **ExtProc `ForwardRules`** — wire to `ExternalProcessor.ForwardRules`
+- [ ] **ExtProc `ObserveMode`** — wire to `ExternalProcessor.ObservabilityMode` (Envoy 1.29+)
+- [ ] **ExtProc `Phases.MaxBodyBytes`** — wire to `ProcessingMode.MaxMessageBodySize`
+- [ ] **Listener `HTTP2`** (h2c) — wire to HCM `codec_type` or listener `enable_h2c`
 
-### Extensions
+### Architecture decisions needed
 
-- [ ] **go mod tidy + go.sum** — all three extension modules need `go mod tidy` (requires network access to resolve deps).
+- [ ] **CEL route matching** — `MatchRule.CEL` exists in model but has 0 xDS translation. Options: `envoy.filters.http.rbac` with CEL, or custom Go plugin.
+- [ ] **RouteGroup `PathRegex` composition** — model documents regex composition rules, but `buildRouteMatch` only reads `g.PathPrefix`. Need to implement the documented composition.
+- [ ] **Route-level `MiddlewareIDs` + `MiddlewareOverrides`** — xDS only reads group-level middlewares. Per-route filter config requires Envoy per-route typed config override.
+- [ ] **Listener.GroupIDs redesign** — owner considers routes first-class, GroupIDs on Listener doesn't fit. Needs rethinking before stabilising API.
+- [ ] **ExtProc `Mode: "http"`** — Envoy ext_proc is gRPC-only. Either remove http mode from model or build an adapter.
+- [ ] **JWT `AssertClaims`** — would require JWT + inlineAuthz CEL combo. Complex.
+- [ ] **`Redirect.URL`** (full URL redirect) — Envoy has no single-URL redirect, would need decomposition into scheme+host+path.
+- [ ] **ExtProc `DisableReject`** — no exact Envoy equivalent.
 
 ### Housekeeping
 
-- [ ] **Add authentication to the REST API**
-- [ ] **xDS translator unit tests** — all translation functions lack tests (clusters, routes, listeners, middlewares, helpers).
+- [ ] **xDS translator unit tests** — all translation functions in `internal/xds/` are untested.
 - [ ] **E2E tests with Envoy** — no e2e test infrastructure that starts Envoy + control plane together.
-- [ ] **Metrics on the control plane** — Envoy exports its own metrics, but the control plane itself has no Prometheus endpoint for xDS push counts, errors, latency.
-
-### Multi-value matchers on MatchRule
-
-`MatchRule` currently accepts a single `path`, `pathPrefix`, or `pathRegex` (mutually
-exclusive). Supporting arrays with OR semantics would reduce entity count for the
-controller. Impact: model changes + xDS translator changes.
-
-### Proxy fleets — single control plane, multiple fleets
-
-A single control plane should be able to manage multiple independent Envoy
-fleets, each with its own routing config. A fleet identifier distinguishes
-which config an Envoy receives when it connects via xDS. This allows one
-control plane cluster to serve staging, production, and canary fleets.
+- [ ] **Control plane metrics** — no Prometheus endpoint for xDS push counts, errors, latency.
+- [ ] **TLS on xDS gRPC channel** — currently plaintext gRPC.
+- [ ] **Per-fleet xDS** — single wildcard node ID, no multi-fleet support.
+- [ ] **REST API authentication** — no auth on the control plane API.
+- [ ] **extensions go mod tidy** — all three extension modules need `go mod tidy` (requires network access).
 
 ## Done
 
-- [x] **xDS ADS server** — gRPC server on :18000, ADS with snapshot cache
-- [x] **Gateway → xDS push** — store events trigger full snapshot rebuild
-- [x] **Cluster builder** — LB policy, circuit breaker, outlier detection, health checks, connect timeout, upstream TLS/mTLS, HTTP/2, max requests per connection, ring hash/maglev config
-- [x] **Route builder** — forward (single/weighted), redirect, direct response, timeout, retry, rewrite (prefix/regex/host), mirror, hash policy (WCH/STICKY)
-- [x] **Listener builder** — TLS termination, mTLS client auth, HCM with RDS, GroupIDs → selective VirtualHost
-- [x] **CORS filter** — native `envoy.filters.http.cors`
-- [x] **JWT filter** — native `envoy.filters.http.jwt_authn` (local + remote JWKS)
-- [x] **ExtAuthz filter** — native `envoy.filters.http.ext_authz` (HTTP + gRPC)
-- [x] **RateLimit filter** — native `envoy.filters.http.local_ratelimit`
-- [x] **Headers filter** — native `envoy.filters.http.header_mutation`
-- [x] **AccessLog** — HCM `access_log` with file logger, JSON/text, Vrata→Envoy variable mapping
-- [x] **InlineAuthz Go plugin** — CEL evaluation, header + body access, lazy body buffering
-- [x] **XFCC Go plugin** — strip + inject, auto on mTLS
-- [x] **Sticky Go plugin** — request-side Redis lookup + header injection
-- [x] **Envoy bootstrap example** — `extensions/ENVOY_BOOTSTRAP.md`
+- [x] ADS gRPC server on `:18000`
+- [x] Gateway → xDS push (store events → full snapshot rebuild)
+- [x] Cluster builder — LB policy, circuit breaker, outlier detection, health checks, connect timeout, upstream TLS/mTLS, HTTP/2, max requests per connection, ring hash/maglev config
+- [x] Route builder — forward (single/weighted), redirect, direct response, timeout, retry, rewrite (prefix/regex/host), mirror, hash policy (WCH/STICKY)
+- [x] Route match — exact/prefix/regex path, headers (exact/regex/presence), methods, query params (exact/regex/presence), gRPC content-type, hostname merge
+- [x] Listener builder — TLS termination, mTLS client auth, HCM with RDS, GroupIDs → selective VirtualHost, listener timeouts (ClientHeader, ClientRequest, IdleBetweenRequests)
+- [x] CORS filter (native, origins exact + regex, methods, headers, expose headers)
+- [x] JWT filter (native, local + remote JWKS, issuer, audiences)
+- [x] ExtAuthz filter (native, HTTP + gRPC, timeout, failure mode)
+- [x] ExtProc filter (native, gRPC, phases request/response headers/body, timeout, failure mode)
+- [x] RateLimit filter (native, token bucket RPS + burst)
+- [x] Headers filter (native, request + response add/remove)
+- [x] AccessLog (HCM, file logger, JSON/text, Vrata→Envoy variable mapping)
+- [x] InlineAuthz Go plugin (CEL evaluation, header + body access, lazy body buffering)
+- [x] XFCC Go plugin (strip + inject, auto on mTLS)
+- [x] Sticky Go plugin (request-side Redis lookup, response-side Redis write, auto-injected in HCM)
+- [x] Envoy bootstrap example
+- [x] Query param matchers (`QueryParameterMatcher` with exact, regex, presence)
+- [x] gRPC content-type match (`content-type: application/grpc` prefix header matcher)
+- [x] Listener timeouts in HCM (`RequestHeadersTimeout`, `RequestTimeout`, `StreamIdleTimeout`)
+- [~] Port matchers — not applicable (port is a Listener property in Envoy)

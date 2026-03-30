@@ -250,6 +250,13 @@ func buildClusters(destinations []model.Destination) ([]*clusterv3.Cluster, []*e
 		// Ring hash / Maglev config.
 		if d.Options != nil && d.Options.EndpointBalancing != nil {
 			eb := d.Options.EndpointBalancing
+			if eb.Algorithm == model.EndpointLBLeastRequest && eb.LeastRequest != nil && eb.LeastRequest.ChoiceCount > 0 {
+				cluster.LbConfig = &clusterv3.Cluster_LeastRequestLbConfig_{
+					LeastRequestLbConfig: &clusterv3.Cluster_LeastRequestLbConfig{
+						ChoiceCount: wrapperspb.UInt32(eb.LeastRequest.ChoiceCount),
+					},
+				}
+			}
 			if eb.Algorithm == model.EndpointLBRingHash && eb.RingHash != nil {
 				if eb.RingHash.RingSize != nil {
 					cluster.LbConfig = &clusterv3.Cluster_RingHashLbConfig_{
@@ -343,11 +350,18 @@ func buildListenersAndRoutes(
 			// in this group. Group hostnames apply to all routes in the group.
 			domains := mergeHostnames(g, g.RouteIDs, routeByID)
 
-			vhosts = append(vhosts, &routev3.VirtualHost{
+			vhost := &routev3.VirtualHost{
 				Name:    g.ID,
 				Domains: domains,
 				Routes:  envoyRoutes,
-			})
+			}
+			if g.RetryDefault != nil {
+				vhost.RetryPolicy = buildRetryPolicy(g.RetryDefault)
+			}
+			if g.IncludeAttemptCount {
+				vhost.IncludeRequestAttemptCount = true
+			}
+			vhosts = append(vhosts, vhost)
 		}
 
 		rcs = append(rcs, &routev3.RouteConfiguration{
@@ -448,6 +462,13 @@ func buildRoute(r model.Route, g model.RouteGroup) *routev3.Route {
 		if r.Forward.Timeouts != nil && r.Forward.Timeouts.Request != "" {
 			if d, err := parseDuration(r.Forward.Timeouts.Request); err == nil {
 				action.Route.Timeout = d
+			}
+		}
+
+		// MaxGRPCTimeout.
+		if r.Forward.MaxGRPCTimeout != "" {
+			if d, err := parseDuration(r.Forward.MaxGRPCTimeout); err == nil {
+				action.Route.MaxGrpcTimeout = d
 			}
 		}
 
@@ -656,7 +677,7 @@ func buildEnvoyListener(l model.Listener, rcName string, activeMWs []model.Middl
 	hasMTLS := l.TLS != nil && l.TLS.ClientAuth != nil && l.TLS.ClientAuth.CAFile != ""
 	httpFilters := buildHTTPFilters(activeMWs, hasMTLS, hasSticky)
 	accessLogs := buildAccessLogs(activeMWs)
-	hcm := buildHCM(rcName, httpFilters, accessLogs, l.Timeouts)
+	hcm := buildHCM(rcName, httpFilters, accessLogs, l)
 
 	filterChain := &listenerv3.FilterChain{
 		Filters: []*listenerv3.Filter{hcm},
@@ -727,6 +748,10 @@ func buildRetryPolicy(retry *model.RouteRetry) *routev3.RetryPolicy {
 				}
 			}
 		}
+	}
+
+	if len(retry.RetriableCodes) > 0 {
+		policy.RetriableStatusCodes = retry.RetriableCodes
 	}
 
 	return policy

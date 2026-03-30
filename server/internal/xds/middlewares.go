@@ -5,6 +5,7 @@
 package xds
 
 import (
+	"strconv"
 	"time"
 
 	accesslogv3 "github.com/envoyproxy/go-control-plane/envoy/config/accesslog/v3"
@@ -114,6 +115,12 @@ func buildCORSFilter(mw model.Middleware) *httpmgr.HttpFilter {
 	cfg.AllowMethods = joinStrings(mw.CORS.AllowMethods)
 	cfg.AllowHeaders = joinStrings(mw.CORS.AllowHeaders)
 	cfg.ExposeHeaders = joinStrings(mw.CORS.ExposeHeaders)
+	if mw.CORS.MaxAge > 0 {
+		cfg.MaxAge = strconv.Itoa(int(mw.CORS.MaxAge))
+	}
+	if mw.CORS.AllowCredentials {
+		cfg.AllowCredentials = wrapperspb.Bool(true)
+	}
 
 	cfgAny, _ := anypb.New(cfg)
 	return &httpmgr.HttpFilter{
@@ -134,6 +141,14 @@ func buildJWTFilter(mw model.Middleware) *httpmgr.HttpFilter {
 	provider := &jwtv3.JwtProvider{
 		Issuer:    mw.JWT.Issuer,
 		Audiences: mw.JWT.Audiences,
+		Forward:   mw.JWT.ForwardJWT,
+	}
+
+	for _, ch := range mw.JWT.ClaimToHeaders {
+		provider.ClaimToHeaders = append(provider.ClaimToHeaders, &jwtv3.JwtClaimToHeader{
+			HeaderName: ch.Header,
+			ClaimName:  ch.Expr,
+		})
 	}
 
 	if mw.JWT.JWKsInline != "" {
@@ -143,11 +158,17 @@ func buildJWTFilter(mw model.Middleware) *httpmgr.HttpFilter {
 			},
 		}
 	} else if mw.JWT.JWKsPath != "" && mw.JWT.JWKsDestinationID != "" {
+		jwksTimeout := 5 * time.Second
+		if mw.JWT.JWKsRetrievalTimeout != "" {
+			if d, err := time.ParseDuration(mw.JWT.JWKsRetrievalTimeout); err == nil {
+				jwksTimeout = d
+			}
+		}
 		provider.JwksSourceSpecifier = &jwtv3.JwtProvider_RemoteJwks{
 			RemoteJwks: &jwtv3.RemoteJwks{
 				HttpUri: &corev3.HttpUri{
 					Uri:     "http://" + mw.JWT.JWKsDestinationID + mw.JWT.JWKsPath,
-					Timeout: durationpbpkg.New(5 * time.Second),
+					Timeout: durationpbpkg.New(jwksTimeout),
 					HttpUpstreamType: &corev3.HttpUri_Cluster{
 						Cluster: clusterName(mw.JWT.JWKsDestinationID),
 					},
@@ -231,6 +252,59 @@ func buildExtAuthzFilter(mw model.Middleware) *httpmgr.HttpFilter {
 		}
 	}
 
+	if mw.ExtAuthz.IncludeBody {
+		cfg.WithRequestBody = &extauthzv3.BufferSettings{
+			MaxRequestBytes:     65536,
+			AllowPartialMessage: true,
+		}
+	}
+
+	if httpSvc := cfg.GetHttpService(); httpSvc != nil {
+		if mw.ExtAuthz.OnCheck != nil {
+			authReq := &extauthzv3.AuthorizationRequest{}
+			if len(mw.ExtAuthz.OnCheck.ForwardHeaders) > 0 {
+				var patterns []*matcherv3.StringMatcher
+				for _, h := range mw.ExtAuthz.OnCheck.ForwardHeaders {
+					patterns = append(patterns, &matcherv3.StringMatcher{
+						MatchPattern: &matcherv3.StringMatcher_Exact{Exact: h},
+					})
+				}
+				authReq.AllowedHeaders = &matcherv3.ListStringMatcher{Patterns: patterns}
+			}
+			for _, h := range mw.ExtAuthz.OnCheck.InjectHeaders {
+				authReq.HeadersToAdd = append(authReq.HeadersToAdd, &corev3.HeaderValue{
+					Key: h.Key, Value: h.Value,
+				})
+			}
+			httpSvc.AuthorizationRequest = authReq
+		}
+		authResp := &extauthzv3.AuthorizationResponse{}
+		hasResp := false
+		if mw.ExtAuthz.OnAllow != nil && len(mw.ExtAuthz.OnAllow.CopyToUpstream) > 0 {
+			var patterns []*matcherv3.StringMatcher
+			for _, h := range mw.ExtAuthz.OnAllow.CopyToUpstream {
+				patterns = append(patterns, &matcherv3.StringMatcher{
+					MatchPattern: &matcherv3.StringMatcher_Exact{Exact: h},
+				})
+			}
+			authResp.AllowedUpstreamHeaders = &matcherv3.ListStringMatcher{Patterns: patterns}
+			hasResp = true
+		}
+		if mw.ExtAuthz.OnDeny != nil && len(mw.ExtAuthz.OnDeny.CopyToClient) > 0 {
+			var patterns []*matcherv3.StringMatcher
+			for _, h := range mw.ExtAuthz.OnDeny.CopyToClient {
+				patterns = append(patterns, &matcherv3.StringMatcher{
+					MatchPattern: &matcherv3.StringMatcher_Exact{Exact: h},
+				})
+			}
+			authResp.AllowedClientHeaders = &matcherv3.ListStringMatcher{Patterns: patterns}
+			hasResp = true
+		}
+		if hasResp {
+			httpSvc.AuthorizationResponse = authResp
+		}
+	}
+
 	cfgAny, _ := anypb.New(cfg)
 	return &httpmgr.HttpFilter{
 		Name:       "envoy.filters.http.ext_authz",
@@ -307,12 +381,16 @@ func buildHeadersFilter(mw model.Middleware) *httpmgr.HttpFilter {
 	}
 
 	for _, h := range mw.Headers.RequestHeadersToAdd {
+		appendAction := corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD
+		if h.Append {
+			appendAction = corev3.HeaderValueOption_APPEND_IF_EXISTS_OR_ADD
+		}
 		cfg.Mutations.RequestMutations = append(cfg.Mutations.RequestMutations,
 			&mutationrulesv3.HeaderMutation{
 				Action: &mutationrulesv3.HeaderMutation_Append{
 					Append: &corev3.HeaderValueOption{
 						Header:       &corev3.HeaderValue{Key: h.Key, Value: h.Value},
-						AppendAction: corev3.HeaderValueOption_APPEND_IF_EXISTS_OR_ADD,
+						AppendAction: appendAction,
 					},
 				},
 			},
@@ -326,12 +404,16 @@ func buildHeadersFilter(mw model.Middleware) *httpmgr.HttpFilter {
 		)
 	}
 	for _, h := range mw.Headers.ResponseHeadersToAdd {
+		appendAction := corev3.HeaderValueOption_OVERWRITE_IF_EXISTS_OR_ADD
+		if h.Append {
+			appendAction = corev3.HeaderValueOption_APPEND_IF_EXISTS_OR_ADD
+		}
 		cfg.Mutations.ResponseMutations = append(cfg.Mutations.ResponseMutations,
 			&mutationrulesv3.HeaderMutation{
 				Action: &mutationrulesv3.HeaderMutation_Append{
 					Append: &corev3.HeaderValueOption{
 						Header:       &corev3.HeaderValue{Key: h.Key, Value: h.Value},
-						AppendAction: corev3.HeaderValueOption_APPEND_IF_EXISTS_OR_ADD,
+						AppendAction: appendAction,
 					},
 				},
 			},
@@ -532,6 +614,40 @@ func buildExtProcFilter(mw model.Middleware) *httpmgr.HttpFilter {
 			processing.ResponseBodyMode = extprocv3.ProcessingMode_NONE
 		}
 		cfg.ProcessingMode = processing
+	}
+
+	if mw.ExtProc.StatusOnError > 0 {
+		cfg.StatusOnError = &typev3.HttpStatus{
+			Code: typev3.StatusCode(mw.ExtProc.StatusOnError),
+		}
+	}
+	if mw.ExtProc.MetricsPrefix != "" {
+		cfg.StatPrefix = mw.ExtProc.MetricsPrefix
+	}
+	if mw.ExtProc.ObserveMode != nil && mw.ExtProc.ObserveMode.Enabled {
+		cfg.ObservabilityMode = true
+	}
+	if mw.ExtProc.ForwardRules != nil {
+		fr := &extprocv3.HeaderForwardingRules{}
+		if len(mw.ExtProc.ForwardRules.AllowHeaders) > 0 {
+			var patterns []*matcherv3.StringMatcher
+			for _, h := range mw.ExtProc.ForwardRules.AllowHeaders {
+				patterns = append(patterns, &matcherv3.StringMatcher{
+					MatchPattern: &matcherv3.StringMatcher_Exact{Exact: h},
+				})
+			}
+			fr.AllowedHeaders = &matcherv3.ListStringMatcher{Patterns: patterns}
+		}
+		if len(mw.ExtProc.ForwardRules.DenyHeaders) > 0 {
+			var patterns []*matcherv3.StringMatcher
+			for _, h := range mw.ExtProc.ForwardRules.DenyHeaders {
+				patterns = append(patterns, &matcherv3.StringMatcher{
+					MatchPattern: &matcherv3.StringMatcher_Exact{Exact: h},
+				})
+			}
+			fr.DisallowedHeaders = &matcherv3.ListStringMatcher{Patterns: patterns}
+		}
+		cfg.ForwardRules = fr
 	}
 
 	cfgAny, _ := anypb.New(cfg)

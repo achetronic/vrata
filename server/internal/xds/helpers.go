@@ -21,7 +21,7 @@ import (
 
 // buildHCM builds an Envoy HTTP Connection Manager filter with the given
 // route config name, HTTP filters, access logs, and listener timeouts.
-func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter, accessLogs []*accesslogv3.AccessLog, timeouts *model.ListenerTimeouts) *listenerv3.Filter {
+func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter, accessLogs []*accesslogv3.AccessLog, l model.Listener) *listenerv3.Filter {
 	if len(filters) == 0 {
 		filters = buildHTTPFilters(nil, false, false)
 	}
@@ -41,7 +41,18 @@ func buildHCM(routeConfigName string, filters []*httpmgr.HttpFilter, accessLogs 
 		AccessLog:   accessLogs,
 	}
 
+	if l.ServerName != "" {
+		hcm.ServerName = l.ServerName
+	}
+	if l.MaxRequestHeadersKB > 0 {
+		hcm.MaxRequestHeadersKb = wrapperspb.UInt32(l.MaxRequestHeadersKB)
+	}
+	if l.HTTP2 {
+		hcm.CodecType = httpmgr.HttpConnectionManager_AUTO
+	}
+
 	// Listener timeouts → HCM fields.
+	timeouts := l.Timeouts
 	if timeouts != nil {
 		if timeouts.ClientHeader != "" {
 			if d, err := parseDuration(timeouts.ClientHeader); err == nil {
