@@ -57,23 +57,11 @@ Only one of `forward`, `redirect`, or `directResponse` should be set.
 |-------|------|-------------|---------|
 | `name` | string | Unique name | — |
 | `match` | object | Request matching rules | [Matching]({{< relref "matching" >}}) |
-| `forward` | object | Forward to upstream destinations | See forward fields below |
+| `forward` | object | Forward to upstream destinations | [Forwarding]({{< relref "forwarding" >}}) |
 | `redirect` | object | Return HTTP redirect (`url`, `scheme`, `host`, `path`, `stripQuery`, `code`) | — |
-| `directResponse` | object | Return fixed response (`status`, `body`) | — |
+| `directResponse` | object | Return fixed response (`status`, `body`) | [Direct Response]({{< relref "direct-response" >}}) |
 | `middlewareIds` | array | Middleware IDs to apply (in order) | — |
 | `middlewareOverrides` | map | Per-middleware overrides (skipWhen, onlyWhen, disabled) | — |
-
-## Forward fields
-
-| Field | Type | Description | Details |
-|-------|------|-------------|---------|
-| `destinations` | array | Destination refs with weights | — |
-| `destinationBalancing` | object | How to pick which destination gets each request | [Destination Balancing]({{< relref "destination-balancing" >}}) |
-| `timeouts` | object | Route-level request timeout (`request` field, overrides destination) | — |
-| `retry` | object | Automatic retry on failure | [Retry]({{< relref "retry" >}}) |
-| `rewrite` | object | Transform URL before forwarding | [URL Rewrite]({{< relref "rewrite" >}}) |
-| `mirror` | object | Copy traffic to a shadow destination | [Traffic Mirror]({{< relref "mirror" >}}) |
-| `maxGrpcTimeout` | string | Cap gRPC timeout from `grpc-timeout` header | — |
 
 ## Route priority
 
