@@ -20,6 +20,7 @@ func BuildTable(
 	destinations []model.Destination,
 	middlewares []model.Middleware,
 	sessStore SessionStore,
+	celBodyMaxSize int,
 ) (*RoutingTable, error) {
 	// Build lookup maps.
 	routeByID := make(map[string]model.Route, len(routes))
@@ -67,7 +68,7 @@ func BuildTable(
 			}
 			routesInGroups[routeID] = true
 			gCopy := g
-			cr, err := compileRoute(r, &gCopy, pools, mwByID, table.AddCleanup, sessStore)
+			cr, err := compileRoute(r, &gCopy, pools, mwByID, table.AddCleanup, sessStore, celBodyMaxSize)
 			if err != nil {
 				slog.Error("proxy: skipping route with compile error",
 					slog.String("route", r.Name),
@@ -85,7 +86,7 @@ func BuildTable(
 		if routesInGroups[r.ID] {
 			continue
 		}
-		cr, err := compileRoute(r, nil, pools, mwByID, table.AddCleanup, sessStore)
+		cr, err := compileRoute(r, nil, pools, mwByID, table.AddCleanup, sessStore, celBodyMaxSize)
 		if err != nil {
 			slog.Error("proxy: skipping route with compile error",
 				slog.String("route", r.Name),
@@ -125,11 +126,13 @@ func compileRoute(
 	allMw map[string]model.Middleware,
 	onCleanup func(func()),
 	sessStore SessionStore,
+	celBodyMaxSize int,
 ) (compiledRoute, error) {
 	cr := compiledRoute{
-		model:   r,
-		group:   g,
-		grpcOnly: r.Match.GRPC,
+		model:          r,
+		group:          g,
+		grpcOnly:       r.Match.GRPC,
+		celBodyMaxSize: celBodyMaxSize,
 	}
 
 	// Compose path from group + route.
@@ -244,10 +247,13 @@ func compileRoute(
 			return cr, err
 		}
 		cr.celProgram = prg
+		if prg.NeedsBody() {
+			cr.needsBody = true
+		}
 	}
 
 	// Build handler with middleware chain.
-	cr.handler = buildRouteHandler(r, g, pools, allMw, onCleanup, sessStore)
+	cr.handler = buildRouteHandler(r, g, pools, allMw, onCleanup, sessStore, celBodyMaxSize)
 
 	return cr, nil
 }

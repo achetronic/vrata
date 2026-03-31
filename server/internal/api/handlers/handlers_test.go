@@ -419,3 +419,218 @@ func TestCreateInvalidJSON(t *testing.T) {
 		})
 	}
 }
+
+// ─── Listener clientAuth validation ─────────────────────────────────────────
+
+func TestListenerValidation_ClientAuthUnknownMode(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "port": 8443,
+		"tls": map[string]any{
+			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"clientAuth": map[string]any{"mode": "bogus"},
+		},
+	})))
+	if w.Code != 400 {
+		t.Errorf("unknown clientAuth mode should be 400, got %d", w.Code)
+	}
+}
+
+func TestListenerValidation_ClientAuthRequireNoCA(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "port": 8443,
+		"tls": map[string]any{
+			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"clientAuth": map[string]any{"mode": "require"},
+		},
+	})))
+	if w.Code != 400 {
+		t.Errorf("require without caFile should be 400, got %d", w.Code)
+	}
+}
+
+func TestListenerValidation_ClientAuthOptionalNoCA(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "port": 8443,
+		"tls": map[string]any{
+			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"clientAuth": map[string]any{"mode": "optional"},
+		},
+	})))
+	if w.Code != 400 {
+		t.Errorf("optional without caFile should be 400, got %d", w.Code)
+	}
+}
+
+func TestListenerValidation_ClientAuthRequireWithCA(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "port": 8443,
+		"tls": map[string]any{
+			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"clientAuth": map[string]any{"mode": "require", "caFile": "/ca.pem"},
+		},
+	})))
+	if w.Code != 201 {
+		t.Errorf("valid clientAuth should be 201, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestListenerValidation_NoClientAuth(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "port": 8080,
+	})))
+	if w.Code != 201 {
+		t.Errorf("no TLS should be 201, got %d", w.Code)
+	}
+}
+
+func TestListenerValidation_ClientAuthNoneMode(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "port": 8443,
+		"tls": map[string]any{
+			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"clientAuth": map[string]any{"mode": "none"},
+		},
+	})))
+	if w.Code != 201 {
+		t.Errorf("mode none should be 201, got %d", w.Code)
+	}
+}
+
+// ─── Middleware inlineAuthz validation ───────────────────────────────────────
+
+func TestMiddlewareValidation_InlineAuthzNoConfig(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "type": "inlineAuthz",
+	})))
+	if w.Code != 400 {
+		t.Errorf("inlineAuthz without config should be 400, got %d", w.Code)
+	}
+}
+
+func TestMiddlewareValidation_InlineAuthzEmptyRules(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "type": "inlineAuthz",
+		"inlineAuthz": map[string]any{
+			"rules":         []any{},
+			"defaultAction": "deny",
+		},
+	})))
+	if w.Code != 400 {
+		t.Errorf("empty rules should be 400, got %d", w.Code)
+	}
+}
+
+func TestMiddlewareValidation_InlineAuthzBadAction(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "type": "inlineAuthz",
+		"inlineAuthz": map[string]any{
+			"rules": []map[string]any{
+				{"cel": `request.method == "GET"`, "action": "maybe"},
+			},
+			"defaultAction": "deny",
+		},
+	})))
+	if w.Code != 400 {
+		t.Errorf("bad action should be 400, got %d", w.Code)
+	}
+}
+
+func TestMiddlewareValidation_InlineAuthzBadCEL(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "type": "inlineAuthz",
+		"inlineAuthz": map[string]any{
+			"rules": []map[string]any{
+				{"cel": "not valid cel !!!", "action": "allow"},
+			},
+			"defaultAction": "deny",
+		},
+	})))
+	if w.Code != 400 {
+		t.Errorf("bad CEL should be 400, got %d", w.Code)
+	}
+}
+
+func TestMiddlewareValidation_InlineAuthzEmptyCEL(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "type": "inlineAuthz",
+		"inlineAuthz": map[string]any{
+			"rules": []map[string]any{
+				{"cel": "", "action": "allow"},
+			},
+			"defaultAction": "deny",
+		},
+	})))
+	if w.Code != 400 {
+		t.Errorf("empty CEL should be 400, got %d", w.Code)
+	}
+}
+
+func TestMiddlewareValidation_InlineAuthzBadDefaultAction(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "type": "inlineAuthz",
+		"inlineAuthz": map[string]any{
+			"rules": []map[string]any{
+				{"cel": `request.method == "GET"`, "action": "allow"},
+			},
+			"defaultAction": "maybe",
+		},
+	})))
+	if w.Code != 400 {
+		t.Errorf("bad defaultAction should be 400, got %d", w.Code)
+	}
+}
+
+func TestMiddlewareValidation_InlineAuthzValid(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "type": "inlineAuthz",
+		"inlineAuthz": map[string]any{
+			"rules": []map[string]any{
+				{"cel": `request.method == "GET"`, "action": "allow"},
+				{"cel": `request.path == "/admin"`, "action": "deny"},
+			},
+			"defaultAction": "deny",
+			"denyStatus":    403,
+		},
+	})))
+	if w.Code != 201 {
+		t.Errorf("valid inlineAuthz should be 201, got %d (body: %s)", w.Code, w.Body.String())
+	}
+}
+
+func TestMiddlewareValidation_NonInlineAuthzPassesThrough(t *testing.T) {
+	d, _ := newDeps(t)
+	w := httptest.NewRecorder()
+	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+		"name": "test", "type": "cors",
+		"cors": map[string]any{"allowOrigins": []map[string]any{{"value": "*"}}},
+	})))
+	if w.Code != 201 {
+		t.Errorf("cors should pass validation, got %d", w.Code)
+	}
+}

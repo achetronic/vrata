@@ -57,6 +57,8 @@ type compiledRoute struct {
 	hostnames        []string
 	celProgram       *celeval.Program
 	handler          http.Handler
+	needsBody        bool
+	celBodyMaxSize   int
 }
 
 // compiledHeaderMatcher is a pre-compiled header matcher.
@@ -119,7 +121,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	for i := range t.routes {
 		cr := &t.routes[i]
-		if cr.match(req) {
+		matched, matchedReq := cr.match(req)
+		if matched {
+			req = matchedReq
 			r.metricsMu.RLock()
 			collectors := r.collectors
 			r.metricsMu.RUnlock()
@@ -163,7 +167,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 }
 
 // match checks if the request matches this compiled route.
-func (cr *compiledRoute) match(req *http.Request) bool {
+// Returns the (potentially updated) request — the request may carry
+// additional context (e.g. buffered body data) after evaluation.
+func (cr *compiledRoute) match(req *http.Request) (bool, *http.Request) {
 	// Hostname check.
 	if len(cr.hostnames) > 0 {
 		host := req.Host
@@ -178,7 +184,7 @@ func (cr *compiledRoute) match(req *http.Request) bool {
 			}
 		}
 		if !found {
-			return false
+			return false, req
 		}
 	}
 
@@ -187,28 +193,28 @@ func (cr *compiledRoute) match(req *http.Request) bool {
 	switch {
 	case cr.pathRegex != nil:
 		if !cr.pathRegex.MatchString(path) {
-			return false
+			return false, req
 		}
 	case cr.pathExact != "":
 		if path != cr.pathExact {
-			return false
+			return false, req
 		}
 	case cr.pathPrefix != "":
 		if !strings.HasPrefix(path, cr.pathPrefix) {
-			return false
+			return false, req
 		}
 	}
 
 	// Method check.
 	if cr.methods != nil && !cr.methods[req.Method] {
-		return false
+		return false, req
 	}
 
 	// gRPC check.
 	if cr.grpcOnly {
 		ct := req.Header.Get("Content-Type")
 		if !strings.HasPrefix(ct, "application/grpc") {
-			return false
+			return false, req
 		}
 	}
 
@@ -216,15 +222,15 @@ func (cr *compiledRoute) match(req *http.Request) bool {
 	for _, hm := range cr.headers {
 		val := req.Header.Get(hm.name)
 		if val == "" {
-			return false
+			return false, req
 		}
 		if hm.value != "" {
 			if hm.regex != nil {
 				if !hm.regex.MatchString(val) {
-					return false
+					return false, req
 				}
 			} else if val != hm.value {
-				return false
+				return false, req
 			}
 		}
 	}
@@ -233,23 +239,28 @@ func (cr *compiledRoute) match(req *http.Request) bool {
 	for _, qp := range cr.queryParams {
 		val := req.URL.Query().Get(qp.name)
 		if val == "" {
-			return false
+			return false, req
 		}
 		if qp.value != "" {
 			if qp.regex != nil {
 				if !qp.regex.MatchString(val) {
-					return false
+					return false, req
 				}
 			} else if val != qp.value {
-				return false
+				return false, req
 			}
 		}
 	}
 
 	// CEL expression (evaluated last — most expensive check).
-	if cr.celProgram != nil && !cr.celProgram.Eval(req) {
-		return false
+	if cr.celProgram != nil {
+		if cr.needsBody {
+			req, _ = celeval.BufferBody(req, cr.celBodyMaxSize)
+		}
+		if !cr.celProgram.Eval(req) {
+			return false, req
+		}
 	}
 
-	return true
+	return true, req
 }
