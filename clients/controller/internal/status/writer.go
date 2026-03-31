@@ -13,6 +13,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/achetronic/vrata/clients/controller/apis/agentic"
 )
 
 // Writer updates HTTPRoute status conditions.
@@ -118,4 +120,86 @@ func setCondition(parents *[]gwapiv1.RouteParentStatus, cond metav1.Condition) {
 // Timestamp returns a formatted timestamp for snapshot names.
 func Timestamp() string {
 	return time.Now().Format("20060102-150405")
+}
+
+// SetXBackendAvailable sets the Available condition on an XBackend.
+func (w *Writer) SetXBackendAvailable(ctx context.Context, b *agentic.XBackend, available bool, reason, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	if !available {
+		status = metav1.ConditionFalse
+	}
+	cond := metav1.Condition{
+		Type:               "Available",
+		Status:             status,
+		ObservedGeneration: b.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	}
+	setXBackendCondition(&b.Status.Conditions, cond)
+	if err := w.client.Status().Update(ctx, b); err != nil {
+		return fmt.Errorf("updating XBackend %s/%s status: %w", b.Namespace, b.Name, err)
+	}
+	return nil
+}
+
+// setXBackendCondition upserts a condition by type on a conditions slice.
+func setXBackendCondition(conditions *[]metav1.Condition, cond metav1.Condition) {
+	for i, c := range *conditions {
+		if c.Type == cond.Type {
+			(*conditions)[i] = cond
+			return
+		}
+	}
+	*conditions = append(*conditions, cond)
+}
+
+// SetXAccessPolicyAccepted sets the Accepted condition on an XAccessPolicy
+// for a specific ancestor target.
+func (w *Writer) SetXAccessPolicyAccepted(ctx context.Context, p *agentic.XAccessPolicy, target agentic.PolicyTargetRef, accepted bool, reason, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	if !accepted {
+		status = metav1.ConditionFalse
+	}
+	cond := metav1.Condition{
+		Type:               "Accepted",
+		Status:             status,
+		ObservedGeneration: p.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	}
+
+	found := false
+	for i := range p.Status.Ancestors {
+		a := &p.Status.Ancestors[i]
+		if a.ControllerName == "vrata.io/controller" && a.AncestorRef.Name == target.Name {
+			for j, c := range a.Conditions {
+				if c.Type == cond.Type {
+					a.Conditions[j] = cond
+					found = true
+					break
+				}
+			}
+			if !found {
+				a.Conditions = append(a.Conditions, cond)
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		p.Status.Ancestors = append(p.Status.Ancestors, agentic.PolicyAncestorStatus{
+			AncestorRef:    target,
+			ControllerName: "vrata.io/controller",
+			Conditions:     []metav1.Condition{cond},
+		})
+	}
+
+	if err := w.client.Status().Update(ctx, p); err != nil {
+		return fmt.Errorf("updating XAccessPolicy %s/%s status: %w", p.Namespace, p.Name, err)
+	}
+	return nil
 }

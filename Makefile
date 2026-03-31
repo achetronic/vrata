@@ -29,6 +29,9 @@ KIND_NODE_IP   := $(shell kubectl --context kind-$(KIND_CLUSTER) get nodes -o js
 GATEWAY_API_VERSION  ?= v1.5.1
 GATEWAY_API_CRDS_URL := https://github.com/kubernetes-sigs/gateway-api/releases/download/$(GATEWAY_API_VERSION)/standard-install.yaml
 
+# Kube Agentic Networking CRDs (local copy).
+AGENTIC_CRDS_DIR := $(shell pwd)/3rdparty-crds/agentic
+
 # Tool resolution — local ./bin/tools/ first, then system PATH.
 KIND := $(shell command -v $(TOOLS_DIR)/kind 2>/dev/null || command -v kind 2>/dev/null)
 HELM := $(shell command -v $(TOOLS_DIR)/helm 2>/dev/null || command -v helm 2>/dev/null)
@@ -242,6 +245,15 @@ controller-deploy-gateway-api-crds:
 	@kubectl wait --for condition=Established crd/gateways.gateway.networking.k8s.io --timeout=30s
 	@kubectl wait --for condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=30s
 	@echo "✓ Gateway API CRDs $(GATEWAY_API_VERSION) installed"
+
+## controller-deploy-agentic-crds: install Kube Agentic Networking CRDs into the current cluster
+controller-deploy-agentic-crds:
+	@echo "→ Installing Kube Agentic Networking CRDs..."
+	@kubectl apply --server-side -f /home/ahernandez/Documents/Git/3rdparty/kube-agentic-networking/k8s/crds/agentic.prototype.x-k8s.io_xbackends.yaml
+	@kubectl apply --server-side -f /home/ahernandez/Documents/Git/3rdparty/kube-agentic-networking/k8s/crds/agentic.prototype.x-k8s.io_xaccesspolicies.yaml
+	@kubectl wait --for condition=Established crd/xbackends.agentic.prototype.x-k8s.io --timeout=30s
+	@kubectl wait --for condition=Established crd/xaccesspolicies.agentic.prototype.x-k8s.io --timeout=30s
+	@echo "✓ Kube Agentic Networking CRDs installed"
 
 ###############################################################################
 ## Documentation Website
