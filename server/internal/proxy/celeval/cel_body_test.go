@@ -4,6 +4,7 @@
 package celeval
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -135,9 +136,17 @@ func TestBufferBody_NumericPrecision(t *testing.T) {
 	if data.JSON == nil {
 		t.Fatal("json should be populated")
 	}
-	// json.Number preserves precision as string.
-	if data.JSON["big"] == nil {
-		t.Error("big should be present")
+	big := data.JSON["big"]
+	if big == nil {
+		t.Fatal("big should be present")
+	}
+	// json.Number preserves precision as a string representation.
+	num, ok := big.(json.Number)
+	if !ok {
+		t.Fatalf("big should be json.Number, got %T", big)
+	}
+	if num.String() != "12345678901234567890" {
+		t.Errorf("big value: got %q, want 12345678901234567890", num.String())
 	}
 }
 

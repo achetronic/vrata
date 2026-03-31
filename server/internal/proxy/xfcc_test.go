@@ -41,19 +41,7 @@ func buildMTLSRequest(uris []string) *http.Request {
 
 func TestXFCC_Injected(t *testing.T) {
 	req := buildMTLSRequest([]string{"spiffe://cluster.local/ns/default/sa/agent-a"})
-
-	// Simulate forwardHandler XFCC logic.
-	req.Header.Del("X-Forwarded-Client-Cert")
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 {
-		cert := req.TLS.PeerCertificates[0]
-		if len(cert.URIs) > 0 {
-			var parts []string
-			for _, u := range cert.URIs {
-				parts = append(parts, u.String())
-			}
-			req.Header.Set("X-Forwarded-Client-Cert", strings.Join(parts, ";"))
-		}
-	}
+	injectXFCC(req)
 
 	xfcc := req.Header.Get("X-Forwarded-Client-Cert")
 	if xfcc != "spiffe://cluster.local/ns/default/sa/agent-a" {
@@ -65,25 +53,60 @@ func TestXFCC_SpoofedStripped(t *testing.T) {
 	req := httptest.NewRequest("POST", "/test", nil)
 	req.Header.Set("X-Forwarded-Client-Cert", "spoofed-value")
 
-	// Simulate forwardHandler XFCC logic: strip then inject.
-	req.Header.Del("X-Forwarded-Client-Cert")
+	injectXFCC(req)
 
 	if req.Header.Get("X-Forwarded-Client-Cert") != "" {
-		t.Error("spoofed XFCC should be stripped")
+		t.Error("spoofed XFCC should be stripped when no TLS cert is present")
+	}
+}
+
+func TestXFCC_SpoofedReplacedByCert(t *testing.T) {
+	req := buildMTLSRequest([]string{"spiffe://cluster.local/ns/default/sa/real"})
+	req.Header.Set("X-Forwarded-Client-Cert", "spoofed-value")
+
+	injectXFCC(req)
+
+	xfcc := req.Header.Get("X-Forwarded-Client-Cert")
+	if xfcc != "spiffe://cluster.local/ns/default/sa/real" {
+		t.Errorf("spoofed XFCC should be replaced by real cert, got %q", xfcc)
 	}
 }
 
 func TestXFCC_NoCert_NoHeader(t *testing.T) {
 	req := httptest.NewRequest("POST", "/test", nil)
-
-	// Simulate forwardHandler: strip + no cert = no header.
-	req.Header.Del("X-Forwarded-Client-Cert")
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 {
-		t.Fatal("should not have peer certs")
-	}
+	injectXFCC(req)
 
 	if req.Header.Get("X-Forwarded-Client-Cert") != "" {
 		t.Error("no cert should mean no XFCC header")
+	}
+}
+
+func TestXFCC_TLSNoCerts_NoHeader(t *testing.T) {
+	req := httptest.NewRequest("POST", "/test", nil)
+	req.TLS = &tls.ConnectionState{}
+	injectXFCC(req)
+
+	if req.Header.Get("X-Forwarded-Client-Cert") != "" {
+		t.Error("TLS without peer certs should mean no XFCC header")
+	}
+}
+
+func TestXFCC_CertWithoutURIs_NoHeader(t *testing.T) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	certDER, _ := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	cert, _ := x509.ParseCertificate(certDER)
+
+	req := httptest.NewRequest("POST", "/test", nil)
+	req.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}
+	injectXFCC(req)
+
+	if req.Header.Get("X-Forwarded-Client-Cert") != "" {
+		t.Error("cert without URI SANs should not produce XFCC header")
 	}
 }
 
@@ -92,24 +115,29 @@ func TestXFCC_MultipleURIs(t *testing.T) {
 		"spiffe://cluster.local/ns/default/sa/agent-a",
 		"https://example.com/id/123",
 	})
-
-	req.Header.Del("X-Forwarded-Client-Cert")
-	if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 {
-		cert := req.TLS.PeerCertificates[0]
-		if len(cert.URIs) > 0 {
-			var parts []string
-			for _, u := range cert.URIs {
-				parts = append(parts, u.String())
-			}
-			req.Header.Set("X-Forwarded-Client-Cert", strings.Join(parts, ";"))
-		}
-	}
+	injectXFCC(req)
 
 	xfcc := req.Header.Get("X-Forwarded-Client-Cert")
-	if !strings.Contains(xfcc, "spiffe://") || !strings.Contains(xfcc, "https://") {
-		t.Errorf("XFCC should contain both URIs, got %q", xfcc)
+	want := "spiffe://cluster.local/ns/default/sa/agent-a;https://example.com/id/123"
+	if xfcc != want {
+		t.Errorf("XFCC: got %q, want %q", xfcc, want)
 	}
 	if !strings.Contains(xfcc, ";") {
 		t.Errorf("XFCC should be semicolon-separated, got %q", xfcc)
+	}
+}
+
+func TestXFCC_PreservesOtherHeaders(t *testing.T) {
+	req := buildMTLSRequest([]string{"spiffe://cluster.local/ns/default/sa/agent-a"})
+	req.Header.Set("Authorization", "Bearer token")
+	req.Header.Set("X-Forwarded-Client-Cert", "spoofed")
+
+	injectXFCC(req)
+
+	if req.Header.Get("Authorization") != "Bearer token" {
+		t.Error("injectXFCC should not touch other headers")
+	}
+	if req.Header.Get("X-Forwarded-Client-Cert") == "spoofed" {
+		t.Error("spoofed XFCC should have been replaced")
 	}
 }

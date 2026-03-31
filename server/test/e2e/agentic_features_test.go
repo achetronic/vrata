@@ -174,9 +174,11 @@ func TestE2E_Proxy_InlineAuthz_DefaultAllow(t *testing.T) {
 		"type": "inlineAuthz",
 		"inlineAuthz": map[string]any{
 			"rules": []map[string]any{
-				{"cel": `request.path == "/blocked"`, "action": "deny"},
+				{"cel": `request.path.endsWith("/blocked")`, "action": "deny"},
 			},
 			"defaultAction": "allow",
+			"denyStatus":    403,
+			"denyBody":      `{"error":"blocked"}`,
 		},
 	})
 	defer apiDelete(t, "/middlewares/"+id(mw))
@@ -193,16 +195,20 @@ func TestE2E_Proxy_InlineAuthz_DefaultAllow(t *testing.T) {
 	snapID := activateSnapshot(t)
 	defer apiDelete(t, "/snapshots/"+snapID)
 
-	// Normal path — allowed.
+	// Normal path — allowed by default.
 	code, _, _ := proxyGet(t, "/authz-allow/foo", nil)
 	if code != 200 {
 		t.Errorf("normal path should pass, got %d", code)
 	}
 
-	// Blocked path — denied.
-	code2, _, _ := proxyGet(t, "/blocked", nil)
-	// /blocked doesn't match /authz-allow prefix, so 404 not 403
-	if code2 != 404 {
-		t.Errorf("/blocked should 404 (not under route prefix), got %d", code2)
+	// Blocked path — denied by rule (path ends with /blocked, under route prefix).
+	code2, _, body2 := proxyGet(t, "/authz-allow/blocked", nil)
+	if code2 != 403 {
+		t.Errorf("/authz-allow/blocked should be denied, got %d", code2)
+	}
+	var errResp map[string]any
+	json.Unmarshal([]byte(body2), &errResp)
+	if errResp["error"] != "blocked" {
+		t.Errorf("deny body: got %q", body2)
 	}
 }

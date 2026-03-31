@@ -340,18 +340,7 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Inject X-Forwarded-Client-Cert from mTLS peer certificate.
-		r.Header.Del("X-Forwarded-Client-Cert")
-		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-			cert := r.TLS.PeerCertificates[0]
-			if len(cert.URIs) > 0 {
-				var parts []string
-				for _, u := range cert.URIs {
-					parts = append(parts, u.String())
-				}
-				r.Header.Set("X-Forwarded-Client-Cert", strings.Join(parts, ";"))
-			}
-		}
+		injectXFCC(r)
 
 		// Level 1: pick destination pool.
 		pool := pickDestinationPool(fwd, pools, r, routeID, pinRing, w, sessStore)
@@ -677,6 +666,23 @@ func filterHealthyPools(dests []model.DestinationRef, pools map[string]*Destinat
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+// injectXFCC strips any incoming X-Forwarded-Client-Cert header (spoof
+// protection) and re-injects it from the mTLS peer certificate's URI SANs.
+// Called at the top of forwardHandler before destination selection.
+func injectXFCC(r *http.Request) {
+	r.Header.Del("X-Forwarded-Client-Cert")
+	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		cert := r.TLS.PeerCertificates[0]
+		if len(cert.URIs) > 0 {
+			var parts []string
+			for _, u := range cert.URIs {
+				parts = append(parts, u.String())
+			}
+			r.Header.Set("X-Forwarded-Client-Cert", strings.Join(parts, ";"))
+		}
+	}
+}
 
 func generateSessionID() string {
 	b := make([]byte, 16)
