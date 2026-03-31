@@ -21,6 +21,7 @@ exclusive). Supporting arrays (`paths []string`, `pathPrefixes []string`,
 `pathRegexes []string`) with OR semantics would allow one Route to match
 multiple paths. This reduces the number of entities the controller creates —
 an HTTPRoute rule with 3 matches becomes 1 Route instead of 3. Impact:
+
 - `model/group.go` MatchRule struct changes
 - `proxy/router.go` compiledRoute.match() iterates arrays
 - `proxy/table.go` compileRoute handles group+route composition per array entry
@@ -37,9 +38,9 @@ production, and canary fleets without separate deployments.
 ## Done
 
 - [x] **onError removed + proxyErrors** — removed `Route.OnError`, `OnErrorRule`,
-  `RouteAction`, and all onError dispatch logic. Proxy error responses are now
-  structured JSON with configurable detail level (`minimal`/`standard`/`full`)
-  per listener via `listener.proxyErrors.detail`. See `SERVER_DECISIONS.md`.
+      `RouteAction`, and all onError dispatch logic. Proxy error responses are now
+      structured JSON with configurable detail level (`minimal`/`standard`/`full`)
+      per listener via `listener.proxyErrors.detail`. See `SERVER_DECISIONS.md`.
 - [x] **RouteAction refactor** (superseded) — extracted then removed when onError was deleted.
 - [x] **CEL body access** — `request.body.raw` and `request.body.json` available in all CEL contexts (route matching, skipWhen/onlyWhen, inlineAuthz). Lazy buffering, configurable max size. See `SERVER_DECISIONS.md`.
 - [x] **mTLS client authentication** — `clientAuth` on ListenerTLS with modes none/optional/require. Client cert metadata exposed in CEL (`request.tls.peerCertificate.*`). XFCC header injection with spoof protection. See `SERVER_DECISIONS.md`.

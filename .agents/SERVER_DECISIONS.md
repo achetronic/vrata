@@ -949,10 +949,10 @@ route, request headers too large) return structured JSON with a classified
 error type. The detail level is configured per-listener via
 `listener.proxyErrors.detail`:
 
-| Level      | Fields                                            |
-|------------|---------------------------------------------------|
-| `minimal`  | `error`, `status`                                 |
-| `standard` | `error`, `status`, `message`                      |
+| Level      | Fields                                                               |
+| ---------- | -------------------------------------------------------------------- |
+| `minimal`  | `error`, `status`                                                    |
+| `standard` | `error`, `status`, `message`                                         |
 | `full`     | `error`, `status`, `message`, `destination`, `endpoint`, `timestamp` |
 
 Default: `standard`. The detail level is injected into the request context
@@ -970,6 +970,7 @@ levels cover all practical needs. If a new field is added in the future,
 assign it to the appropriate level.
 
 ---
+
 ## CEL body access: `request.body.raw` and `request.body.json`
 
 **Date**: 2026-03-25

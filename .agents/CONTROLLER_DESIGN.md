@@ -157,15 +157,15 @@ All string values support `${ENV_VAR}` substitution via `os.ExpandEnv`.
 See [`clients/controller/config.yaml`](../../clients/controller/config.yaml) for the
 full reference with inline comments.
 
-| Section | Key fields | Description |
-|---------|-----------|-------------|
-| `vrata` | `url` | Base URL of the Vrata control plane API |
-| `watch` | `namespaces`, `httpRoutes`, `superHttpRoutes`, `gateways` | Which k8s resources to watch and optional namespace filter |
-| `snapshot` | `debounce`, `maxBatch` | Batching before creating a Vrata snapshot |
-| `duplicates` | `mode` (`off` / `warn` / `reject`) | Overlap detection with semantic path matching |
-| `log` | `format`, `level` | Structured logging (console/json, debug/info/warn/error) |
-| `leaderElection` | `enabled`, `leaseName`, `leaseNamespace`, durations | Lease-based leader election for multiple replicas |
-| `metrics` | `enabled`, `address` | Prometheus metrics endpoint |
+| Section          | Key fields                                                | Description                                                |
+| ---------------- | --------------------------------------------------------- | ---------------------------------------------------------- |
+| `vrata`          | `url`                                                     | Base URL of the Vrata control plane API                    |
+| `watch`          | `namespaces`, `httpRoutes`, `superHttpRoutes`, `gateways` | Which k8s resources to watch and optional namespace filter |
+| `snapshot`       | `debounce`, `maxBatch`                                    | Batching before creating a Vrata snapshot                  |
+| `duplicates`     | `mode` (`off` / `warn` / `reject`)                        | Overlap detection with semantic path matching              |
+| `log`            | `format`, `level`                                         | Structured logging (console/json, debug/info/warn/error)   |
+| `leaderElection` | `enabled`, `leaseName`, `leaseNamespace`, durations       | Lease-based leader election for multiple replicas          |
+| `metrics`        | `enabled`, `address`                                      | Prometheus metrics endpoint                                |
 
 ## Status Writing
 

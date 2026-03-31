@@ -101,17 +101,17 @@ make deps           # Install dev tools
 
 ## Dependencies
 
-| Library | Purpose |
-|---------|---------|
-| `net/http` (stdlib) | REST API + proxy |
-| `log/slog` (stdlib) | Structured logging |
-| `gopkg.in/yaml.v3` | Config parsing |
-| `go.etcd.io/bbolt` | Embedded storage |
-| `github.com/hashicorp/raft` | HA consensus |
-| `github.com/google/cel-go` | CEL expressions |
-| `github.com/prometheus/client_golang` | Metrics |
-| `github.com/felixge/httpsnoop` | ResponseWriter interception |
-| `github.com/redis/go-redis/v9` | Sticky sessions |
-| `github.com/swaggo/swag/v2` | OpenAPI spec generation |
-| `sigs.k8s.io/controller-runtime` | Controller informers + cache |
-| `sigs.k8s.io/gateway-api` | HTTPRoute/Gateway types |
+| Library                               | Purpose                      |
+| ------------------------------------- | ---------------------------- |
+| `net/http` (stdlib)                   | REST API + proxy             |
+| `log/slog` (stdlib)                   | Structured logging           |
+| `gopkg.in/yaml.v3`                    | Config parsing               |
+| `go.etcd.io/bbolt`                    | Embedded storage             |
+| `github.com/hashicorp/raft`           | HA consensus                 |
+| `github.com/google/cel-go`            | CEL expressions              |
+| `github.com/prometheus/client_golang` | Metrics                      |
+| `github.com/felixge/httpsnoop`        | ResponseWriter interception  |
+| `github.com/redis/go-redis/v9`        | Sticky sessions              |
+| `github.com/swaggo/swag/v2`           | OpenAPI spec generation      |
+| `sigs.k8s.io/controller-runtime`      | Controller informers + cache |
+| `sigs.k8s.io/gateway-api`             | HTTPRoute/Gateway types      |
