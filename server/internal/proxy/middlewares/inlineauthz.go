@@ -23,7 +23,7 @@ type compiledAuthzRule struct {
 // If no rule matches, the defaultAction is applied.
 func InlineAuthzMiddleware(cfg *model.InlineAuthzConfig, celBodyMaxSize int) Middleware {
 	if cfg == nil {
-		return func(next http.Handler) http.Handler { return next }
+		return passthrough
 	}
 
 	var rules []compiledAuthzRule
@@ -98,7 +98,9 @@ func InlineAuthzMiddleware(cfg *model.InlineAuthzConfig, celBodyMaxSize int) Mid
 func writeDenyResponse(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write([]byte(body))
+	if _, err := w.Write([]byte(body)); err != nil {
+		slog.Warn("inlineAuthz: failed to write deny body", slog.String("error", err.Error()))
+	}
 }
 
 // InlineAuthzNeedsBody reports whether any compiled rule references
