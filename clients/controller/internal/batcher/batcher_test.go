@@ -35,7 +35,7 @@ func TestBatcher_DebounceFlush(t *testing.T) {
 	defer srv.Close()
 
 	client := vrata.NewClient(srv.URL)
-	b := New(client, 100*time.Millisecond, 1000, testLogger())
+	b := New(client, 100*time.Millisecond, 1000, true, true, testLogger())
 
 	ctx := context.Background()
 	b.Signal(ctx)
@@ -66,7 +66,7 @@ func TestBatcher_MaxBatchForces(t *testing.T) {
 	defer srv.Close()
 
 	client := vrata.NewClient(srv.URL)
-	b := New(client, 10*time.Second, 3, testLogger())
+	b := New(client, 10*time.Second, 3, true, true, testLogger())
 
 	ctx := context.Background()
 	b.Signal(ctx)
@@ -98,7 +98,7 @@ func TestBatcher_FlushForces(t *testing.T) {
 	defer srv.Close()
 
 	client := vrata.NewClient(srv.URL)
-	b := New(client, 10*time.Second, 1000, testLogger())
+	b := New(client, 10*time.Second, 1000, true, true, testLogger())
 
 	ctx := context.Background()
 	b.Signal(ctx)
@@ -120,7 +120,7 @@ func TestBatcher_FlushNoOp(t *testing.T) {
 	defer srv.Close()
 
 	client := vrata.NewClient(srv.URL)
-	b := New(client, 10*time.Second, 1000, testLogger())
+	b := New(client, 10*time.Second, 1000, true, true, testLogger())
 
 	b.Flush(context.Background())
 
@@ -137,7 +137,7 @@ func TestBatcher_TotalSignals(t *testing.T) {
 	defer srv.Close()
 
 	client := vrata.NewClient(srv.URL)
-	b := New(client, 10*time.Second, 1000, testLogger())
+	b := New(client, 10*time.Second, 1000, true, true, testLogger())
 
 	ctx := context.Background()
 	b.Signal(ctx)
@@ -146,5 +146,106 @@ func TestBatcher_TotalSignals(t *testing.T) {
 
 	if b.TotalSignals() != 3 {
 		t.Errorf("expected 3 total signals, got %d", b.TotalSignals())
+	}
+}
+
+func TestBatcher_AutoCreateDisabled(t *testing.T) {
+	var snapshotCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/snapshots" {
+			snapshotCount.Add(1)
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode(vrata.Snapshot{ID: "s1", Name: "test"})
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := vrata.NewClient(srv.URL)
+	b := New(client, 50*time.Millisecond, 1000, false, false, testLogger())
+
+	ctx := context.Background()
+	b.Signal(ctx)
+	b.Signal(ctx)
+
+	time.Sleep(200 * time.Millisecond)
+
+	if snapshotCount.Load() != 0 {
+		t.Errorf("expected 0 snapshots when autoCreate=false, got %d", snapshotCount.Load())
+	}
+	if b.Pending() != 0 {
+		t.Errorf("expected 0 pending after flush (cleared without snapshot), got %d", b.Pending())
+	}
+}
+
+func TestBatcher_AutoCreateTrue_AutoActivateFalse(t *testing.T) {
+	var createCount atomic.Int32
+	var activateCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/snapshots" {
+			createCount.Add(1)
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode(vrata.Snapshot{ID: "s1", Name: "test"})
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/snapshots/s1/activate" {
+			activateCount.Add(1)
+			w.WriteHeader(200)
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := vrata.NewClient(srv.URL)
+	b := New(client, 50*time.Millisecond, 1000, true, false, testLogger())
+
+	ctx := context.Background()
+	b.Signal(ctx)
+	b.Signal(ctx)
+
+	time.Sleep(200 * time.Millisecond)
+
+	if createCount.Load() != 1 {
+		t.Errorf("expected 1 snapshot created, got %d", createCount.Load())
+	}
+	if activateCount.Load() != 0 {
+		t.Errorf("expected 0 activations when autoActivate=false, got %d", activateCount.Load())
+	}
+}
+
+func TestBatcher_AutoCreateTrue_AutoActivateTrue(t *testing.T) {
+	var createCount atomic.Int32
+	var activateCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/snapshots" {
+			createCount.Add(1)
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode(vrata.Snapshot{ID: "s1", Name: "test"})
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/snapshots/s1/activate" {
+			activateCount.Add(1)
+			w.WriteHeader(200)
+			return
+		}
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	client := vrata.NewClient(srv.URL)
+	b := New(client, 50*time.Millisecond, 1000, true, true, testLogger())
+
+	ctx := context.Background()
+	b.Signal(ctx)
+
+	time.Sleep(200 * time.Millisecond)
+
+	if createCount.Load() != 1 {
+		t.Errorf("expected 1 snapshot created, got %d", createCount.Load())
+	}
+	if activateCount.Load() != 1 {
+		t.Errorf("expected 1 activation, got %d", activateCount.Load())
 	}
 }

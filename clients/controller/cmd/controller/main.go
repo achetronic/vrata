@@ -126,7 +126,7 @@ func run() error {
 	if batchIdleTimeout == 0 {
 		batchIdleTimeout = 10 * time.Second
 	}
-	bat := batcher.New(vrataClient, debounce, cfg.Snapshot.MaxBatch, logger)
+	bat := batcher.New(vrataClient, debounce, cfg.Snapshot.MaxBatch, cfg.SnapshotAutoCreate(), cfg.SnapshotAutoActivate(), logger)
 	statusWriter := status.NewWriter(k8sClient)
 
 	dupMode := cfg.DuplicatesMode()

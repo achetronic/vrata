@@ -369,7 +369,7 @@ func TestE2E_Controller_BatchSnapshot(t *testing.T) {
 	vrataClient := vrata.NewClient("http://localhost:8080")
 	rec := reconciler.NewReconciler(vrataClient, testLogger())
 	rec.Init(ctx)
-	bat := batcher.New(vrataClient, 500*time.Millisecond, 1000, testLogger())
+	bat := batcher.New(vrataClient, 500*time.Millisecond, 1000, true, true, testLogger())
 
 	// Apply 3 routes, signal batcher for each.
 	for i := 0; i < 3; i++ {
@@ -415,6 +415,187 @@ func TestE2E_Controller_BatchSnapshot(t *testing.T) {
 	}
 	if !found {
 		t.Error("no controller snapshot found after batch flush")
+	}
+}
+
+// vrataCleanControllerSnapshots removes all snapshots whose name starts with
+// "vrata-controller-". Used by snapshot mode e2e tests.
+func vrataCleanControllerSnapshots(t *testing.T) {
+	t.Helper()
+	data := vrataGet(t, "/snapshots")
+	var snapshots []map[string]any
+	json.Unmarshal(data, &snapshots)
+	for _, s := range snapshots {
+		name, _ := s["name"].(string)
+		if strings.HasPrefix(name, "vrata-controller-") {
+			if id, ok := s["id"].(string); ok {
+				vrataDelete(t, "/snapshots/"+id)
+			}
+		}
+	}
+}
+
+// countControllerSnapshots returns the number of snapshots whose name starts
+// with "vrata-controller-" and whether any of them is active.
+func countControllerSnapshots(t *testing.T) (count int, hasActive bool) {
+	t.Helper()
+	data := vrataGet(t, "/snapshots")
+	var snapshots []map[string]any
+	json.Unmarshal(data, &snapshots)
+	for _, s := range snapshots {
+		name, _ := s["name"].(string)
+		if strings.HasPrefix(name, "vrata-controller-") {
+			count++
+			if active, ok := s["active"].(bool); ok && active {
+				hasActive = true
+			}
+		}
+	}
+	return
+}
+
+func TestE2E_Controller_SnapshotAutoCreateDisabled(t *testing.T) {
+	ctx := context.Background()
+	vrataCleanOwned(t)
+	vrataCleanControllerSnapshots(t)
+	defer vrataCleanOwned(t)
+	defer vrataCleanControllerSnapshots(t)
+
+	vrataClient := vrata.NewClient("http://localhost:8080")
+	rec := reconciler.NewReconciler(vrataClient, testLogger())
+	rec.Init(ctx)
+
+	// autoCreate=false: controller syncs resources but never creates snapshots.
+	bat := batcher.New(vrataClient, 500*time.Millisecond, 1000, false, false, testLogger())
+
+	input := mapper.HTTPRouteInput{
+		Name: "e2e-no-snapshot", Namespace: "default",
+		Rules: []mapper.RuleInput{
+			{
+				Matches:     []mapper.MatchInput{{PathType: "PathPrefix", PathValue: "/no-snap"}},
+				BackendRefs: []mapper.BackendRefInput{{ServiceName: "snap-svc", ServiceNamespace: "default", Port: 80, Weight: 1}},
+			},
+		},
+	}
+	changes, err := rec.ApplyHTTPRoute(ctx, mapper.MapHTTPRoute(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < changes; i++ {
+		bat.Signal(ctx)
+	}
+
+	// Wait for debounce to flush.
+	time.Sleep(1 * time.Second)
+
+	// Verify the live config has the route.
+	routes, _ := vrataClient.ListRoutes(ctx)
+	found := false
+	for _, r := range routes {
+		if r.Name == "k8s:default/e2e-no-snapshot/rule-0/match-0" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("route should exist in live config even with autoCreate=false")
+	}
+
+	// Verify NO snapshot was created.
+	count, _ := countControllerSnapshots(t)
+	if count != 0 {
+		t.Errorf("expected 0 controller snapshots with autoCreate=false, got %d", count)
+	}
+
+	if bat.Pending() != 0 {
+		t.Errorf("expected 0 pending after flush, got %d", bat.Pending())
+	}
+}
+
+func TestE2E_Controller_SnapshotAutoCreateTrue_AutoActivateFalse(t *testing.T) {
+	ctx := context.Background()
+	vrataCleanOwned(t)
+	vrataCleanControllerSnapshots(t)
+	defer vrataCleanOwned(t)
+	defer vrataCleanControllerSnapshots(t)
+
+	vrataClient := vrata.NewClient("http://localhost:8080")
+	rec := reconciler.NewReconciler(vrataClient, testLogger())
+	rec.Init(ctx)
+
+	// autoCreate=true, autoActivate=false: snapshot created but not activated.
+	bat := batcher.New(vrataClient, 500*time.Millisecond, 1000, true, false, testLogger())
+
+	input := mapper.HTTPRouteInput{
+		Name: "e2e-create-only", Namespace: "default",
+		Rules: []mapper.RuleInput{
+			{
+				Matches:     []mapper.MatchInput{{PathType: "PathPrefix", PathValue: "/create-only"}},
+				BackendRefs: []mapper.BackendRefInput{{ServiceName: "snap-svc", ServiceNamespace: "default", Port: 80, Weight: 1}},
+			},
+		},
+	}
+	changes, err := rec.ApplyHTTPRoute(ctx, mapper.MapHTTPRoute(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < changes; i++ {
+		bat.Signal(ctx)
+	}
+
+	// Wait for debounce to flush.
+	time.Sleep(1 * time.Second)
+
+	// Verify snapshot was created but NOT activated.
+	count, hasActive := countControllerSnapshots(t)
+	if count == 0 {
+		t.Fatal("expected at least 1 controller snapshot with autoCreate=true")
+	}
+	if hasActive {
+		t.Error("snapshot should NOT be active when autoActivate=false")
+	}
+}
+
+func TestE2E_Controller_SnapshotAutoCreateTrue_AutoActivateTrue(t *testing.T) {
+	ctx := context.Background()
+	vrataCleanOwned(t)
+	vrataCleanControllerSnapshots(t)
+	defer vrataCleanOwned(t)
+	defer vrataCleanControllerSnapshots(t)
+
+	vrataClient := vrata.NewClient("http://localhost:8080")
+	rec := reconciler.NewReconciler(vrataClient, testLogger())
+	rec.Init(ctx)
+
+	// autoCreate=true, autoActivate=true: full autopilot (default behaviour).
+	bat := batcher.New(vrataClient, 500*time.Millisecond, 1000, true, true, testLogger())
+
+	input := mapper.HTTPRouteInput{
+		Name: "e2e-full-auto", Namespace: "default",
+		Rules: []mapper.RuleInput{
+			{
+				Matches:     []mapper.MatchInput{{PathType: "PathPrefix", PathValue: "/full-auto"}},
+				BackendRefs: []mapper.BackendRefInput{{ServiceName: "snap-svc", ServiceNamespace: "default", Port: 80, Weight: 1}},
+			},
+		},
+	}
+	changes, err := rec.ApplyHTTPRoute(ctx, mapper.MapHTTPRoute(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < changes; i++ {
+		bat.Signal(ctx)
+	}
+
+	// Wait for debounce to flush.
+	time.Sleep(1 * time.Second)
+
+	// Verify snapshot was created AND activated.
+	count, hasActive := countControllerSnapshots(t)
+	if count == 0 {
+		t.Fatal("expected at least 1 controller snapshot")
+	}
+	if !hasActive {
+		t.Error("snapshot should be active when autoActivate=true")
 	}
 }
 

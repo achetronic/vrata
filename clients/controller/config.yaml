@@ -30,6 +30,19 @@ snapshot:
   # Force a snapshot after this many changes even if more keep arriving.
   maxBatch: 100
 
+  # Whether to automatically create a snapshot when the batcher flushes.
+  # When false, the controller syncs all resources to Vrata's live config
+  # but never creates snapshots — use the Vrata API to create them manually.
+  # Default: true (backwards compatible).
+  autoCreate: true
+
+  # Whether to automatically activate a newly created snapshot, pushing it
+  # to all connected proxies via SSE. Only takes effect when autoCreate is true.
+  # When false, snapshots are created but left inactive — a human or external
+  # process must activate them via the API (e.g. after a diff/review).
+  # Default: true (backwards compatible).
+  autoActivate: true
+
   # Batch deployment support (vrata.io/batch annotation).
   #
   # When HTTPRoutes carry the vrata.io/batch annotation, the controller groups

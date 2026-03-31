@@ -191,3 +191,41 @@ reconcile an HTTPRoute when one of its backendRefs is denied — skip the whole 
 Do not enforce ReferenceGrants on same-namespace references.
 
 ---
+
+## Snapshot enabler switches: autoCreate and autoActivate
+
+**Date**: 2026-03-21
+**Status**: Implemented
+
+The batcher now supports two boolean config fields that control whether snapshots are
+created and activated automatically on flush:
+
+- `snapshot.autoCreate` (default: `true`) — when false, the controller syncs all resources
+  to Vrata’s live config via the API but never calls `POST /snapshots`. Pending changes
+  are cleared on flush without creating a snapshot. An external process (CI/CD, human
+  operator) must create snapshots manually via the Vrata API.
+
+- `snapshot.autoActivate` (default: `true`) — when false, the batcher creates the snapshot
+  but does not call `POST /snapshots/{id}/activate`. The snapshot exists as an immutable
+  record but proxies keep serving the previously active snapshot. A human can diff the new
+  snapshot against the active one via the API and activate it after review.
+
+The combination `autoCreate: false` + `autoActivate: true` is rejected at config validation
+— you cannot activate a snapshot that was never created.
+
+**Use cases**:
+- `autoCreate: true, autoActivate: true` — full autopilot (current default, backwards compatible).
+- `autoCreate: true, autoActivate: false` — human approval gate. Snapshots are created
+  automatically, but an operator must review and activate them before config reaches proxies.
+- `autoCreate: false` — live config only. No snapshots at all. Useful when the controller
+  manages only the control plane’s live state and a separate pipeline manages snapshot
+  lifecycle externally.
+
+**Do not**: remove backwards compatibility — omitting both fields must behave exactly as
+before (autoCreate=true, autoActivate=true). Do not introduce additional snapshot modes
+beyond the boolean pair. Do not allow autoActivate=true with autoCreate=false.
+
+**Files**: `clients/controller/internal/config/config.go`, `clients/controller/internal/batcher/batcher.go`,
+`clients/controller/cmd/controller/main.go`.
+
+---
