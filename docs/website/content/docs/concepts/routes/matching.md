@@ -180,23 +180,25 @@ CEL is evaluated **after** all static matchers pass (it's the most expensive che
 
 ### Available variables
 
-| Variable | Type | Example |
-|----------|------|---------|
-| `request.method` | string | `"GET"` |
-| `request.path` | string | `"/api/v1/users"` |
-| `request.host` | string | `"api.example.com"` |
-| `request.scheme` | string | `"https"` |
-| `request.headers` | map[string]string | `request.headers["authorization"]` |
-| `request.queryParams` | map[string]string | `request.queryParams["token"]` |
-| `request.clientIp` | string | `"10.0.0.1"` |
+| Variable | Type | Description |
+|----------|------|-------------|
+| `request.method` | string | HTTP method (`"GET"`, `"POST"`, etc.) |
+| `request.path` | string | URL path |
+| `request.host` | string | Hostname without port |
+| `request.scheme` | string | `"http"` or `"https"` |
+| `request.headers` | map | Request headers (lowercase keys) |
+| `request.queryParams` | map | Query parameters |
+| `request.clientIp` | string | Client IP address |
+| `request.body.raw` | string | Raw request body (up to `celBodyMaxSize`, default 64KB) |
+| `request.body.json` | map | Parsed JSON body (only when Content-Type is `application/json`) |
+| `request.tls.peerCertificate.uris` | list | URI SANs from client cert (SPIFFE IDs live here) |
+| `request.tls.peerCertificate.dnsNames` | list | DNS SANs from client cert |
+| `request.tls.peerCertificate.subject` | string | Certificate subject DN |
+| `request.tls.peerCertificate.serial` | string | Certificate serial number (hex) |
+
+`request.body` is only present when a CEL expression in the matched route references it — zero overhead for routes that don't inspect the body. `request.tls` fields are only present when the client presented a certificate via [mTLS]({{< relref "../listeners/mtls" >}}). Always guard access with `has()`.
 
 ### CEL examples
-
-Time-based routing:
-
-```json
-{"match": {"cel": "timestamp(now).getHours() >= 9 && timestamp(now).getHours() < 17"}}
-```
 
 Complex role check:
 
@@ -208,6 +210,24 @@ IP-based routing:
 
 ```json
 {"match": {"cel": "request.clientIp.startsWith('10.0.')"}}
+```
+
+Route by JSON body content (e.g. MCP tool calls):
+
+```json
+{"match": {"cel": "has(request.body) && has(request.body.json) && request.body.json.method == 'tools/call'"}}
+```
+
+Route by raw body content:
+
+```json
+{"match": {"cel": "has(request.body) && request.body.raw.contains('CRITICAL')"}}
+```
+
+Match requests from a specific SPIFFE identity:
+
+```json
+{"match": {"cel": "has(request.tls) && request.tls.peerCertificate.uris.exists(u, u == 'spiffe://cluster.local/ns/default/sa/agent')"}}
 ```
 
 ## Combining matchers
