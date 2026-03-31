@@ -68,9 +68,11 @@ func (od *OutlierDetector) Update(pools map[string]*DestinationPool) {
 }
 
 // RecordResponse records the response status for outlier detection.
-func (od *OutlierDetector) RecordResponse(destID string, statusCode int) {
+// destID is the Destination ID and epID is the endpoint ID (host:port).
+func (od *OutlierDetector) RecordResponse(destID, epID string, statusCode int) {
+	key := destID + "/" + epID
 	od.mu.Lock()
-	t, ok := od.trackers[destID]
+	t, ok := od.trackers[key]
 	od.mu.Unlock()
 	if !ok {
 		return

@@ -146,7 +146,6 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 			for _, ep := range pool.Endpoints {
 				ep.OnResponse = od.RecordResponse
 			}
-			pool.OnResponse = od.RecordResponse
 		}
 	}
 

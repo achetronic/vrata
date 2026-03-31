@@ -452,6 +452,7 @@ func TestE2E_Endpoint_DefaultDistribution(t *testing.T) {
 // balancing with Redis achieves zero disruption. Existing clients stay on
 // their original endpoint even after a snapshot rebuild.
 func TestE2E_Endpoint_Sticky_ZeroDisruption(t *testing.T) {
+	requireRedis(t)
 	ups := startLabeledUpstreams(t, 3)
 	destID := createMultiEndpointDest(t, "ep-stk", ups, map[string]any{
 		"algorithm": "STICKY",
@@ -509,6 +510,7 @@ func TestE2E_Endpoint_Sticky_ZeroDisruption(t *testing.T) {
 // TestE2E_Endpoint_Sticky_Concurrent verifies STICKY endpoints under
 // concurrent load with 5000 requests.
 func TestE2E_Endpoint_Sticky_Concurrent(t *testing.T) {
+	requireRedis(t)
 	ups := startLabeledUpstreams(t, 3)
 	destID := createMultiEndpointDest(t, "ep-stkc", ups, map[string]any{
 		"algorithm": "STICKY",
@@ -604,6 +606,7 @@ func TestE2E_Endpoint_Sticky_Distribution(t *testing.T) {
 // L2: STICKY endpoint (Redis)
 // Zero disruption at both levels.
 func TestE2E_Endpoint_CombinedL1Sticky_L2Sticky(t *testing.T) {
+	requireRedis(t)
 	upsA := startLabeledUpstreams(t, 2)
 	upsB := startLabeledUpstreams(t, 2)
 

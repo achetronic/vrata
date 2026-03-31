@@ -153,16 +153,18 @@ func run() error {
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 			if healthy.Load() {
 				w.WriteHeader(200)
-				w.Write([]byte("ok"))
+				_, _ = w.Write([]byte("ok"))
 			} else {
 				w.WriteHeader(503)
-				w.Write([]byte("not ready"))
+				_, _ = w.Write([]byte("not ready"))
 			}
 		})
-		srv := &http.Server{Addr: ":8081", Handler: mux}
+		srv := &http.Server{Addr: ":8081", Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 		go func() {
 			<-ctx.Done()
-			srv.Shutdown(context.Background())
+			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutCancel()
+			srv.Shutdown(shutCtx)
 		}()
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("health server failed", slog.String("error", err.Error()))
@@ -176,8 +178,13 @@ func run() error {
 		go func() {
 			mux := http.NewServeMux()
 			mux.Handle("/metrics", m.Handler())
-			srv := &http.Server{Addr: cfg.Metrics.Address, Handler: mux}
-			go func() { <-ctx.Done(); srv.Shutdown(context.Background()) }()
+			srv := &http.Server{Addr: cfg.Metrics.Address, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+			go func() {
+				<-ctx.Done()
+				shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer shutCancel()
+				srv.Shutdown(shutCtx)
+			}()
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				logger.Error("metrics server failed", slog.String("error", err.Error()))
 			}

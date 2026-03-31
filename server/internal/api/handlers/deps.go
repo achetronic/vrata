@@ -8,6 +8,7 @@ package handlers
 import (
 	"log/slog"
 
+	"github.com/achetronic/vrata/internal/proxy"
 	"github.com/achetronic/vrata/internal/store"
 )
 
@@ -22,8 +23,11 @@ type RaftApplier interface {
 
 // Dependencies holds all external collaborators shared by the HTTP handlers.
 type Dependencies struct {
-	Store  store.Store
-	Logger *slog.Logger
+	Store        store.Store
+	Logger       *slog.Logger
 	// Raft is optional. When set, the internal Raft apply endpoint is active.
-	Raft RaftApplier
+	Raft         RaftApplier
+	// SessionStore is optional. When set, the session store debug endpoint
+	// reports it as enabled.
+	SessionStore proxy.SessionStore
 }

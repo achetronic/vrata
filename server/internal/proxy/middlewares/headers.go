@@ -5,6 +5,7 @@ package middlewares
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/felixge/httpsnoop"
 
@@ -32,20 +33,35 @@ func HeadersMiddleware(cfg *model.HeadersConfig) Middleware {
 				r.Header.Del(name)
 			}
 
+			// applyResponseHeaders mutates the response headers exactly once,
+			// regardless of whether the downstream calls WriteHeader or Write first.
+			var once sync.Once
+			applyResponseHeaders := func() {
+				once.Do(func() {
+					for _, h := range cfg.ResponseHeadersToAdd {
+						if h.Append {
+							w.Header().Add(h.Key, h.Value)
+						} else {
+							w.Header().Set(h.Key, h.Value)
+						}
+					}
+					for _, name := range cfg.ResponseHeadersToRemove {
+						w.Header().Del(name)
+					}
+				})
+			}
+
 			wrappedW := httpsnoop.Wrap(w, httpsnoop.Hooks{
 				WriteHeader: func(next httpsnoop.WriteHeaderFunc) httpsnoop.WriteHeaderFunc {
 					return func(code int) {
-						for _, h := range cfg.ResponseHeadersToAdd {
-							if h.Append {
-								w.Header().Add(h.Key, h.Value)
-							} else {
-								w.Header().Set(h.Key, h.Value)
-							}
-						}
-						for _, name := range cfg.ResponseHeadersToRemove {
-							w.Header().Del(name)
-						}
+						applyResponseHeaders()
 						next(code)
+					}
+				},
+				Write: func(next httpsnoop.WriteFunc) httpsnoop.WriteFunc {
+					return func(b []byte) (int, error) {
+						applyResponseHeaders()
+						return next(b)
 					}
 				},
 			})

@@ -262,7 +262,9 @@ func directResponseHandler(dr *model.RouteDirectResponse) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(int(dr.Status))
 		if dr.Body != "" {
-			w.Write([]byte(dr.Body))
+			if _, err := w.Write([]byte(dr.Body)); err != nil {
+				slog.Warn("directResponse: failed to write body", slog.String("error", err.Error()))
+			}
 		}
 	})
 }
@@ -462,7 +464,7 @@ func recordEndpointResult(ep *Endpoint, pool *DestinationPool, status int, colle
 		}
 	}
 	if ep.OnResponse != nil {
-		ep.OnResponse(pool.Destination.ID, status)
+		ep.OnResponse(pool.Destination.ID, ep.ID, status)
 	}
 
 	destID := pool.Destination.ID
@@ -635,7 +637,12 @@ func filterHealthyPools(dests []model.DestinationRef, pools map[string]*Destinat
 
 func generateSessionID() string {
 	b := make([]byte, 16)
-	cryptorand.Read(b)
+	if _, err := cryptorand.Read(b); err != nil {
+		// fallback: use math/rand if crypto/rand is unavailable (should never happen)
+		for i := range b {
+			b[i] = byte(rand.Intn(256))
+		}
+	}
 	return fmt.Sprintf("%x", b)
 }
 

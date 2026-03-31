@@ -134,7 +134,8 @@ func (d *Dependencies) UpdateRoute(w http.ResponseWriter, r *http.Request) {
 
 // validateRouteAction checks that the route defines exactly one action mode:
 // forward, redirect, or directResponse. Returns model.ErrConflictingAction
-// when more than one is set, or when none is set.
+// when more than one is set, or when none is set. Also validates that
+// destination weights sum to 100 when multiple destinations are defined.
 func validateRouteAction(route model.Route) error {
 	set := 0
 	if route.Forward != nil {
@@ -148,6 +149,15 @@ func validateRouteAction(route model.Route) error {
 	}
 	if set != 1 {
 		return model.ErrConflictingAction
+	}
+	if route.Forward != nil && len(route.Forward.Destinations) > 1 {
+		total := uint32(0)
+		for _, d := range route.Forward.Destinations {
+			total += d.Weight
+		}
+		if total != 100 {
+			return model.ErrInvalidWeight
+		}
 	}
 	return nil
 }

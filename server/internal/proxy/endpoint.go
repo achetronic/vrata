@@ -27,7 +27,7 @@ type Endpoint struct {
 	ID           string
 	Transport    *http.Transport
 	Healthy      bool
-	OnResponse   func(destID string, statusCode int)
+	OnResponse   func(destID, epID string, statusCode int)
 	mu           sync.RWMutex
 	lastHealthAt time.Time
 }
@@ -69,8 +69,8 @@ func NewEndpoint(ep model.Endpoint, d model.Destination) (*Endpoint, error) {
 		}).DialContext,
 	}
 
-	if d.Options != nil && d.Options.MaxRequestsPerConnection > 0 {
-		transport.MaxConnsPerHost = int(d.Options.MaxRequestsPerConnection)
+	if d.Options != nil && d.Options.MaxConnsPerHost > 0 {
+		transport.MaxConnsPerHost = int(d.Options.MaxConnsPerHost)
 	}
 
 	if d.Options != nil && d.Options.TLS != nil &&

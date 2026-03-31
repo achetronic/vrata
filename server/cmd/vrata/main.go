@@ -130,14 +130,6 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		)
 	}
 
-	router := api.NewRouter(activeStore, logger, raftApplier)
-	httpSrv := &http.Server{
-		Addr:    cfg.ControlPlane.Address,
-		Handler: router,
-	}
-
-	httpSrv.BaseContext = func(_ net.Listener) context.Context { return ctx }
-
 	// Proxy gateway: watches store events, rebuilds routing table, manages listeners.
 	proxyRouter := proxy.NewRouter()
 	listenerMgr := proxy.NewListenerManager(proxyRouter, logger)
@@ -149,6 +141,14 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		logger.Warn("session store unavailable, STICKY will fall back to WEIGHTED_CONSISTENT_HASH",
 			slog.String("error", err.Error()))
 	}
+
+	router := api.NewRouter(activeStore, logger, raftApplier, sessStore)
+	httpSrv := &http.Server{
+		Addr:    cfg.ControlPlane.Address,
+		Handler: router,
+	}
+
+	httpSrv.BaseContext = func(_ net.Listener) context.Context { return ctx }
 
 	// Kubernetes endpoint discovery (non-fatal if no kubeconfig available).
 	var epProvider gateway.EndpointProvider

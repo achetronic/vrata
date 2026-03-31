@@ -224,5 +224,5 @@ func handleAuthzError(w http.ResponseWriter, r *http.Request, next http.Handler,
 		next.ServeHTTP(w, r)
 		return
 	}
-	http.Error(w, "ext_authz: "+msg, http.StatusForbidden)
+	writeJSONError(w, http.StatusForbidden, "ext_authz: "+msg)
 }

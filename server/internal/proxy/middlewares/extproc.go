@@ -17,9 +17,9 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/felixge/httpsnoop"
-	"time"
 
 	"github.com/achetronic/vrata/internal/model"
 	extprocv1 "github.com/achetronic/vrata/proto/extproc/v1"

@@ -464,6 +464,7 @@ func TestE2E_Proxy_Sticky_FallbackToWCH(t *testing.T) {
 // their original destination; new clients distribute according to new weights.
 // Requires Redis on localhost:6379 (started by e2e infrastructure).
 func TestE2E_Proxy_Sticky_ZeroDisruption(t *testing.T) {
+	requireRedis(t)
 	upA := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("A")) })
 	upB := startUpstream(t, func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("B")) })
 

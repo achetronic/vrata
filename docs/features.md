@@ -432,7 +432,7 @@ If a route has `forward.timeouts.request` set, it takes precedence over `destina
 | Field | Description |
 |---|---|
 | `http2` | Enable HTTP/2 to upstream |
-| `maxRequestsPerConnection` | Drain after N requests. 0 = unlimited |
+| `maxConnsPerHost` | Maximum simultaneous TCP connections to this destination. 0 = unlimited |
 
 ---
 
