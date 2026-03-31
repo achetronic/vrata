@@ -1,21 +1,22 @@
 # Feature Coverage Report — Vrata
 
-Generated: 2026-03-19
+Generated: 2026-03-31
 Method: Line-by-line source audit + unit tests + e2e tests
 
 ## API CRUD
 
-| Feature                  | Status | Tests       |
-| ------------------------ | ------ | ----------- |
-| Routes CRUD              | 100%   | Unit + E2E  |
-| Groups CRUD              | 100%   | Unit + E2E  |
-| Destinations CRUD        | 100%   | Unit + E2E  |
-| Listeners CRUD           | 100%   | Unit + E2E  |
-| Middlewares CRUD         | 100%   | Unit + E2E  |
-| Config dump              | 100%   | Unit + E2E  |
-| Route action validation  | 100%   | Unit        |
-| Invalid JSON → 400       | 100%   | Unit        |
-| Handlers use r.Context() | 100%   | Code review |
+| Feature                       | Status | Tests       |
+| ----------------------------- | ------ | ----------- |
+| Routes CRUD                   | 100%   | Unit + E2E  |
+| Groups CRUD                   | 100%   | Unit + E2E  |
+| Destinations CRUD             | 100%   | Unit + E2E  |
+| Listeners CRUD                | 100%   | Unit + E2E  |
+| Middlewares CRUD              | 100%   | Unit + E2E  |
+| Config dump                   | 100%   | Unit + E2E  |
+| Route action validation       | 100%   | Unit        |
+| Destination weight validation | 100%   | Unit        |
+| Invalid JSON → 400            | 100%   | Unit        |
+| Handlers use r.Context()      | 100%   | Code review |
 
 ## Versioned Snapshots
 
@@ -33,18 +34,20 @@ Method: Line-by-line source audit + unit tests + e2e tests
 
 ## Proxy Routing
 
-| Feature                                | Status | Tests      |
-| -------------------------------------- | ------ | ---------- |
-| Path prefix                            | 100%   | Unit + E2E |
-| Path exact                             | 100%   | Unit       |
-| Path regex                             | 100%   | Unit + E2E |
-| Method match                           | 100%   | Unit + E2E |
-| Header match (pre-compiled regex)      | 100%   | Unit + E2E |
-| Hostname match                         | 100%   | Unit + E2E |
-| Query param match (pre-compiled regex) | 100%   | Unit + E2E |
-| CEL expression match                   | 100%   | Unit + E2E |
-| gRPC content-type match                | 100%   | Unit + E2E |
-| Group composition (8 cases)            | 100%   | Unit + E2E |
+| Feature                                 | Status | Tests           |
+| --------------------------------------- | ------ | --------------- |
+| Path prefix                             | 100%   | Unit + E2E      |
+| Path exact                              | 100%   | Unit            |
+| Path regex                              | 100%   | Unit + E2E      |
+| Method match                            | 100%   | Unit + E2E      |
+| Header match (pre-compiled regex)       | 100%   | Unit + E2E      |
+| Hostname match                          | 100%   | Unit + E2E      |
+| Query param match (pre-compiled regex)  | 100%   | Unit + E2E      |
+| CEL expression match                    | 100%   | Unit + E2E      |
+| CEL body access (request.body.raw/json) | 100%   | Unit (22) + E2E |
+| CEL TLS cert access (request.tls.\*)    | 100%   | Unit (8)        |
+| gRPC content-type match                 | 100%   | Unit + E2E      |
+| Group composition (8 cases)             | 100%   | Unit + E2E      |
 
 ## Route Actions
 
@@ -78,12 +81,12 @@ Method: Line-by-line source audit + unit tests + e2e tests
 
 ## Proxy Error Responses
 
-| Feature                                                                                      | Status | Tests               |
-| -------------------------------------------------------------------------------------------- | ------ | ------------------- |
-| Structured JSON error responses (all proxy errors)                                           | 100%   | Unit (4)            |
-| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep) | 100%   | Unit (12)           |
-| Per-listener detail level (minimal / standard / full)                                        | 100%   | Unit (4)            |
-| Default detail level is standard (via context)                                               | 100%   | Unit                |
+| Feature                                                                                      | Status | Tests     |
+| -------------------------------------------------------------------------------------------- | ------ | --------- |
+| Structured JSON error responses (all proxy errors)                                           | 100%   | Unit (4)  |
+| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep) | 100%   | Unit (12) |
+| Per-listener detail level (minimal / standard / full)                                        | 100%   | Unit (4)  |
+| Default detail level is standard (via context)                                               | 100%   | Unit      |
 
 ## Middlewares
 
@@ -105,6 +108,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Middleware disable per-route                                 | 100%   | Unit + E2E          |
 | Middleware override merge                                    | 100%   | Unit                |
 | Cleanup on table swap (JWT refresh, rate limiter)            | 100%   | Code review         |
+| InlineAuthz (CEL rules, first-match-wins, body+TLS access)   | 100%   | Unit (14) + E2E     |
 
 ## Proxy Infrastructure
 
@@ -118,6 +122,8 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | TLS upstream                                                   | 100%   | Unit       |
 | TLS downstream                                                 | 100%   | Unit       |
 | HTTP/2 (ALPN configured)                                       | 100%   | Unit       |
+| mTLS client auth (none/optional/require + CA verification)     | 100%   | Unit (6)   |
+| XFCC header injection (strip + inject from client cert URIs)   | 100%   | Unit (8)   |
 
 ## Timeouts
 
@@ -200,24 +206,26 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | ------------------------------------------------------------------ | ------- | ------- |
 | Model                                                              | 3       | 3       |
 | Store (bolt + memory)                                              | 9       | 9       |
-| API handlers                                                       | 39      | 39      |
+| API handlers                                                       | 61      | 61      |
 | API middleware                                                     | 3       | 3       |
 | Respond                                                            | 2       | 2       |
 | Config                                                             | 14      | 14      |
 | Gateway                                                            | 2       | 2       |
 | K8s watcher                                                        | 4       | 4       |
 | Session store (Redis)                                              | 5       | 5       |
-| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 61      | 61      |
-| CEL eval                                                           | 11      | 11      |
-| Proxy middlewares                                                  | 60      | 60      |
+| Proxy (router, pinning, balancer, pool, metrics, errors, timeouts) | 80      | 80      |
+| CEL eval (matching, body, TLS, edge cases)                         | 50      | 50      |
+| Proxy middlewares (incl. inlineAuthz)                              | 74      | 74      |
 | Raft (FSM, cluster, peers)                                         | 7       | 7       |
 | Sync client                                                        | 2       | 2       |
-| **Unit total**                                                     | **242** | **242** |
+| Controller (all packages)                                          | 163     | 163     |
+| **Unit total**                                                     | **479** | **479** |
 | E2E (proxy, live)                                                  | 71      | 71      |
 | E2E (metrics)                                                      | 5       | 5       |
 | E2E (proxy errors)                                                 | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
-| **E2E total**                                                      | **88**  | **88**  |
+| E2E (controller)                                                   | 23      | 23      |
+| **E2E total**                                                      | **119** | **119** |
 
 ## Known Remaining Issues
 

@@ -37,7 +37,7 @@ Pure domain types. No business logic, no I/O. Key types:
 - **RouteGroup** — a named collection of routes with shared matchers.
 - **Destination** — an upstream target with endpoints, timeouts, TLS, balancing, circuit breaker, health checks, outlier detection.
 - **Listener** — a network entry point with optional TLS, HTTP/2, metrics, proxy error formatting.
-- **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog.
+- **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz.
 - **Snapshot** — immutable point-in-time capture of all configuration.
 
 ### internal/store
@@ -84,7 +84,9 @@ Each middleware that launches goroutines returns a stop function for cleanup on 
 
 ### internal/proxy/celeval
 
-CEL expression compiler and evaluator for route matching, skipWhen/onlyWhen, and JWT assertClaims.
+CEL expression compiler and evaluator for route matching, skipWhen/onlyWhen,
+JWT assertClaims, and inlineAuthz rules. Supports `request.body` (lazy buffering)
+and `request.tls` (client certificate metadata from mTLS).
 
 ### internal/gateway
 
@@ -142,7 +144,7 @@ server/
 │   ├── store/                  # Store interface + bolt + memory + raftstore
 │   ├── api/                    # REST API (handlers, middleware, respond, router)
 │   ├── proxy/                  # Native HTTP proxy
-│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog
+│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz
 │   │   └── celeval/            # CEL expression evaluation
 │   ├── gateway/gateway.go      # Store → proxy bridge
 │   ├── raft/                   # Raft consensus (FSM, node, peer discovery)

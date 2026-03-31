@@ -300,53 +300,6 @@ not be duplicated elsewhere.
 
 ---
 
-## Destination as a first-class entity (replaces inline Backend)
-
-**Date**: 2026-03-16
-**Status**: Implemented
-
-`model.Destination` replaces the old inline `Backend` struct. A `Route` now
-carries `Backends []BackendRef` — each `BackendRef` references a `Destination`
-by ID plus a weight. The `Destination` entity holds all upstream connection
-config: host, port, LB algorithm, TLS, circuit breaker, health check, outlier
-detection, and optional Kubernetes service discovery.
-
-**Reasoning**: Inlining host/port/weight on every route forced repetition and
-made it impossible to update a shared upstream without touching every route that
-referenced it. Promoting Destination to its own entity makes upstreams reusable,
-auditable, and independently updateable. It also unlocks rich per-cluster config
-(TLS, circuit breakers) that would have been impractical to inline on every BackendRef.
-
-**Do not**: Add host/port fields back to `Route.Backends` or `BackendRef`.
-Do not remove the `Destination` entity and revert to inline backends.
-`BackendRef` must reference a `Destination` by ID — never embed the destination config directly.
-
----
-
-## Cluster type derived automatically from Destination fields (not user-configurable)
-
-**Date**: 2026-03-16
-**Status**: Implemented
-
-The endpoint resolution strategy is derived
-automatically from the `Destination` fields:
-
-- `options.discovery.type == "kubernetes"` → EDS
-- `host` is a bare IP address → STATIC
-- `host` is an FQDN → STRICT_DNS
-
-**Reasoning**: Exposing the resolution strategy as a user field would leak
-implementation details and create misconfiguration opportunities (e.g. a user
-setting STRICT_DNS on an IP address). The derivation rule is unambiguous and covers
-all practical cases. Users think in terms of "is this a Kubernetes service or not"
-— not internal resolution types.
-
-**Do not**: Add a `clusterType` or `discoveryType` field to `Destination` or its
-options. Do not allow users to directly choose EDS, STATIC, or STRICT_DNS.
-The derivation logic lives solely in `xds/builder.go:clusterTypeFor`.
-
----
-
 ## hashPolicy lives on EndpointBalancing in Destination, not on ForwardAction
 
 **Date**: 2026-03-18
@@ -696,7 +649,7 @@ contract.
 ## HA control plane: Raft consensus with transparent write-forwarding
 
 **Date**: 2026-03-18
-**Status**: Decided — not yet implemented
+**Status**: Implemented
 
 Multiple control plane replicas share the same configuration via embedded
 Raft consensus (hashicorp/raft). Any node accepts reads and writes. The
@@ -996,10 +949,10 @@ route, request headers too large) return structured JSON with a classified
 error type. The detail level is configured per-listener via
 `listener.proxyErrors.detail`:
 
-| Level      | Fields                                            |
-|------------|---------------------------------------------------|
-| `minimal`  | `error`, `status`                                 |
-| `standard` | `error`, `status`, `message`                      |
+| Level      | Fields                                                               |
+| ---------- | -------------------------------------------------------------------- |
+| `minimal`  | `error`, `status`                                                    |
+| `standard` | `error`, `status`, `message`                                         |
 | `full`     | `error`, `status`, `message`, `destination`, `endpoint`, `timestamp` |
 
 Default: `standard`. The detail level is injected into the request context
@@ -1017,12 +970,11 @@ levels cover all practical needs. If a new field is added in the future,
 assign it to the appropriate level.
 
 ---
+
 ## CEL body access: `request.body.raw` and `request.body.json`
 
 **Date**: 2026-03-25
-**Status**: Decided — not yet implemented
-
-`request.body` exposes two fields in the CEL evaluation context:
+**Status**: Implemented
 
 - `request.body.raw` — `string`. Always populated (up to `celBodyMaxSize`, default
   64KB) when a CEL program in the request path references `request.body`. Contains
@@ -1061,7 +1013,7 @@ Do not fail-closed on body parse errors — log and continue.
 ## mTLS client authentication: `clientAuth` on ListenerTLS
 
 **Date**: 2026-03-25
-**Status**: Decided — not yet implemented
+**Status**: Implemented
 
 `ListenerTLS` gains a `clientAuth` object:
 
@@ -1114,7 +1066,7 @@ scheme. Do not remove the `optional` mode — it enables mixed-auth listeners.
 ## Inline authorization middleware: `inlineAuthz`
 
 **Date**: 2026-03-25
-**Status**: Decided — not yet implemented
+**Status**: Implemented
 
 New middleware type `inlineAuthz`. Symmetric pair of `extAuthz`: where `extAuthz`
 delegates authorization to an external service, `inlineAuthz` evaluates authorization

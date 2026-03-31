@@ -40,7 +40,7 @@
   HTTP/2. Always use `github.com/felixge/httpsnoop` instead:
   - `httpsnoop.CaptureMetrics(next, w, r)` to capture status, bytes, and duration.
   - `httpsnoop.Wrap(w, httpsnoop.Hooks{...})` to intercept specific methods with hooks.
-  httpsnoop preserves all optional interfaces automatically.
+    httpsnoop preserves all optional interfaces automatically.
 - **No external router libraries** (Gin, Echo, Chi, etc.) unless there is a concrete,
   documented, justified reason. `net/http` is the baseline.
 - **No leaked goroutines** — any middleware or component that launches a background
@@ -90,7 +90,7 @@
 
 ## Testing
 
-242 unit tests + 86 e2e tests. See FEATURES.md for full breakdown.
+479 unit tests + 119 e2e tests. See FEATURES.md for full breakdown.
 
 ## Configuration
 

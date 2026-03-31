@@ -116,10 +116,10 @@ own idle timeout until `v2.3` has completed.
 
 ```yaml
 snapshot:
-  debounce: "5s"                  # existing: debounce for SingleRoute items
-  maxBatch: 100                   # existing: max changes before forced flush
-  batchIdleTimeout: "10s"         # new: idle window after last member arrival
-  batchIncompletePolicy: "apply"  # new: apply | reject for incomplete batches
+  debounce: "5s" # existing: debounce for SingleRoute items
+  maxBatch: 100 # existing: max changes before forced flush
+  batchIdleTimeout: "10s" # new: idle window after last member arrival
+  batchIncompletePolicy: "apply" # new: apply | reject for incomplete batches
 ```
 
 When a batch with `batch-size` times out before all members arrive, the
