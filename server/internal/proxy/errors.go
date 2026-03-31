@@ -8,6 +8,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -75,14 +76,15 @@ func writeProxyError(w http.ResponseWriter, r *http.Request, pe *ProxyError) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(pe.Status)
 
+	var encErr error
 	switch detail {
 	case model.ProxyErrorDetailMinimal:
-		json.NewEncoder(w).Encode(proxyErrorMinimalBody{
+		encErr = json.NewEncoder(w).Encode(proxyErrorMinimalBody{
 			Error:  string(pe.Type),
 			Status: pe.Status,
 		})
 	case model.ProxyErrorDetailFull:
-		json.NewEncoder(w).Encode(proxyErrorFullBody{
+		encErr = json.NewEncoder(w).Encode(proxyErrorFullBody{
 			Error:       string(pe.Type),
 			Status:      pe.Status,
 			Message:     pe.Message,
@@ -91,11 +93,15 @@ func writeProxyError(w http.ResponseWriter, r *http.Request, pe *ProxyError) {
 			Timestamp:   time.Now().UTC().Format(time.RFC3339),
 		})
 	default:
-		json.NewEncoder(w).Encode(proxyErrorStandardBody{
+		encErr = json.NewEncoder(w).Encode(proxyErrorStandardBody{
 			Error:   string(pe.Type),
 			Status:  pe.Status,
 			Message: pe.Message,
 		})
+	}
+	if encErr != nil {
+		// Headers already written; only log.
+		slog.Warn("proxy: failed to write error response", slog.String("error", encErr.Error()))
 	}
 }
 

@@ -415,7 +415,8 @@ func (s *Store) Subscribe(ctx context.Context) (<-chan store.StoreEvent, error) 
 }
 
 // publish sends an event to all current subscribers in a non-blocking manner.
-// Must be called while holding s.mu (write lock).
+// May be called while holding s.mu; acquires s.subsMu internally.
+// Dropped events (slow subscriber) are silently discarded.
 func (s *Store) publish(ev store.StoreEvent) {
 	s.subsMu.Lock()
 	defer s.subsMu.Unlock()

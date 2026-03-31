@@ -70,8 +70,8 @@ func TestE2E_Proxy_RequestTimeout(t *testing.T) {
 	defer apiDelete(t, "/snapshots/"+snapID)
 
 	code, _, _ := proxyGet(t, "/e2e-timeout", nil)
-	if code != 503 {
-		t.Errorf("timeout: expected 503, got %d", code)
+	if code != http.StatusGatewayTimeout {
+		t.Errorf("timeout: expected %d, got %d", http.StatusGatewayTimeout, code)
 	}
 }
 

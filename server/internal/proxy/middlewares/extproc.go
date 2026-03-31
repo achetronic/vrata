@@ -104,8 +104,6 @@ func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Ser
 	return mw, cleanup
 }
 
-func passthrough(next http.Handler) http.Handler { return next }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Core
 // ─────────────────────────────────────────────────────────────────────────────
@@ -804,7 +802,9 @@ func writeReject(w http.ResponseWriter, reject *extprocv1.RejectRequest) {
 	}
 	w.WriteHeader(status)
 	if reject.Body != nil {
-		w.Write(reject.Body)
+		if _, err := w.Write(reject.Body); err != nil {
+			slog.Warn("extproc: failed to write reject body", slog.String("error", err.Error()))
+		}
 	}
 }
 

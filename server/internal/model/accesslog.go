@@ -33,7 +33,9 @@ type AccessLogConfig struct {
 //   ${request.host}          — hostname without port
 //   ${request.authority}     — full Host header
 //   ${request.scheme}        — http or https
-//   ${request.clientIp}      — client IP (respects X-Forwarded-For)
+//   ${request.clientIp}      — client IP; X-Forwarded-For when present, else direct IP.
+//                              XFF is trusted unconditionally — deploy behind a trusted
+//                              reverse proxy to prevent IP spoofing in logs.
 //   ${request.header.NAME}   — any request header
 //   ${response.status}       — HTTP status code
 //   ${response.bytes}        — bytes written to client

@@ -102,13 +102,17 @@ func (lw *logWriter) writeLine(fields map[string]string, useJSON bool) {
 			slog.Warn("accesslog: failed to marshal JSON", slog.String("error", err.Error()))
 			return
 		}
-		fmt.Fprintf(lw.w, "%s\n", data)
+		if _, err := fmt.Fprintf(lw.w, "%s\n", data); err != nil {
+			slog.Warn("accesslog: failed to write log entry", slog.String("error", err.Error()))
+		}
 	} else {
 		parts := make([]string, 0, len(fields))
 		for k, v := range fields {
 			parts = append(parts, fmt.Sprintf("%s=%s", k, v))
 		}
-		fmt.Fprintf(lw.w, "%s\n", strings.Join(parts, " "))
+		if _, err := fmt.Fprintf(lw.w, "%s\n", strings.Join(parts, " ")); err != nil {
+			slog.Warn("accesslog: failed to write log entry", slog.String("error", err.Error()))
+		}
 	}
 }
 

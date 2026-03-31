@@ -431,12 +431,19 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 		}
 
 		if requestTimeout > 0 {
-			http.TimeoutHandler(proxy, requestTimeout, "").ServeHTTP(wrappedW, r)
-			if !headerWritten && transportErr != nil {
+			// Use a context with deadline instead of http.TimeoutHandler to
+			// ensure timeout responses are JSON (TimeoutHandler writes plain text).
+			tCtx, tCancel := context.WithTimeout(r.Context(), requestTimeout)
+			tReq := r.WithContext(tCtx)
+			proxy.ServeHTTP(wrappedW, tReq)
+			tCancel()
+			upstreamDur := time.Since(upstreamStart)
+			if !headerWritten {
+				// Headers not written: either a transport error or a context deadline.
 				pe := &ProxyError{Type: model.ProxyErrTimeout, Status: http.StatusGatewayTimeout, Destination: destID, Endpoint: endpoint.ID, Message: "request timeout"}
 				writeProxyError(w, r, pe)
 			}
-			recordEndpointResult(endpoint, pool, capturedStatus, collectors, time.Since(upstreamStart))
+			recordEndpointResult(endpoint, pool, capturedStatus, collectors, upstreamDur)
 			return
 		}
 

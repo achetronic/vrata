@@ -213,7 +213,9 @@ func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 			}
 			w.WriteHeader(status)
 			if resp.DeniedBody != nil {
-				w.Write(resp.DeniedBody)
+				if _, err := w.Write(resp.DeniedBody); err != nil {
+					slog.Warn("extauthz: failed to write deny body", slog.String("error", err.Error()))
+				}
 			}
 		})
 	}
