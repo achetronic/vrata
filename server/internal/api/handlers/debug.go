@@ -62,3 +62,18 @@ func (d *Dependencies) GetConfigDump(w http.ResponseWriter, r *http.Request) {
 
 	respond.JSON(w, http.StatusOK, dump, d.Logger)
 }
+
+// GetSessionStoreStatus returns whether a session store (e.g. Redis) is
+// configured and active on this control plane instance.
+//
+// @Summary     Session store status
+// @Description Returns whether an external session store is configured. Used by e2e tests to determine if STICKY tests requiring Redis should run.
+// @Tags        debug
+// @Produce     json
+// @Success     200 {object} map[string]bool
+// @Router      /debug/session-store [get]
+func (d *Dependencies) GetSessionStoreStatus(w http.ResponseWriter, r *http.Request) {
+	respond.JSON(w, http.StatusOK, map[string]bool{
+		"enabled": d.SessionStore != nil,
+	}, d.Logger)
+}
