@@ -4,6 +4,7 @@
 package mapper
 
 import (
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -178,13 +179,13 @@ func TestMapXAccessPolicy_InlineTools_AlwaysAllowRule(t *testing.T) {
 	if firstAction != "allow" {
 		t.Errorf("first rule action: got %q, want allow", firstAction)
 	}
-	if !contains(firstCEL, "initialize") || !contains(firstCEL, "tools/list") {
+	if !strings.Contains(firstCEL, "initialize") || !strings.Contains(firstCEL, "tools/list") {
 		t.Errorf("first rule should allow initialize and tools/list: %s", firstCEL)
 	}
-	if !contains(firstCEL, `request.method == "GET"`) {
+	if !strings.Contains(firstCEL, `request.method == "GET"`) {
 		t.Errorf("first rule should allow GET (SSE): %s", firstCEL)
 	}
-	if !contains(firstCEL, `request.method == "DELETE"`) {
+	if !strings.Contains(firstCEL, `request.method == "DELETE"`) {
 		t.Errorf("first rule should allow DELETE (session close): %s", firstCEL)
 	}
 }

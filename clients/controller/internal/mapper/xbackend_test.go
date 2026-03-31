@@ -4,6 +4,7 @@
 package mapper
 
 import (
+	"strings"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -165,10 +166,10 @@ func TestMapXAccessPolicy_InlineTools_SPIFFE(t *testing.T) {
 	if cel2 == "" {
 		t.Fatal("second rule should have a CEL expression")
 	}
-	if !contains(cel2, "spiffe://cluster.local/ns/default/sa/agent-a") {
+	if !strings.Contains(cel2, "spiffe://cluster.local/ns/default/sa/agent-a") {
 		t.Errorf("CEL should contain SPIFFE URI, got: %s", cel2)
 	}
-	if !contains(cel2, `"add"`) || !contains(cel2, `"subtract"`) {
+	if !strings.Contains(cel2, `"add"`) || !strings.Contains(cel2, `"subtract"`) {
 		t.Errorf("CEL should contain tool names, got: %s", cel2)
 	}
 }
@@ -203,7 +204,7 @@ func TestMapXAccessPolicy_InlineTools_ServiceAccount(t *testing.T) {
 	cel2, _ := rules[1]["cel"].(string)
 
 	// ServiceAccount should be converted to SPIFFE ID with policy namespace.
-	if !contains(cel2, "spiffe://cluster.local/ns/default/sa/agent-b") {
+	if !strings.Contains(cel2, "spiffe://cluster.local/ns/default/sa/agent-b") {
 		t.Errorf("CEL should contain SPIFFE ID for SA, got: %s", cel2)
 	}
 }
@@ -233,7 +234,7 @@ func TestMapXAccessPolicy_InlineTools_SAWithNamespace(t *testing.T) {
 	rules := m.Middleware.InlineAuthz["rules"].([]map[string]any)
 	cel2, _ := rules[1]["cel"].(string)
 
-	if !contains(cel2, "spiffe://cluster.local/ns/other/sa/agent-c") {
+	if !strings.Contains(cel2, "spiffe://cluster.local/ns/other/sa/agent-c") {
 		t.Errorf("CEL should use explicit namespace, got: %s", cel2)
 	}
 }
@@ -354,6 +355,32 @@ func TestMapXAccessPolicy_MultipleInlineRules(t *testing.T) {
 	}
 }
 
+func TestMapXAccessPolicy_UnknownSourceType(t *testing.T) {
+	policy := &agentic.XAccessPolicy{
+		ObjectMeta: metav1.ObjectMeta{Name: "unk", Namespace: "default"},
+		Spec: agentic.XAccessPolicySpec{
+			TargetRefs: []agentic.PolicyTargetRef{{Group: "agentic.prototype.x-k8s.io", Kind: "XBackend", Name: "calc"}},
+			Rules: []agentic.AccessRule{
+				{
+					Name:          "unk-rule",
+					Source:        agentic.Source{Type: "Unknown"},
+					Authorization: &agentic.AuthorizationRule{Type: "InlineTools", Tools: []string{"add"}},
+				},
+			},
+		},
+	}
+
+	m := MapXAccessPolicy(policy, "cluster.local")
+	if m == nil {
+		t.Fatal("expected non-nil result (always-allow rule still generated)")
+	}
+	rules := m.Middleware.InlineAuthz["rules"].([]map[string]any)
+	// Only always-allow rule — unknown source produces empty CEL, skipped.
+	if len(rules) != 1 {
+		t.Errorf("unknown source should produce only always-allow rule, got %d", len(rules))
+	}
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 func TestIsAgenticOwned(t *testing.T) {
@@ -372,17 +399,4 @@ func TestIsAgenticOwned(t *testing.T) {
 			t.Errorf("IsAgenticOwned(%q): got %v, want %v", tt.name, got, tt.want)
 		}
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsImpl(s, substr))
-}
-
-func containsImpl(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
