@@ -161,7 +161,8 @@ server-e2e:
 
 ## server-e2e-cluster: run Raft cluster e2e tests against kind
 server-e2e-cluster: _check-kind docker-build
-	@$(KIND) load docker-image $(IMAGE):$(VERSION) --name $(KIND_CLUSTER)
+	@docker tag $(IMAGE):$(VERSION) vrata:e2e-cluster
+	@$(KIND) load docker-image vrata:e2e-cluster --name $(KIND_CLUSTER)
 	@$(HELM) upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
 		--kube-context kind-$(KIND_CLUSTER) \
 		--namespace $(HELM_NAMESPACE) --create-namespace \

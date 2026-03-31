@@ -85,7 +85,8 @@ func NewRouter() *Router {
 
 // SwapTable atomically replaces the routing table. Active requests on the
 // old table are not affected — they complete with the old config.
-// Cleanup functions registered on the old table are called asynchronously.
+// Cleanup functions registered on the old table are called synchronously
+// before SwapTable returns.
 func (r *Router) SwapTable(t *RoutingTable) {
 	old := r.table.Swap(t)
 	if old != nil {

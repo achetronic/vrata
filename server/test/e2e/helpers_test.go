@@ -25,6 +25,17 @@ import (
 	"time"
 )
 
+// requireRedis skips the test if Redis is not reachable on localhost:6379.
+// STICKY tests that depend on an external session store must call this first.
+func requireRedis(t *testing.T) {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", "localhost:6379", 200*time.Millisecond)
+	if err != nil {
+		t.Skip("skipping: Redis not available on localhost:6379")
+	}
+	conn.Close()
+}
+
 const (
 	apiBase  = "http://localhost:8080/api/v1"
 	proxyURL = "http://localhost:3000"

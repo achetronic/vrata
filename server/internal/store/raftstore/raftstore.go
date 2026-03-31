@@ -20,12 +20,11 @@ import (
 	"net/http"
 	"time"
 
-	rft "github.com/achetronic/vrata/internal/raft"
 	"github.com/achetronic/vrata/internal/model"
+	rft "github.com/achetronic/vrata/internal/raft"
 	"github.com/achetronic/vrata/internal/store"
 	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 )
-
 
 // Store wraps a bolt store with Raft consensus. All writes go through the
 // Raft log; reads are served from the local bolt database.

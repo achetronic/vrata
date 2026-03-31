@@ -143,6 +143,9 @@ func (rh *RingHashBalancer) Build(dests []model.DestinationRef) {
 	defer rh.mu.Unlock()
 
 	rh.ring = nil
+	if len(dests) == 0 {
+		return
+	}
 	vnodes := rh.ringSize / len(dests)
 	if vnodes < 1 {
 		vnodes = 1
@@ -166,7 +169,6 @@ func (rh *RingHashBalancer) Pick(r *http.Request, dests []model.DestinationRef, 
 	return rh.PickByHash(hashRequest(r), dests, endpoints)
 }
 
-// Pick selects an endpoint using the request's hash.
 // PickByHash selects an endpoint using a pre-computed hash key.
 func (rh *RingHashBalancer) PickByHash(h uint32, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	rh.mu.RLock()
@@ -189,7 +191,7 @@ func (rh *RingHashBalancer) PickByHash(h uint32, dests []model.DestinationRef, e
 type MaglevBalancer struct {
 	mu        sync.RWMutex
 	table     []int
-	dests  []string
+	dests     []string
 	tableSize int
 }
 
@@ -262,7 +264,6 @@ func (m *MaglevBalancer) Pick(r *http.Request, dests []model.DestinationRef, end
 	return m.PickByHash(hashRequest(r), dests, endpoints)
 }
 
-// Pick selects an endpoint using the request's hash.
 // PickByHash selects an endpoint using a pre-computed hash key.
 func (m *MaglevBalancer) PickByHash(h uint32, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
 	m.mu.RLock()
@@ -327,7 +328,11 @@ func hashRequestWithPolicy(r *http.Request, w http.ResponseWriter, policies []mo
 // generateEndpointSessionID creates a random session identifier for endpoint pinning.
 func generateEndpointSessionID() string {
 	b := make([]byte, 16)
-	cryptorand.Read(b)
+	if _, err := cryptorand.Read(b); err != nil {
+		for i := range b {
+			b[i] = byte(rand.Intn(256))
+		}
+	}
 	return fmt.Sprintf("%x", b)
 }
 

@@ -94,6 +94,41 @@ func TestRouteCreateConflictingAction(t *testing.T) {
 	}
 }
 
+func TestRouteCreateInvalidWeights(t *testing.T) {
+	d, _ := newDeps(t)
+	body := model.Route{
+		Name: "badweights",
+		Forward: &model.ForwardAction{
+			Destinations: []model.DestinationRef{
+				{DestinationID: "d1", Weight: 60},
+				{DestinationID: "d2", Weight: 60},
+			},
+		},
+	}
+	w := httptest.NewRecorder()
+	d.CreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
+	if w.Code != 400 {
+		t.Fatalf("expected 400 for weights not summing to 100, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestRouteCreateSingleDestinationNoWeightCheck(t *testing.T) {
+	d, _ := newDeps(t)
+	body := model.Route{
+		Name: "singledest",
+		Forward: &model.ForwardAction{
+			Destinations: []model.DestinationRef{
+				{DestinationID: "d1", Weight: 50},
+			},
+		},
+	}
+	w := httptest.NewRecorder()
+	d.CreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
+	if w.Code != 201 {
+		t.Fatalf("expected 201 for single destination (no weight check), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestRouteCreateNoAction(t *testing.T) {
 	d, _ := newDeps(t)
 	body := model.Route{Name: "empty"}

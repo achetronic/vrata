@@ -85,8 +85,25 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		attemptReq := req
 		if perAttemptTimeout > 0 {
 			ctx, cancel := context.WithTimeout(req.Context(), perAttemptTimeout)
-			defer cancel()
 			attemptReq = req.WithContext(ctx)
+			resp, err := rt.inner.RoundTrip(attemptReq)
+			cancel()
+			if err != nil {
+				lastErr = err
+				if attempt < maxAttempts-1 {
+					backoff := calcBackoff(baseBackoff, maxBackoff, attempt)
+					time.Sleep(backoff)
+					continue
+				}
+				return nil, lastErr
+			}
+			if shouldRetry(resp.StatusCode, rt.retry) && attempt < maxAttempts-1 {
+				resp.Body.Close()
+				backoff := calcBackoff(baseBackoff, maxBackoff, attempt)
+				time.Sleep(backoff)
+				continue
+			}
+			return resp, nil
 		}
 
 		resp, err := rt.inner.RoundTrip(attemptReq)

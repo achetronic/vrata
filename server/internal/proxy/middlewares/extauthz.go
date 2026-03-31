@@ -213,7 +213,9 @@ func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 			}
 			w.WriteHeader(status)
 			if resp.DeniedBody != nil {
-				w.Write(resp.DeniedBody)
+				if _, err := w.Write(resp.DeniedBody); err != nil {
+					slog.Warn("extauthz: failed to write deny body", slog.String("error", err.Error()))
+				}
 			}
 		})
 	}
@@ -224,5 +226,5 @@ func handleAuthzError(w http.ResponseWriter, r *http.Request, next http.Handler,
 		next.ServeHTTP(w, r)
 		return
 	}
-	http.Error(w, "ext_authz: "+msg, http.StatusForbidden)
+	writeJSONError(w, http.StatusForbidden, "ext_authz: "+msg)
 }

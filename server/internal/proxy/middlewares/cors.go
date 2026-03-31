@@ -15,7 +15,7 @@ import (
 // CORSMiddleware creates a CORS middleware from a CORSConfig.
 func CORSMiddleware(cfg *model.CORSConfig) Middleware {
 	if cfg == nil {
-		return func(next http.Handler) http.Handler { return next }
+		return passthrough
 	}
 
 	// Pre-compile regex origins.

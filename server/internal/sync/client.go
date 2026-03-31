@@ -158,11 +158,18 @@ func (c *Client) applySnapshot(data []byte) error {
 			for _, ep := range pool.Endpoints {
 				ep.OnResponse = od.RecordResponse
 			}
-			pool.OnResponse = od.RecordResponse
 		}
 	}
 
 	c.deps.ListenerManager.Reconcile(snap.Listeners)
+
+	// Update metrics collectors with the new pool snapshot and wire them
+	// into the router so ServeHTTP can record per-route metrics.
+	mcs := c.deps.ListenerManager.MetricsCollectors()
+	for _, mc := range mcs {
+		mc.UpdatePools(table.Pools())
+	}
+	c.deps.Router.SetMetricsCollectors(mcs)
 
 	c.deps.Logger.Info("sync: snapshot applied",
 		slog.String("id", vs.ID),

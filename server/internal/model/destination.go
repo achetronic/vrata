@@ -138,9 +138,9 @@ type DestinationOptions struct {
 	// HTTP2 enables HTTP/2 to the upstream. Required for gRPC destinations.
 	HTTP2 bool `json:"http2,omitempty"`
 
-	// MaxRequestsPerConnection drains a connection after this many requests.
-	// 0 means unlimited.
-	MaxRequestsPerConnection uint32 `json:"maxRequestsPerConnection,omitempty"`
+	// MaxConnsPerHost limits the maximum number of simultaneous TCP connections
+	// Vrata maintains to this destination. 0 means unlimited.
+	MaxConnsPerHost uint32 `json:"maxConnsPerHost,omitempty"`
 }
 
 // DestinationTimeouts configures timeout durations for connections to an

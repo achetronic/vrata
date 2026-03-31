@@ -563,5 +563,3 @@ func parsePEM(data []byte) ([]verifierKey, error) {
 	}
 	return nil, fmt.Errorf("unsupported PEM key type")
 }
-
-// suppress unused import warning for hash

@@ -46,7 +46,7 @@ curl -X POST localhost:8080/api/v1/destinations \
     "tls": { ... },
     "discovery": { ... },
     "http2": false,
-    "maxRequestsPerConnection": 0
+    "maxConnsPerHost": 0
   }
 }
 ```
@@ -73,7 +73,7 @@ curl -X POST localhost:8080/api/v1/destinations \
 | `tls` | object | Encrypt connections to backends (TLS, mTLS) | [TLS to Upstream]({{< relref "tls-upstream" >}}) |
 | `discovery` | object | Auto-discover pod IPs via EndpointSlice watches | [Kubernetes Discovery]({{< relref "kubernetes-discovery" >}}) |
 | `http2` | bool | Use HTTP/2 to upstream (required for gRPC backends) | — |
-| `maxRequestsPerConnection` | number | Close connection after N requests (0 = unlimited) | — |
+| `maxConnsPerHost` | number | Maximum simultaneous TCP connections to this destination (0 = unlimited) | — |
 
 ## How routes reference destinations
 

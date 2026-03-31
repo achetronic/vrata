@@ -25,7 +25,6 @@ type DestinationPool struct {
 	Balancer       Balancer
 	CircuitBreaker *CircuitBreaker
 	SessionStore   SessionStore
-	OnResponse     func(destID string, statusCode int)
 }
 
 // Pick selects an endpoint from the pool using the configured balancer.
@@ -228,7 +227,11 @@ func (dp *DestinationPool) pickStickyEndpoint(r *http.Request, w http.ResponseWr
 
 func generateEPSessionID() string {
 	b := make([]byte, 16)
-	cryptorand.Read(b)
+	if _, err := cryptorand.Read(b); err != nil {
+		for i := range b {
+			b[i] = byte(rand.Intn(256))
+		}
+	}
 	return fmt.Sprintf("%x", b)
 }
 

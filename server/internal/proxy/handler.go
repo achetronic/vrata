@@ -262,7 +262,9 @@ func directResponseHandler(dr *model.RouteDirectResponse) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(int(dr.Status))
 		if dr.Body != "" {
-			w.Write([]byte(dr.Body))
+			if _, err := w.Write([]byte(dr.Body)); err != nil {
+				slog.Warn("directResponse: failed to write body", slog.String("error", err.Error()))
+			}
 		}
 	})
 }
@@ -429,12 +431,19 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 		}
 
 		if requestTimeout > 0 {
-			http.TimeoutHandler(proxy, requestTimeout, "").ServeHTTP(wrappedW, r)
-			if !headerWritten && transportErr != nil {
+			// Use a context with deadline instead of http.TimeoutHandler to
+			// ensure timeout responses are JSON (TimeoutHandler writes plain text).
+			tCtx, tCancel := context.WithTimeout(r.Context(), requestTimeout)
+			tReq := r.WithContext(tCtx)
+			proxy.ServeHTTP(wrappedW, tReq)
+			tCancel()
+			upstreamDur := time.Since(upstreamStart)
+			if !headerWritten {
+				// Headers not written: either a transport error or a context deadline.
 				pe := &ProxyError{Type: model.ProxyErrTimeout, Status: http.StatusGatewayTimeout, Destination: destID, Endpoint: endpoint.ID, Message: "request timeout"}
 				writeProxyError(w, r, pe)
 			}
-			recordEndpointResult(endpoint, pool, capturedStatus, collectors, time.Since(upstreamStart))
+			recordEndpointResult(endpoint, pool, capturedStatus, collectors, upstreamDur)
 			return
 		}
 
@@ -462,7 +471,7 @@ func recordEndpointResult(ep *Endpoint, pool *DestinationPool, status int, colle
 		}
 	}
 	if ep.OnResponse != nil {
-		ep.OnResponse(pool.Destination.ID, status)
+		ep.OnResponse(pool.Destination.ID, ep.ID, status)
 	}
 
 	destID := pool.Destination.ID
@@ -635,7 +644,12 @@ func filterHealthyPools(dests []model.DestinationRef, pools map[string]*Destinat
 
 func generateSessionID() string {
 	b := make([]byte, 16)
-	cryptorand.Read(b)
+	if _, err := cryptorand.Read(b); err != nil {
+		// fallback: use math/rand if crypto/rand is unavailable (should never happen)
+		for i := range b {
+			b[i] = byte(rand.Intn(256))
+		}
+	}
 	return fmt.Sprintf("%x", b)
 }
 

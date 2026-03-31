@@ -12,6 +12,10 @@ import (
 // Middleware is a function that wraps an http.Handler.
 type Middleware func(http.Handler) http.Handler
 
+// passthrough is a Middleware that passes the request to the next handler
+// unchanged. Used as a no-op when middleware configuration is absent or invalid.
+func passthrough(next http.Handler) http.Handler { return next }
+
 // Chain applies middlewares in order: the first middleware in the slice
 // is the outermost (executes first on the request, last on the response).
 func Chain(handler http.Handler, mws ...Middleware) http.Handler {
