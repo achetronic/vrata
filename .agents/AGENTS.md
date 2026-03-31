@@ -31,8 +31,8 @@ server/
 │   ├── store/                  # Persistence: bolt (prod), memory (test), raftstore (HA)
 │   ├── model/                  # Domain types: Route, Group, Destination, Listener, Middleware, Snapshot
 │   ├── proxy/                  # Native reverse proxy: router, balancers, circuit breaker, health, outlier, metrics
-│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog
-│   │   └── celeval/            # CEL compiler + evaluator
+│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz
+│   │   └── celeval/            # CEL compiler + evaluator (request matching, body access, TLS cert access)
 │   ├── gateway/                # Watches store, rebuilds routing table, reconciles listeners
 │   ├── raft/                   # Embedded Raft HA (hashicorp/raft)
 │   ├── k8s/                    # EndpointSlice + ExternalName watcher
@@ -86,7 +86,7 @@ Documented in `CONVENTIONS.md`. Key rules:
 ## Pending work
 
 - `SERVER_TODO.md` — API auth, multi-value matchers, proxy fleets
-- `CONTROLLER_TODO.md` — TLS gap, regex overlap detection
+- `CONTROLLER_TODO.md` — TLS gap, regex overlap detection, agentic networking support
 
 ## Build
 
