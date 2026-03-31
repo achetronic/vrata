@@ -22,6 +22,10 @@ HTTPRoute.spec.rules[].filters[]    → depends on type:
     RequestRedirect                 → Route.redirect (no forward)
     URLRewrite                      → Route.forward.rewrite
     RequestHeaderModifier           → Middleware type=headers
+
+XBackend.spec.mcp                  → Destination (serviceName→FQDN or hostname→TLS) + Route (pathPrefix)
+XAccessPolicy (InlineTools)        → Middleware type=inlineAuthz (CEL rules with SPIFFE/SA identity)
+XAccessPolicy (ExternalAuth)       → Middleware type=extAuthz (HTTP or gRPC mode)
 ```
 
 ## Ownership
@@ -34,8 +38,11 @@ identifies it as controller-managed:
 - **RouteGroups**: `k8s:{namespace}/{httproute-name}`
 - **Listeners**: `k8s:{gateway-namespace}/{gateway-name}/{listener-name}`
 - **Middlewares**: `k8s:{namespace}/{httproute-name}/rule-{index}/{filter-type}`
+- **Agentic Destinations**: `k8s:agentic:{namespace}/{xbackend-name}`
+- **Agentic Routes**: `k8s:agentic:{namespace}/{xbackend-name}/mcp`
+- **Agentic Middlewares**: `k8s:agentic:{namespace}/{xaccesspolicy-name}/inlineauthz` or `/extauthz`
 
-The controller only touches entities whose name starts with `k8s:`. Entities
+The controller only touches entities whose name starts with `k8s:` (including `k8s:agentic:`). Entities
 created manually via the Vrata API are never modified or deleted.
 
 ## Destination Reference Counting

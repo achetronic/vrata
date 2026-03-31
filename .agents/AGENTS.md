@@ -51,14 +51,15 @@ clients/controller/
 ├── internal/
 │   ├── config/                 # Controller config loader
 │   ├── vrata/                  # Typed HTTP client for Vrata REST API
-│   ├── mapper/                 # HTTPRoute/Gateway → Vrata entities (pure, no I/O)
+│   ├── mapper/                 # HTTPRoute/Gateway/XBackend/XAccessPolicy → Vrata entities (pure, no I/O)
 │   ├── reconciler/             # Apply/delete with dependency ordering + refcount
 │   ├── batcher/                # Debounce + max batch → snapshot create+activate
 │   ├── dedup/                  # Semantic overlap detection (path, headers, methods)
-│   ├── status/                 # HTTPRoute status condition writer
+│   ├── status/                 # HTTPRoute + XBackend + XAccessPolicy status condition writer
 │   ├── refgrant/               # ReferenceGrant cross-namespace checker
 │   └── metrics/                # 8 Prometheus metrics
 ├── apis/v1/                    # SuperHTTPRoute CRD types
+├── apis/agentic/               # XBackend + XAccessPolicy CRD types (Kube Agentic Networking)
 ├── scripts/                    # crdclean + helmwrap for CRD generation pipeline
 └── test/e2e/                   # End-to-end tests
 ```

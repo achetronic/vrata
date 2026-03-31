@@ -29,6 +29,10 @@ KIND_NODE_IP   := $(shell kubectl --context kind-$(KIND_CLUSTER) get nodes -o js
 GATEWAY_API_VERSION  ?= v1.5.1
 GATEWAY_API_CRDS_URL := https://github.com/kubernetes-sigs/gateway-api/releases/download/$(GATEWAY_API_VERSION)/standard-install.yaml
 
+# Kube Agentic Networking CRDs.
+AGENTIC_NET_COMMIT  ?= c5185a7666ac1ebd1b2eefc8d7ca06e15e49c4e9
+AGENTIC_CRDS_BASE   := https://raw.githubusercontent.com/kubernetes-sigs/kube-agentic-networking/$(AGENTIC_NET_COMMIT)/k8s/crds
+
 # Tool resolution — local ./bin/tools/ first, then system PATH.
 KIND := $(shell command -v $(TOOLS_DIR)/kind 2>/dev/null || command -v kind 2>/dev/null)
 HELM := $(shell command -v $(TOOLS_DIR)/helm 2>/dev/null || command -v helm 2>/dev/null)
@@ -42,6 +46,7 @@ SWAG_FLAGS := -d $(SERVER_DIR) -g cmd/vrata/main.go -o $(SERVER_DIR)/docs --pars
 	server-docs server-proto server-port-forward-podinfo \
 	controller-build controller-test controller-e2e \
 	controller-generate-crd controller-deploy-crd controller-deploy-gateway-api-crds \
+	controller-deploy-agentic-crds \
 	docs-serve docs-build docs-deploy
 
 ###############################################################################
@@ -242,6 +247,15 @@ controller-deploy-gateway-api-crds:
 	@kubectl wait --for condition=Established crd/gateways.gateway.networking.k8s.io --timeout=30s
 	@kubectl wait --for condition=Established crd/httproutes.gateway.networking.k8s.io --timeout=30s
 	@echo "✓ Gateway API CRDs $(GATEWAY_API_VERSION) installed"
+
+## controller-deploy-agentic-crds: install Kube Agentic Networking CRDs into the current cluster
+controller-deploy-agentic-crds:
+	@echo "→ Installing Kube Agentic Networking CRDs ($(AGENTIC_NET_COMMIT))..."
+	@kubectl apply --server-side -f $(AGENTIC_CRDS_BASE)/agentic.prototype.x-k8s.io_xbackends.yaml
+	@kubectl apply --server-side -f $(AGENTIC_CRDS_BASE)/agentic.prototype.x-k8s.io_xaccesspolicies.yaml
+	@kubectl wait --for condition=Established crd/xbackends.agentic.prototype.x-k8s.io --timeout=30s
+	@kubectl wait --for condition=Established crd/xaccesspolicies.agentic.prototype.x-k8s.io --timeout=30s
+	@echo "✓ Kube Agentic Networking CRDs installed"
 
 ###############################################################################
 ## Documentation Website

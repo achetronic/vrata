@@ -13,3 +13,4 @@
 - [x] **Metrics wiring** — all 8 controller Prometheus metrics wired into the sync cycle.
 - [x] **Dedup detector reset** — reset at the start of each sync cycle to avoid stale phantom entries.
 - [x] **controller-runtime logr bridge** — `crlog.SetLogger` bridging slog to logr.
+- [x] **Kube Agentic Networking** — XBackend → Destination + Route, XAccessPolicy → inlineAuthz (InlineTools) and extAuthz (ExternalAuth). SPIFFE/ServiceAccount identity via CEL. GC for orphaned agentic entities. Status writing. Config: `watch.xBackends`, `watch.xAccessPolicies`, `agentic.trustDomain`.
