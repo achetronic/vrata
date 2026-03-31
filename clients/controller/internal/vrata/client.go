@@ -45,11 +45,10 @@ type RouteGroup struct {
 
 // Destination is a minimal representation of a Vrata Destination.
 type Destination struct {
-	ID      string         `json:"id,omitempty"`
-	Name    string         `json:"name"`
-	Host    string         `json:"host"`
-	Port    uint32         `json:"port"`
-	Options map[string]any `json:"options,omitempty"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name"`
+	Host string `json:"host"`
+	Port uint32 `json:"port"`
 }
 
 // Listener is a minimal representation of a Vrata Listener.
@@ -63,12 +62,10 @@ type Listener struct {
 
 // Middleware is a minimal representation of a Vrata Middleware.
 type Middleware struct {
-	ID          string         `json:"id,omitempty"`
-	Name        string         `json:"name"`
-	Type        string         `json:"type"`
-	Headers     map[string]any `json:"headers,omitempty"`
-	ExtAuthz    map[string]any `json:"extAuthz,omitempty"`
-	InlineAuthz map[string]any `json:"inlineAuthz,omitempty"`
+	ID      string         `json:"id,omitempty"`
+	Name    string         `json:"name"`
+	Type    string         `json:"type"`
+	Headers map[string]any `json:"headers,omitempty"`
 }
 
 // Snapshot is a minimal representation of a Vrata VersionedSnapshot.

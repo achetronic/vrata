@@ -35,9 +35,6 @@ type Config struct {
 
 	// Metrics controls Prometheus metrics exposition.
 	Metrics MetricsConfig `yaml:"metrics"`
-
-	// Agentic holds settings for Kube Agentic Networking support.
-	Agentic AgenticConfig `yaml:"agentic"`
 }
 
 // WatchConfig controls which Kubernetes resources are watched.
@@ -57,22 +54,6 @@ type WatchConfig struct {
 	// Gateways enables watching Gateway resources to sync Listeners.
 	// Default: true.
 	Gateways *bool `yaml:"gateways,omitempty"`
-
-	// XBackends enables watching XBackend resources from the Kube Agentic
-	// Networking spec. Default: false.
-	XBackends *bool `yaml:"xBackends,omitempty"`
-
-	// XAccessPolicies enables watching XAccessPolicy resources from the
-	// Kube Agentic Networking spec. Default: false.
-	XAccessPolicies *bool `yaml:"xAccessPolicies,omitempty"`
-}
-
-// AgenticConfig holds settings specific to Kube Agentic Networking support.
-type AgenticConfig struct {
-	// TrustDomain is the SPIFFE trust domain used to convert ServiceAccount
-	// sources to SPIFFE URIs. Required when xAccessPolicies watching is enabled.
-	// Example: "cluster.local".
-	TrustDomain string `yaml:"trustDomain"`
 }
 
 // SnapshotConfig controls snapshot batching.
@@ -207,22 +188,6 @@ func (c *Config) WatchGateways() bool {
 		return true
 	}
 	return *c.Watch.Gateways
-}
-
-// WatchXBackends returns whether XBackend watching is enabled.
-func (c *Config) WatchXBackends() bool {
-	if c.Watch.XBackends == nil {
-		return false
-	}
-	return *c.Watch.XBackends
-}
-
-// WatchXAccessPolicies returns whether XAccessPolicy watching is enabled.
-func (c *Config) WatchXAccessPolicies() bool {
-	if c.Watch.XAccessPolicies == nil {
-		return false
-	}
-	return *c.Watch.XAccessPolicies
 }
 
 // DuplicatesMode returns the configured duplicate detection mode.

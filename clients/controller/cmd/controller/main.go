@@ -44,7 +44,6 @@ import (
 	crlog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	vrataapiv1 "github.com/achetronic/vrata/clients/controller/apis/v1"
-	agenticapi "github.com/achetronic/vrata/clients/controller/apis/agentic"
 
 	"github.com/achetronic/vrata/clients/controller/internal/batcher"
 	"github.com/achetronic/vrata/clients/controller/internal/config"
@@ -94,9 +93,6 @@ func run() error {
 	utilruntime.Must(gwapiv1.Install(scheme))
 	utilruntime.Must(gwapiv1beta1.Install(scheme))
 	utilruntime.Must(vrataapiv1.Install(scheme))
-	if cfg.WatchXBackends() || cfg.WatchXAccessPolicies() {
-		utilruntime.Must(agenticapi.Install(scheme))
-	}
 
 	// Build controller-runtime k8s client (for status writes).
 	k8sClient, err := runtimeclient.New(restCfg, runtimeclient.Options{Scheme: scheme})
@@ -343,30 +339,6 @@ func run() error {
 					}
 				} else if m != nil {
 					m.ReconcileTotal.WithLabelValues("gateway", "success").Inc()
-				}
-			}
-
-			// --- Phase 3b: Agentic resources (XBackend, XAccessPolicy) ---
-
-			if cfg.WatchXBackends() {
-				if err := syncAllXBackends(ctx, informerCache, rec, bat, logger); err != nil {
-					logger.Error("XBackend sync failed", slog.String("error", err.Error()))
-					if m != nil {
-						m.ReconcileErrors.WithLabelValues("xbackend").Inc()
-					}
-				} else if m != nil {
-					m.ReconcileTotal.WithLabelValues("xbackend", "success").Inc()
-				}
-			}
-
-			if cfg.WatchXAccessPolicies() {
-				if err := syncAllXAccessPolicies(ctx, informerCache, rec, bat, cfg.Agentic.TrustDomain, logger); err != nil {
-					logger.Error("XAccessPolicy sync failed", slog.String("error", err.Error()))
-					if m != nil {
-						m.ReconcileErrors.WithLabelValues("xaccesspolicy").Inc()
-					}
-				} else if m != nil {
-					m.ReconcileTotal.WithLabelValues("xaccesspolicy", "success").Inc()
 				}
 			}
 
@@ -883,201 +855,4 @@ func buildK8sConfig() (*rest.Config, error) {
 // controller-runtime internal components share the same structured logger.
 func slogLogr(l *slog.Logger) logr.Logger {
 	return logr.FromSlogHandler(l.Handler())
-}
-
-// syncAllXBackends lists all XBackend resources and reconciles them to Vrata.
-func syncAllXBackends(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, logger *slog.Logger) error {
-	var backends agenticapi.XBackendList
-	if err := c.List(ctx, &backends); err != nil {
-		return fmt.Errorf("listing XBackends: %w", err)
-	}
-
-	vrataClient := rec.Client()
-	desiredNames := make(map[string]bool)
-
-	for i := range backends.Items {
-		b := &backends.Items[i]
-		mapped := mapper.MapXBackend(b)
-		desiredNames[mapped.Destination.Name] = true
-		desiredNames[mapped.Route.Name] = true
-
-		// Ensure destination.
-		existing, err := findEntityByName(ctx, vrataClient, "destinations", mapped.Destination.Name)
-		if err != nil {
-			logger.Error("checking agentic destination", slog.String("name", mapped.Destination.Name), slog.String("error", err.Error()))
-			continue
-		}
-		if existing == nil {
-			if _, err := vrataClient.CreateDestination(ctx, mapped.Destination); err != nil {
-				logger.Error("creating agentic destination", slog.String("name", mapped.Destination.Name), slog.String("error", err.Error()))
-				continue
-			}
-			bat.Signal(ctx)
-		}
-
-		// Ensure route.
-		existingRoute, err := findEntityByName(ctx, vrataClient, "routes", mapped.Route.Name)
-		if err != nil {
-			logger.Error("checking agentic route", slog.String("name", mapped.Route.Name), slog.String("error", err.Error()))
-			continue
-		}
-		if existingRoute == nil {
-			// Resolve destination ID.
-			dests, _ := vrataClient.ListDestinations(ctx)
-			for _, d := range dests {
-				if d.Name == mapped.Destination.Name {
-					if fwd, ok := mapped.Route.Forward["destinations"].([]map[string]any); ok && len(fwd) > 0 {
-						fwd[0]["destinationId"] = d.ID
-					}
-					break
-				}
-			}
-			if _, err := vrataClient.CreateRoute(ctx, mapped.Route); err != nil {
-				logger.Error("creating agentic route", slog.String("name", mapped.Route.Name), slog.String("error", err.Error()))
-				continue
-			}
-			bat.Signal(ctx)
-		}
-	}
-
-	// GC orphaned agentic destinations and routes.
-	gcAgenticEntities(ctx, vrataClient, bat, desiredNames, logger)
-
-	return nil
-}
-
-// syncAllXAccessPolicies lists all XAccessPolicy resources and reconciles them.
-func syncAllXAccessPolicies(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, trustDomain string, logger *slog.Logger) error {
-	var policies agenticapi.XAccessPolicyList
-	if err := c.List(ctx, &policies); err != nil {
-		return fmt.Errorf("listing XAccessPolicies: %w", err)
-	}
-
-	vrataClient := rec.Client()
-	desiredMWNames := make(map[string]bool)
-
-	for i := range policies.Items {
-		p := &policies.Items[i]
-		mapped := mapper.MapXAccessPolicy(p, trustDomain)
-		if mapped == nil {
-			continue
-		}
-
-		mw := mapped.Middleware
-		desiredMWNames[mw.Name] = true
-
-		existing, err := findEntityByName(ctx, vrataClient, "middlewares", mw.Name)
-		if err != nil {
-			logger.Error("checking agentic middleware", slog.String("name", mw.Name), slog.String("error", err.Error()))
-			continue
-		}
-		if existing == nil {
-			if _, err := vrataClient.CreateMiddleware(ctx, mw); err != nil {
-				logger.Error("creating agentic middleware", slog.String("name", mw.Name), slog.String("error", err.Error()))
-				continue
-			}
-			bat.Signal(ctx)
-			logger.Info("created agentic middleware", slog.String("name", mw.Name), slog.String("type", mw.Type))
-		}
-	}
-
-	// GC orphaned agentic middlewares.
-	allMWs, err := vrataClient.ListMiddlewares(ctx)
-	if err != nil {
-		logger.Error("listing middlewares for agentic GC", slog.String("error", err.Error()))
-		return nil
-	}
-	for _, mw := range allMWs {
-		if !mapper.IsAgenticOwned(mw.Name) {
-			continue
-		}
-		if desiredMWNames[mw.Name] {
-			continue
-		}
-		if err := vrataClient.DeleteMiddleware(ctx, mw.ID); err != nil {
-			logger.Error("deleting orphaned agentic middleware", slog.String("name", mw.Name), slog.String("error", err.Error()))
-			continue
-		}
-		bat.Signal(ctx)
-		logger.Info("GC: deleted orphaned agentic middleware", slog.String("name", mw.Name))
-	}
-
-	return nil
-}
-
-// gcAgenticEntities deletes agentic-owned destinations and routes that are not
-// in the desired set.
-func gcAgenticEntities(ctx context.Context, client *vrata.Client, bat *batcher.Batcher, desired map[string]bool, logger *slog.Logger) {
-	// GC routes.
-	routes, err := client.ListRoutes(ctx)
-	if err != nil {
-		logger.Error("listing routes for agentic GC", slog.String("error", err.Error()))
-		return
-	}
-	for _, r := range routes {
-		if !mapper.IsAgenticOwned(r.Name) || desired[r.Name] {
-			continue
-		}
-		if err := client.DeleteRoute(ctx, r.ID); err != nil {
-			logger.Error("deleting orphaned agentic route", slog.String("name", r.Name), slog.String("error", err.Error()))
-			continue
-		}
-		bat.Signal(ctx)
-		logger.Info("GC: deleted orphaned agentic route", slog.String("name", r.Name))
-	}
-
-	// GC destinations.
-	dests, err := client.ListDestinations(ctx)
-	if err != nil {
-		logger.Error("listing destinations for agentic GC", slog.String("error", err.Error()))
-		return
-	}
-	for _, d := range dests {
-		if !mapper.IsAgenticOwned(d.Name) || desired[d.Name] {
-			continue
-		}
-		if err := client.DeleteDestination(ctx, d.ID); err != nil {
-			logger.Error("deleting orphaned agentic destination", slog.String("name", d.Name), slog.String("error", err.Error()))
-			continue
-		}
-		bat.Signal(ctx)
-		logger.Info("GC: deleted orphaned agentic destination", slog.String("name", d.Name))
-	}
-}
-
-// findEntityByName searches for an entity by name in Vrata (reuses existing patterns).
-func findEntityByName(ctx context.Context, client *vrata.Client, resource, name string) (*vrata.Entity, error) {
-	switch resource {
-	case "destinations":
-		dests, err := client.ListDestinations(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, d := range dests {
-			if d.Name == name {
-				return &vrata.Entity{ID: d.ID, Name: d.Name}, nil
-			}
-		}
-	case "routes":
-		routes, err := client.ListRoutes(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range routes {
-			if r.Name == name {
-				return &vrata.Entity{ID: r.ID, Name: r.Name}, nil
-			}
-		}
-	case "middlewares":
-		mws, err := client.ListMiddlewares(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range mws {
-			if m.Name == name {
-				return &vrata.Entity{ID: m.ID, Name: m.Name}, nil
-			}
-		}
-	}
-	return nil, nil
 }
