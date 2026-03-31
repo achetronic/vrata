@@ -167,43 +167,43 @@ storage level (two flat buckets in bbolt).
 
 ---
 
-## Filter as independent first-class entity (not embedded in Listener)
+## Middleware as independent first-class entity (not embedded in Listener)
 
 **Date**: 2026-03-16
 **Status**: Implemented
 
-A `Filter` is a standalone entity stored and managed independently of any `Listener`.
-A `Listener` references filters by their IDs (`FilterIDs []string`). The proxy builder
+A `Middleware` is a standalone entity stored and managed independently of any `Listener`.
+A `Listener` references middlewares by their IDs (`MiddlewareIDs []string`). The proxy builder
 looks up each referenced middleware and builds the corresponding handler.
 
 **Reasoning**: Consistent with the Route/Group separation pattern already established.
-A filter (JWT config, ext_authz endpoint, CORS policy) is reusable across multiple
-listeners — embedding it would force duplication. Storing filters independently also
+A middleware (JWT config, ext_authz endpoint, CORS policy) is reusable across multiple
+listeners — embedding it would force duplication. Storing middlewares independently also
 makes partial updates (changing a JWT JWKS URI) atomic and auditable without
 touching the listener configuration.
 
-**Do not**: Embed filter configs directly inside `Listener`. Do not add a `ListenerID`
-field to `Filter`. Filters and Listeners must remain separate resources at both API
-level (`/api/v1/filters`, `/api/v1/listeners`) and storage level (separate bbolt buckets).
+**Do not**: Embed middleware configs directly inside `Listener`. Do not add a `ListenerID`
+field to `Middleware`. Middlewares and Listeners must remain separate resources at both API
+level (`/api/v1/middlewares`, `/api/v1/listeners`) and storage level (separate bbolt buckets).
 
 ---
 
-## FilterOverrides on both Route and RouteGroup, with Route-wins merge semantics
+## MiddlewareOverrides on both Route and RouteGroup, with Route-wins merge semantics
 
 **Date**: 2026-03-16
 **Status**: Implemented (models done; per-route middleware override wiring)
 
-Both `Route` and `RouteGroup` carry a `FilterOverrides map[string]FilterOverride` field,
-keyed by filter ID. When building per-route middleware overrides, the merge order is:
+Both `Route` and `RouteGroup` carry a `MiddlewareOverrides map[string]MiddlewareOverride` field,
+keyed by middleware ID. When building per-route middleware overrides, the merge order is:
 RouteGroup overrides are the base; Route overrides win on key collision (more specific wins).
 
 **Reasoning**: Allows per-route granularity (disable JWT for a specific health check route)
-and per-group default overrides (a group can set a common CORS override for all its routes)
-without duplicating override config. Routes being more specific than groups is an obvious
+and per-group default overrides (a group can set a common CORS override or skip condition for all its routes)
+without duplicating override config. This serves to adjust global middleware behavior for a specific group of routes. Routes being more specific than groups is an obvious
 hierarchical rule that matches the proxy's own override semantics.
 
 **Do not**: Invert the merge direction (group wins over route). Do not remove
-`FilterOverrides` from `RouteGroup` — group-level overrides are intentional. Do not
+`MiddlewareOverrides` from `RouteGroup` — group-level overrides are intentional. Do not
 flat-replace: always merge (group base + route delta).
 
 ---
@@ -495,28 +495,28 @@ snapshot cache from the watcher.
 
 ---
 
-## Header manipulation is a Filter, not a Route/Group field
+## Header manipulation is a Middleware, not a Route/Group field
 
 **Date**: 2026-03-16
 **Status**: Decided
 
-Request/response header add/remove is modeled as a `Filter` entity (type
-`headers`) using the existing Filter + FilterOverrides system — not as direct
-fields on `Route` or `RouteGroup`. The Filter carries the base manipulation
-rules; FilterOverrides on groups and routes adjust or disable per-scope.
+Request/response header add/remove is modeled as a `Middleware` entity (type
+`headers`) using the existing Middleware + MiddlewareOverrides system — not as direct
+fields on `Route` or `RouteGroup`. The Middleware carries the base manipulation
+rules; MiddlewareOverrides on groups and routes adjust or disable per-scope.
 
 **Reasoning**: Header manipulation is a behaviour applied to a request, not an
 intrinsic property of the route's matching or forwarding logic. Modeling it as
-a Filter is consistent with every other request-modifying behaviour (CORS, JWT,
+a Middleware is consistent with every other request-modifying behaviour (CORS, JWT,
 ext_authz, ext_proc, rate limiting). Users learn one pattern for all middleware.
 The proxy could implement header add/remove as direct fields on Route and
-Group, but that is an implementation detail — the builder maps the Filter
+Group, but that is an implementation detail — the builder maps the Middleware
 config to those fields internally.
 
 **Do not**: Add `requestHeadersToAdd`, `requestHeadersToRemove`,
 `responseHeadersToAdd`, or `responseHeadersToRemove` as direct fields on
 `Route`, `ForwardAction`, or `RouteGroup`. Header manipulation always goes
-through the Filter entity.
+through the Middleware entity.
 
 ---
 

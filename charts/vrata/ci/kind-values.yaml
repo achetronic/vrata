@@ -19,11 +19,11 @@ controlPlane:
       address: ":8080"
       storePath: "/data"
       raft:
-        nodeId: "${POD_NAME}"
+        nodeId: "${POD_IP}:7000"
         bindAddress: ":7000"
         advertiseAddress: "${POD_IP}:7000"
         discovery:
-          dns: "e2e-vrata-cp-headless.vrata-e2e.svc.cluster.local"
+          dns: "vrata-vrata-cp-headless.vrata.svc.cluster.local"
     log:
       format: json
       level: info

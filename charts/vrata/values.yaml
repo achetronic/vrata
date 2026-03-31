@@ -51,16 +51,16 @@ controlPlane:
   #       address: ":8080"
   #       storePath: "/data"
   #       raft:
-  #         nodeId: "${POD_NAME}"
+  #         nodeId: "${POD_IP}:7000"
   #         bindAddress: ":7000"
   #         advertiseAddress: "${POD_IP}:7000"
   #         discovery:
-  #           dns: "release-vrata-cp-headless.namespace.svc.cluster.local"
+  #           dns: "<release>-vrata-cp-headless.<namespace>.svc.cluster.local"
   #         # Or use static peers instead of DNS discovery:
   #         # peers:
-  #         #   - "cp-0=cp-0.release-vrata-cp-headless.namespace.svc.cluster.local:7000"
-  #         #   - "cp-1=cp-1.release-vrata-cp-headless.namespace.svc.cluster.local:7000"
-  #         #   - "cp-2=cp-2.release-vrata-cp-headless.namespace.svc.cluster.local:7000"
+  #         #   - "<pod0-ip>:7000=cp-0.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
+  #         #   - "<pod1-ip>:7000=cp-1.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
+  #         #   - "<pod2-ip>:7000=cp-2.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
   #     log:
   #       format: console
   #       level: info
