@@ -58,7 +58,7 @@ Only one of `forward`, `redirect`, or `directResponse` should be set.
 | `name` | string | Unique name | — |
 | `match` | object | Request matching rules | [Matching]({{< relref "matching" >}}) |
 | `forward` | object | Forward to upstream destinations | [Forwarding]({{< relref "forwarding" >}}) |
-| `redirect` | object | Return HTTP redirect (`url`, `scheme`, `host`, `path`, `stripQuery`, `code`) | — |
+| `redirect` | object | Return HTTP redirect (`url`, `scheme`, `host`, `path`, `stripQuery`, `code`) | [Redirect]({{< relref "redirect" >}}) |
 | `directResponse` | object | Return fixed response (`status`, `body`) | [Direct Response]({{< relref "direct-response" >}}) |
 | `middlewareIds` | array | Middleware IDs to apply (in order) | — |
 | `middlewareOverrides` | map | Per-middleware overrides (skipWhen, onlyWhen, disabled) | — |
