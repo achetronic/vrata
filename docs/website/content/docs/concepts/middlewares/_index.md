@@ -40,7 +40,8 @@ Set `type` to the middleware type and populate the matching field. See each type
   "extAuthz": { ... },
   "extProc": { ... },
   "headers": { ... },
-  "accessLog": { ... }
+  "accessLog": { ... },
+  "inlineAuthz": { ... }
 }
 ```
 
@@ -64,6 +65,7 @@ Set `type` and populate only the matching field. All other type fields are ignor
 | `extProc` | [External Processor]({{< relref "ext-proc" >}}) | Send request/response phases to a service for inspection and mutation |
 | `headers` | [Header Manipulation]({{< relref "headers" >}}) | Add/remove request and response headers |
 | `accessLog` | [Access Log]({{< relref "access-log" >}}) | Structured access logging per route |
+| `inlineAuthz` | [Inline Authorization]({{< relref "inline-authz" >}}) | CEL-based authorization rules evaluated locally |
 
 ## Attaching to routes
 

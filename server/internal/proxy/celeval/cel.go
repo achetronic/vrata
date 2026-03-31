@@ -8,7 +8,12 @@
 package celeval
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -19,7 +24,14 @@ import (
 // Program is a pre-compiled CEL program ready for evaluation against an
 // HTTP request. It is safe for concurrent use.
 type Program struct {
-	program cel.Program
+	program   cel.Program
+	needsBody bool
+}
+
+// NeedsBody reports whether this program references request.body and
+// therefore requires the request body to be buffered before evaluation.
+func (p *Program) NeedsBody() bool {
+	return p.needsBody
 }
 
 // Compile parses and type-checks a CEL expression, returning a Program
@@ -46,7 +58,18 @@ func Compile(expr string) (*Program, error) {
 		return nil, fmt.Errorf("creating CEL program: %w", err)
 	}
 
-	return &Program{program: prg}, nil
+	return &Program{
+		program:   prg,
+		needsBody: exprReferencesBody(expr),
+	}, nil
+}
+
+// exprReferencesBody checks whether a CEL expression references request.body.
+// This is a simple string check — false positives (e.g. the literal in a
+// string) are harmless (extra buffering), false negatives are not possible
+// because the field name is fixed.
+func exprReferencesBody(expr string) bool {
+	return strings.Contains(expr, "request.body")
 }
 
 // Eval evaluates the compiled CEL program against the given HTTP request.
@@ -157,6 +180,65 @@ func (p *ClaimsStringProgram) Eval(claims map[string]any) string {
 	return fmt.Sprintf("%v", out.Value())
 }
 
+// bodyCtxKey is the context key for cached body data.
+type bodyCtxKey struct{}
+
+// BodyData holds the buffered request body in both raw and parsed forms.
+type BodyData struct {
+	Raw  string
+	JSON map[string]any // nil if not JSON or parse failed
+}
+
+// BufferBody reads the request body up to maxSize bytes, replaces r.Body
+// with a re-readable buffer, and stores the result in the request context.
+// Subsequent calls return the cached data without re-reading.
+func BufferBody(r *http.Request, maxSize int) (*http.Request, *BodyData) {
+	if data, ok := r.Context().Value(bodyCtxKey{}).(*BodyData); ok {
+		return r, data
+	}
+
+	data := &BodyData{}
+
+	if r.Body != nil && r.Body != http.NoBody {
+		reader := io.LimitReader(r.Body, int64(maxSize+1))
+		raw, err := io.ReadAll(reader)
+		if err != nil {
+			slog.Warn("failed to read request body for CEL evaluation", "error", err)
+		} else {
+			if len(raw) > maxSize {
+				slog.Warn("request body exceeds celBodyMaxSize, truncating raw and skipping json parse",
+					"size", len(raw), "maxSize", maxSize)
+				raw = raw[:maxSize]
+			} else {
+				ct := r.Header.Get("Content-Type")
+				if strings.HasPrefix(ct, "application/json") {
+					var parsed map[string]any
+					dec := json.NewDecoder(bytes.NewReader(raw))
+					dec.UseNumber()
+					if err := dec.Decode(&parsed); err != nil {
+						slog.Debug("request body is not valid JSON", "error", err)
+					} else {
+						data.JSON = parsed
+					}
+				}
+			}
+			data.Raw = string(raw)
+
+			r.Body = io.NopCloser(bytes.NewReader(raw))
+		}
+	}
+
+	ctx := context.WithValue(r.Context(), bodyCtxKey{}, data)
+	return r.WithContext(ctx), data
+}
+
+// BodyFromCtx returns cached body data from a request context, or nil
+// if BufferBody has not been called.
+func BodyFromCtx(r *http.Request) *BodyData {
+	data, _ := r.Context().Value(bodyCtxKey{}).(*BodyData)
+	return data
+}
+
 // buildRequestMap creates a map representation of the HTTP request for CEL.
 func buildRequestMap(r *http.Request) map[string]any {
 	headers := make(map[string]any, len(r.Header))
@@ -194,7 +276,7 @@ func buildRequestMap(r *http.Request) map[string]any {
 		clientIP = h
 	}
 
-	return map[string]any{
+	m := map[string]any{
 		"method":      r.Method,
 		"path":        r.URL.Path,
 		"host":        host,
@@ -203,4 +285,35 @@ func buildRequestMap(r *http.Request) map[string]any {
 		"queryParams": queryParams,
 		"clientIp":    clientIP,
 	}
+
+	if data := BodyFromCtx(r); data != nil {
+		body := map[string]any{
+			"raw": data.Raw,
+		}
+		if data.JSON != nil {
+			body["json"] = data.JSON
+		}
+		m["body"] = body
+	}
+
+	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		cert := r.TLS.PeerCertificates[0]
+		uris := make([]string, 0, len(cert.URIs))
+		for _, u := range cert.URIs {
+			uris = append(uris, u.String())
+		}
+		dnsNames := make([]string, len(cert.DNSNames))
+		copy(dnsNames, cert.DNSNames)
+
+		m["tls"] = map[string]any{
+			"peerCertificate": map[string]any{
+				"uris":     uris,
+				"dnsNames": dnsNames,
+				"subject":  cert.Subject.String(),
+				"serial":   fmt.Sprintf("%x", cert.SerialNumber),
+			},
+		}
+	}
+
+	return m
 }

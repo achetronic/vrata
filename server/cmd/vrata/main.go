@@ -176,6 +176,7 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		SessionStore:     sessStore,
 		EndpointProvider: epProvider,
 		Logger:           logger,
+		CELBodyMaxSize:   cfg.Proxy.CELBodyMaxSize,
 	})
 
 	if epProvider != nil {
@@ -249,6 +250,7 @@ func runProxy(cfg *config.Config, logger *slog.Logger) error {
 		OutlierDetector:   outlierDetector,
 		SessionStore:      sessStore,
 		Logger:            logger,
+		CELBodyMaxSize:    cfg.Proxy.CELBodyMaxSize,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

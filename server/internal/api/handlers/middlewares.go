@@ -6,10 +6,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy/celeval"
 	"github.com/google/uuid"
 )
 
@@ -47,6 +49,11 @@ func (d *Dependencies) CreateMiddleware(w http.ResponseWriter, r *http.Request) 
 	var mw model.Middleware
 	if err := json.NewDecoder(r.Body).Decode(&mw); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		return
+	}
+
+	if err := validateMiddleware(mw); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
 		return
 	}
 
@@ -113,6 +120,11 @@ func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) 
 	}
 	mw.ID = middlewareID
 
+	if err := validateMiddleware(mw); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		return
+	}
+
 	if err := d.Store.SaveMiddleware(r.Context(), mw); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
 		return
@@ -141,4 +153,32 @@ func (d *Dependencies) DeleteMiddleware(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateMiddleware checks that the middleware configuration is valid.
+func validateMiddleware(mw model.Middleware) error {
+	if mw.Type == model.MiddlewareTypeInlineAuthz {
+		if mw.InlineAuthz == nil {
+			return fmt.Errorf("inlineAuthz config is required when type is %q", mw.Type)
+		}
+		cfg := mw.InlineAuthz
+		if len(cfg.Rules) == 0 {
+			return fmt.Errorf("inlineAuthz.rules must not be empty")
+		}
+		if cfg.DefaultAction != "" && cfg.DefaultAction != "allow" && cfg.DefaultAction != "deny" {
+			return fmt.Errorf("inlineAuthz.defaultAction must be \"allow\" or \"deny\", got %q", cfg.DefaultAction)
+		}
+		for i, rule := range cfg.Rules {
+			if rule.Action != "allow" && rule.Action != "deny" {
+				return fmt.Errorf("inlineAuthz.rules[%d].action must be \"allow\" or \"deny\", got %q", i, rule.Action)
+			}
+			if rule.CEL == "" {
+				return fmt.Errorf("inlineAuthz.rules[%d].cel must not be empty", i)
+			}
+			if _, err := celeval.Compile(rule.CEL); err != nil {
+				return fmt.Errorf("inlineAuthz.rules[%d].cel: %w", i, err)
+			}
+		}
+	}
+	return nil
 }

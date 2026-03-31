@@ -32,6 +32,7 @@ type Dependencies struct {
 	SessionStore     proxy.SessionStore
 	EndpointProvider EndpointProvider
 	Logger           *slog.Logger
+	CELBodyMaxSize   int
 }
 
 // Gateway listens for store change events and keeps the proxy config up to date.
@@ -127,7 +128,7 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 	}
 
 	// Build new routing table.
-	table, err := proxy.BuildTable(routes, groups, destinations, middlewares, gw.deps.SessionStore)
+	table, err := proxy.BuildTable(routes, groups, destinations, middlewares, gw.deps.SessionStore, gw.deps.CELBodyMaxSize)
 	if err != nil {
 		return fmt.Errorf("building routing table: %w", err)
 	}

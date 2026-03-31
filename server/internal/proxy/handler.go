@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +36,7 @@ func buildRouteHandler(
 	allMiddlewares map[string]model.Middleware,
 	onCleanup func(func()),
 	sessStore SessionStore,
+	celBodyMaxSize int,
 ) http.Handler {
 	var handler http.Handler
 
@@ -65,7 +67,7 @@ func buildRouteHandler(
 			continue
 		}
 
-		m, cleanup := buildMiddleware(mw, pools)
+		m, cleanup := buildMiddleware(mw, pools, celBodyMaxSize)
 		if m == nil {
 			continue
 		}
@@ -75,7 +77,7 @@ func buildRouteHandler(
 
 		// Wrap with skipWhen/onlyWhen if configured.
 		if ov != nil {
-			m = wrapWithConditions(m, ov)
+			m = wrapWithConditions(m, ov, celBodyMaxSize)
 		}
 
 		m = wrapWithMetrics(m, mw.Name, string(mw.Type))
@@ -132,7 +134,7 @@ func wrapWithMetrics(m middlewares.Middleware, name, mwType string) middlewares.
 // wrapWithConditions wraps a middleware with skipWhen/onlyWhen CEL evaluation.
 // skipWhen: if ANY expression matches, skip the middleware.
 // onlyWhen: if NO expression matches, skip the middleware.
-func wrapWithConditions(m middlewares.Middleware, ov *model.MiddlewareOverride) middlewares.Middleware {
+func wrapWithConditions(m middlewares.Middleware, ov *model.MiddlewareOverride, celBodyMaxSize int) middlewares.Middleware {
 	var skipProgs []*celeval.Program
 	for _, expr := range ov.SkipWhen {
 		prg, err := celeval.Compile(expr)
@@ -163,9 +165,28 @@ func wrapWithConditions(m middlewares.Middleware, ov *model.MiddlewareOverride) 
 		return m
 	}
 
+	needsBody := false
+	for _, prg := range skipProgs {
+		if prg.NeedsBody() {
+			needsBody = true
+			break
+		}
+	}
+	if !needsBody {
+		for _, prg := range onlyProgs {
+			if prg.NeedsBody() {
+				needsBody = true
+				break
+			}
+		}
+	}
+
 	return func(next http.Handler) http.Handler {
 		inner := m(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if needsBody {
+				r, _ = celeval.BufferBody(r, celBodyMaxSize)
+			}
 			for _, prg := range skipProgs {
 				if prg.Eval(r) {
 					next.ServeHTTP(w, r)
@@ -211,7 +232,7 @@ func collectMiddlewareIDs(route model.Route, group *model.RouteGroup) []string {
 	return ids
 }
 
-func buildMiddleware(mw model.Middleware, pools map[string]*DestinationPool) (middlewares.Middleware, func()) {
+func buildMiddleware(mw model.Middleware, pools map[string]*DestinationPool, celBodyMaxSize int) (middlewares.Middleware, func()) {
 	services := poolsToServices(pools)
 	switch mw.Type {
 	case model.MiddlewareTypeCORS:
@@ -232,6 +253,8 @@ func buildMiddleware(mw model.Middleware, pools map[string]*DestinationPool) (mi
 	case model.MiddlewareTypeExtProc:
 		m, stop := middlewares.ExtProcMiddlewareWithStop(mw.ExtProc, services)
 		return m, stop
+	case model.MiddlewareTypeInlineAuthz:
+		return middlewares.InlineAuthzMiddleware(mw.InlineAuthz, celBodyMaxSize), nil
 	default:
 		return nil, nil
 	}
@@ -317,6 +340,8 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		injectXFCC(r)
+
 		// Level 1: pick destination pool.
 		pool := pickDestinationPool(fwd, pools, r, routeID, pinRing, w, sessStore)
 		if pool == nil {
@@ -641,6 +666,23 @@ func filterHealthyPools(dests []model.DestinationRef, pools map[string]*Destinat
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+// injectXFCC strips any incoming X-Forwarded-Client-Cert header (spoof
+// protection) and re-injects it from the mTLS peer certificate's URI SANs.
+// Called at the top of forwardHandler before destination selection.
+func injectXFCC(r *http.Request) {
+	r.Header.Del("X-Forwarded-Client-Cert")
+	if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
+		cert := r.TLS.PeerCertificates[0]
+		if len(cert.URIs) > 0 {
+			var parts []string
+			for _, u := range cert.URIs {
+				parts = append(parts, u.String())
+			}
+			r.Header.Set("X-Forwarded-Client-Cert", strings.Join(parts, ";"))
+		}
+	}
+}
 
 func generateSessionID() string {
 	b := make([]byte, 16)

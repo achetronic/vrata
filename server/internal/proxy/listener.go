@@ -6,10 +6,12 @@ package proxy
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -135,6 +137,43 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 		}
 		if v, ok := tlsVersionMap[l.TLS.MaxVersion]; ok {
 			srv.TLSConfig.MaxVersion = v
+		}
+
+		// mTLS client authentication.
+		if ca := l.TLS.ClientAuth; ca != nil && ca.Mode != "" && ca.Mode != "none" {
+			switch ca.Mode {
+			case "optional":
+				srv.TLSConfig.ClientAuth = tls.VerifyClientCertIfGiven
+			case "require":
+				srv.TLSConfig.ClientAuth = tls.RequireAndVerifyClientCert
+			default:
+				lm.logger.Error("proxy: unknown clientAuth mode",
+					slog.String("id", l.ID),
+					slog.String("mode", ca.Mode),
+				)
+				cancel()
+				return
+			}
+			if ca.CAFile != "" {
+				caData, err := os.ReadFile(ca.CAFile)
+				if err != nil {
+					lm.logger.Error("proxy: failed to load client CA file",
+						slog.String("id", l.ID),
+						slog.String("error", err.Error()),
+					)
+					cancel()
+					return
+				}
+				pool := x509.NewCertPool()
+				if !pool.AppendCertsFromPEM(caData) {
+					lm.logger.Error("proxy: no valid certificates in client CA file",
+						slog.String("id", l.ID),
+					)
+					cancel()
+					return
+				}
+				srv.TLSConfig.ClientCAs = pool
+			}
 		}
 	}
 
@@ -290,10 +329,24 @@ func sameTLS(a, b *model.ListenerTLS) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return a.CertPath == b.CertPath &&
-		a.KeyPath == b.KeyPath &&
-		a.MinVersion == b.MinVersion &&
-		a.MaxVersion == b.MaxVersion
+	if a.CertPath != b.CertPath ||
+		a.KeyPath != b.KeyPath ||
+		a.MinVersion != b.MinVersion ||
+		a.MaxVersion != b.MaxVersion {
+		return false
+	}
+	return sameClientAuth(a.ClientAuth, b.ClientAuth)
+}
+
+// sameClientAuth compares two client auth configs for equality.
+func sameClientAuth(a, b *model.ListenerClientAuth) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Mode == b.Mode && a.CAFile == b.CAFile
 }
 
 // sameMetrics compares two metrics configs for equality.

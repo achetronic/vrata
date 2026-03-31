@@ -4,7 +4,9 @@
 package proxy
 
 import (
+	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/achetronic/vrata/internal/model"
@@ -22,7 +24,7 @@ func TestRouterMatchesPath(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
 			},
 		},
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, 65536,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -57,7 +59,7 @@ func TestRouterMatchesMethods(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 201},
 			},
 		},
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, 65536,
 	)
 	router.SwapTable(table)
 
@@ -96,7 +98,7 @@ func TestRouterGroupComposition(t *testing.T) {
 				RouteIDs:  []string{"r1"},
 			},
 		},
-		nil, nil, nil,
+		nil, nil, nil, 65536,
 	)
 	router.SwapTable(table)
 
@@ -128,7 +130,7 @@ func TestRouterStandaloneRoute(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "healthy"},
 			},
 		},
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, 65536,
 	)
 	router.SwapTable(table)
 
@@ -160,7 +162,7 @@ func TestRouterAtomicSwap(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200},
 			},
 		},
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, 65536,
 	)
 	router.SwapTable(table)
 
@@ -185,7 +187,7 @@ func TestRouterCELOnlyMatch(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "cel-ok"},
 			},
 		},
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, 65536,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -234,7 +236,7 @@ func TestRouterCELWithStaticMatchers(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "debug-on"},
 			},
 		},
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, 65536,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +294,7 @@ func TestRouterCELInvalidExpressionSkipsRoute(t *testing.T) {
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
 			},
 		},
-		nil, nil, nil, nil,
+		nil, nil, nil, nil, 65536,
 	)
 	if err != nil {
 		t.Fatalf("BuildTable should not fail, got: %v", err)
@@ -313,5 +315,131 @@ func TestRouterCELInvalidExpressionSkipsRoute(t *testing.T) {
 	router.ServeHTTP(w2, r2)
 	if w2.Code != 404 {
 		t.Errorf("bad CEL route should be skipped (404), got %d", w2.Code)
+	}
+}
+
+func TestRouterCELBodyJSONMatch(t *testing.T) {
+	router := NewRouter()
+
+	table, err := BuildTable(
+		[]model.Route{
+			{
+				ID: "r1",
+				Match: model.MatchRule{
+					PathPrefix: "/",
+					Methods:    []string{"POST"},
+					CEL:        `has(request.body) && has(request.body.json) && request.body.json.method == "tools/call"`,
+				},
+				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "matched"},
+			},
+		},
+		nil, nil, nil, nil, 65536,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.SwapTable(table)
+
+	// JSON body with matching method — should match.
+	r := httptest.NewRequest("POST", "/test", strings.NewReader(`{"method":"tools/call"}`))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	if w.Code != 200 || w.Body.String() != "matched" {
+		t.Errorf("body match: got %d %q, want 200 matched", w.Code, w.Body.String())
+	}
+
+	// JSON body with different method — should not match.
+	r2 := httptest.NewRequest("POST", "/test", strings.NewReader(`{"method":"tools/list"}`))
+	r2.Header.Set("Content-Type", "application/json")
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, r2)
+	if w2.Code != 404 {
+		t.Errorf("body mismatch: got %d, want 404", w2.Code)
+	}
+
+	// Non-JSON body — should not match.
+	r3 := httptest.NewRequest("POST", "/test", strings.NewReader("plain text"))
+	r3.Header.Set("Content-Type", "text/plain")
+	w3 := httptest.NewRecorder()
+	router.ServeHTTP(w3, r3)
+	if w3.Code != 404 {
+		t.Errorf("non-JSON body: got %d, want 404", w3.Code)
+	}
+
+	// GET request (no body) — should not match (method filter).
+	r4 := httptest.NewRequest("GET", "/test", nil)
+	w4 := httptest.NewRecorder()
+	router.ServeHTTP(w4, r4)
+	if w4.Code != 404 {
+		t.Errorf("GET no body: got %d, want 404", w4.Code)
+	}
+}
+
+func TestRouterCELBodyRawMatch(t *testing.T) {
+	router := NewRouter()
+
+	table, err := BuildTable(
+		[]model.Route{
+			{
+				ID: "r1",
+				Match: model.MatchRule{
+					PathPrefix: "/",
+					CEL:        `has(request.body) && request.body.raw.contains("CRITICAL")`,
+				},
+				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "alert"},
+			},
+		},
+		nil, nil, nil, nil, 65536,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router.SwapTable(table)
+
+	r := httptest.NewRequest("POST", "/logs", strings.NewReader("event: CRITICAL failure"))
+	r.Header.Set("Content-Type", "text/plain")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Errorf("raw body match: got %d, want 200", w.Code)
+	}
+
+	r2 := httptest.NewRequest("POST", "/logs", strings.NewReader("event: normal"))
+	r2.Header.Set("Content-Type", "text/plain")
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, r2)
+	if w2.Code != 404 {
+		t.Errorf("raw body mismatch: got %d, want 404", w2.Code)
+	}
+}
+
+func TestRouterNonBodyCELDoesNotBuffer(t *testing.T) {
+	router := NewRouter()
+
+	table, _ := BuildTable(
+		[]model.Route{
+			{
+				ID:    "r1",
+				Match: model.MatchRule{PathPrefix: "/", CEL: `request.method == "GET"`},
+				DirectResponse: &model.RouteDirectResponse{Status: 200},
+			},
+		},
+		nil, nil, nil, nil, 65536,
+	)
+	router.SwapTable(table)
+
+	body := "this body should not be read"
+	r := httptest.NewRequest("GET", "/test", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	// Body should still be fully readable (not consumed).
+	remaining, _ := io.ReadAll(r.Body)
+	if string(remaining) != body {
+		t.Errorf("body was consumed but CEL does not reference request.body")
 	}
 }
