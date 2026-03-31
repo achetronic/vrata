@@ -142,7 +142,7 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 			slog.String("error", err.Error()))
 	}
 
-	router := api.NewRouter(activeStore, logger, raftApplier, sessStore)
+	router := api.NewRouter(activeStore, logger, raftApplier)
 	httpSrv := &http.Server{
 		Addr:    cfg.ControlPlane.Address,
 		Handler: router,

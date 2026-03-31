@@ -25,8 +25,7 @@ import (
 	"time"
 )
 
-// requireRedis skips the test if Redis is not reachable on localhost:6379
-// or if the running Vrata instance does not have a session store configured.
+// requireRedis skips the test if Redis is not reachable on localhost:6379.
 // STICKY tests that depend on an external session store must call this first.
 func requireRedis(t *testing.T) {
 	t.Helper()
@@ -35,19 +34,6 @@ func requireRedis(t *testing.T) {
 		t.Skip("skipping: Redis not available on localhost:6379")
 	}
 	conn.Close()
-
-	// Also verify that the running Vrata instance has the session store enabled.
-	resp, err := http.Get(apiBase + "/debug/session-store")
-	if err != nil {
-		t.Skip("skipping: cannot reach Vrata debug endpoint")
-	}
-	defer resp.Body.Close()
-	var body struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || !body.Enabled {
-		t.Skip("skipping: Vrata session store not configured (start with SESSION_STORE_TYPE=redis)")
-	}
 }
 
 const (

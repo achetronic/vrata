@@ -15,20 +15,18 @@ import (
 	"github.com/achetronic/vrata/internal/api/handlers"
 	"github.com/achetronic/vrata/internal/api/middleware"
 	"github.com/achetronic/vrata/internal/api/respond"
-	"github.com/achetronic/vrata/internal/proxy"
 	"github.com/achetronic/vrata/internal/store"
 )
 
 // NewRouter creates and returns the root http.Handler for the Vrata REST API.
-// raftApplier and sessionStore are optional; pass nil when not configured.
-func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApplier, sessionStore proxy.SessionStore) http.Handler {
+// raftApplier is optional; pass nil when running in single-node mode.
+func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApplier) http.Handler {
 	mux := http.NewServeMux()
 
 	deps := &handlers.Dependencies{
-		Store:        st,
-		Logger:       logger,
-		Raft:         raftApplier,
-		SessionStore: sessionStore,
+		Store:  st,
+		Logger: logger,
+		Raft:   raftApplier,
 	}
 
 	// Route endpoints
@@ -75,7 +73,6 @@ func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApp
 
 	// Debug
 	mux.HandleFunc("GET /api/v1/debug/config", deps.GetConfigDump)
-	mux.HandleFunc("GET /api/v1/debug/session-store", deps.GetSessionStoreStatus)
 	mux.HandleFunc("POST /api/v1/destinations", deps.CreateDestination)
 	mux.HandleFunc("GET /api/v1/destinations/{destinationId}", deps.GetDestination)
 	mux.HandleFunc("PUT /api/v1/destinations/{destinationId}", deps.UpdateDestination)
