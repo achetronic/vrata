@@ -64,6 +64,15 @@ type ControlPlaneConfig struct {
 	// Raft enables multi-node HA replication via embedded Raft consensus.
 	// When absent, the control plane runs in single-node mode.
 	Raft *RaftConfig `yaml:"raft,omitempty"`
+
+	// TLS configures TLS for the HTTP API server. When absent, the server
+	// listens in plain HTTP. When set, the server requires HTTPS. The
+	// optional ClientAuth field enables mutual TLS for client verification.
+	TLS *TLSConfig `yaml:"tls,omitempty"`
+
+	// Auth configures client authentication for the REST API and SSE
+	// endpoints. When absent, no authentication is required (dev mode).
+	Auth *AuthConfig `yaml:"auth,omitempty"`
 }
 
 // BoltDBPath returns the path to the bbolt database file, derived from StorePath.
@@ -134,6 +143,16 @@ type ProxyConfig struct {
 	// is not populated. Set to 0 to disable body access in CEL.
 	// Default: 65536 (64KB).
 	CELBodyMaxSize int `yaml:"celBodyMaxSize"`
+
+	// TLS configures the TLS client used to connect to the control plane.
+	// Cert and Key enable mutual TLS (the proxy presents a client cert).
+	// CA is the CA bundle used to verify the control plane server cert.
+	// When absent, the connection uses plain HTTP or system CA defaults.
+	TLS *TLSConfig `yaml:"tls,omitempty"`
+
+	// APIKey is the bearer token sent in the Authorization header on every
+	// request to the control plane. When empty, no auth header is sent.
+	APIKey string `yaml:"apiKey,omitempty"`
 }
 
 // LogConfig controls logging format and verbosity.
@@ -175,6 +194,41 @@ type RedisConfig struct {
 
 	// DB is the Redis database number. Default: 0.
 	DB int `yaml:"db"`
+}
+
+// TLSConfig holds TLS parameters used by both the control plane (server) and
+// proxy (client). Field semantics depend on the role:
+//   - Server: Cert/Key is the server certificate. CA verifies client certs.
+//   - Client: Cert/Key is the client certificate for mTLS. CA verifies the server.
+type TLSConfig struct {
+	// Cert is the PEM-encoded certificate.
+	Cert string `yaml:"cert"`
+
+	// Key is the PEM-encoded private key matching Cert.
+	Key string `yaml:"key"`
+
+	// CA is the PEM-encoded CA bundle for peer verification.
+	CA string `yaml:"ca,omitempty"`
+
+	// ClientAuth controls client certificate verification on the server.
+	// Ignored on clients. Values: "none" (default), "optional", "require".
+	ClientAuth string `yaml:"clientAuth,omitempty"`
+}
+
+// AuthConfig configures API authentication for the control plane.
+type AuthConfig struct {
+	// APIKeys is the list of valid API keys. Clients authenticate by
+	// sending "Authorization: Bearer <key>" on every request.
+	APIKeys []APIKeyEntry `yaml:"apiKeys,omitempty"`
+}
+
+// APIKeyEntry represents a single API key with a human-readable name.
+type APIKeyEntry struct {
+	// Name is a human-readable label for this key (e.g. "proxy-fleet").
+	Name string `yaml:"name"`
+
+	// Key is the bearer token value.
+	Key string `yaml:"key"`
 }
 
 // Load reads the YAML file at path, expands environment variables in its
@@ -246,6 +300,42 @@ func Validate(cfg *Config) error {
 		if !hasDNS && !hasPeers {
 			return fmt.Errorf("controlPlane.raft requires either discovery.dns or at least one peer")
 		}
+	}
+	if err := validateTLS("controlPlane.tls", cfg.ControlPlane.TLS); err != nil {
+		return err
+	}
+	if err := validateTLS("proxy.tls", cfg.Proxy.TLS); err != nil {
+		return err
+	}
+	if cfg.ControlPlane.Auth != nil {
+		for i, k := range cfg.ControlPlane.Auth.APIKeys {
+			if k.Name == "" {
+				return fmt.Errorf("controlPlane.auth.apiKeys[%d].name is required", i)
+			}
+			if k.Key == "" {
+				return fmt.Errorf("controlPlane.auth.apiKeys[%d].key is required", i)
+			}
+		}
+	}
+	return nil
+}
+
+// validateTLS checks that TLS configuration is internally consistent.
+func validateTLS(prefix string, tls *TLSConfig) error {
+	if tls == nil {
+		return nil
+	}
+	if tls.Cert == "" || tls.Key == "" {
+		return fmt.Errorf("%s: cert and key are both required when tls is configured", prefix)
+	}
+	switch tls.ClientAuth {
+	case "", "none":
+	case "optional", "require":
+		if tls.CA == "" {
+			return fmt.Errorf("%s: ca is required when clientAuth is %q", prefix, tls.ClientAuth)
+		}
+	default:
+		return fmt.Errorf("%s: clientAuth must be \"none\", \"optional\", or \"require\", got %q", prefix, tls.ClientAuth)
 	}
 	return nil
 }

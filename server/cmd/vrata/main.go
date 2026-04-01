@@ -47,6 +47,7 @@ import (
 	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 	"github.com/achetronic/vrata/internal/store/raftstore"
 	rtsync "github.com/achetronic/vrata/internal/sync"
+	"github.com/achetronic/vrata/internal/tlsutil"
 
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -142,7 +143,12 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 			slog.String("error", err.Error()))
 	}
 
-	router := api.NewRouter(activeStore, logger, raftApplier)
+	var apiKeys []config.APIKeyEntry
+	if cfg.ControlPlane.Auth != nil {
+		apiKeys = cfg.ControlPlane.Auth.APIKeys
+	}
+
+	router := api.NewRouter(activeStore, logger, raftApplier, apiKeys)
 	httpSrv := &http.Server{
 		Addr:    cfg.ControlPlane.Address,
 		Handler: router,
@@ -198,8 +204,20 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 
 	go func() {
 		logger.Info("http server listening", slog.String("address", cfg.ControlPlane.Address))
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			errCh <- fmt.Errorf("http server: %w", err)
+		var listenErr error
+		if cfg.ControlPlane.TLS != nil {
+			tlsCfg, err := tlsutil.ServerConfig(cfg.ControlPlane.TLS)
+			if err != nil {
+				errCh <- fmt.Errorf("building server TLS config: %w", err)
+				return
+			}
+			httpSrv.TLSConfig = tlsCfg
+			listenErr = httpSrv.ListenAndServeTLS("", "")
+		} else {
+			listenErr = httpSrv.ListenAndServe()
+		}
+		if listenErr != nil && listenErr != http.ErrServerClosed {
+			errCh <- fmt.Errorf("http server: %w", listenErr)
 		}
 	}()
 
@@ -241,6 +259,15 @@ func runProxy(cfg *config.Config, logger *slog.Logger) error {
 			slog.String("error", err.Error()))
 	}
 
+	transport, err := tlsutil.ClientTransport(cfg.Proxy.TLS)
+	if err != nil {
+		return fmt.Errorf("building proxy TLS transport: %w", err)
+	}
+	httpClient := &http.Client{
+		Timeout:   0,
+		Transport: transport,
+	}
+
 	syncClient := rtsync.New(rtsync.Dependencies{
 		ControlPlaneAddr:  cfg.Proxy.ControlPlaneURL,
 		ReconnectInterval: reconnect,
@@ -251,6 +278,8 @@ func runProxy(cfg *config.Config, logger *slog.Logger) error {
 		SessionStore:      sessStore,
 		Logger:            logger,
 		CELBodyMaxSize:    cfg.Proxy.CELBodyMaxSize,
+		HTTPClient:        httpClient,
+		APIKey:            cfg.Proxy.APIKey,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

@@ -39,6 +39,7 @@ SWAG_FLAGS := -d $(SERVER_DIR) -g cmd/vrata/main.go -o $(SERVER_DIR)/docs --pars
 	docker-build docker-push \
 	kind-up kind-down kind-deploy-all \
 	server-build server-run server-test server-e2e server-e2e-cluster \
+	server-e2e-tls-selfsigned server-e2e-tls-certmanager server-e2e-tls-existingsecret \
 	server-docs server-proto server-port-forward-podinfo \
 	controller-build controller-test controller-e2e \
 	controller-generate-crd controller-deploy-crd controller-deploy-gateway-api-crds \
@@ -173,6 +174,51 @@ server-e2e-cluster: _check-kind docker-build
 		CLUSTER_NODEPORT=$(HELM_NODEPORT) \
 		KUBE_CONTEXT=kind-$(KIND_CLUSTER) \
 		$(GO) test ./test/e2e/ -v -timeout 180s -count=1 -tags kind -run 'TestCluster_'
+
+TLS_RELEASE   := vrata-tls
+TLS_NAMESPACE := vrata-tls
+TLS_NODEPORT  := 31082
+
+# Shared recipe for all TLS e2e modes. Usage: $(call tls-e2e,<values-file>)
+define tls-e2e
+	@docker tag $(IMAGE):$(VERSION) vrata:e2e-tls
+	@$(KIND) load docker-image vrata:e2e-tls --name $(KIND_CLUSTER)
+	@$(HELM) upgrade --install $(TLS_RELEASE) $(HELM_CHART) \
+		--kube-context kind-$(KIND_CLUSTER) \
+		--namespace $(TLS_NAMESPACE) --create-namespace \
+		-f $(1) --timeout 5m
+	@echo "→ Waiting for control plane to be ready..."
+	@kubectl --context kind-$(KIND_CLUSTER) -n $(TLS_NAMESPACE) \
+		wait --for=condition=Ready pod -l app.kubernetes.io/component=controlplane --timeout=120s
+	cd $(SERVER_DIR) && KIND_NODE_IP=$(KIND_NODE_IP) \
+		TLS_NAMESPACE=$(TLS_NAMESPACE) \
+		TLS_NODEPORT=$(TLS_NODEPORT) \
+		KUBE_CONTEXT=kind-$(KIND_CLUSTER) \
+		$(GO) test ./test/e2e/ -v -timeout 180s -count=1 -tags kind -run 'TestTLS_'
+	@$(HELM) uninstall $(TLS_RELEASE) \
+		--kube-context kind-$(KIND_CLUSTER) \
+		--namespace $(TLS_NAMESPACE) --wait 2>/dev/null || true
+endef
+
+## server-e2e-tls-selfsigned: TLS e2e with self-signed certs (Job)
+server-e2e-tls-selfsigned: _check-kind docker-build
+	$(call tls-e2e,$(HELM_CHART)/ci/kind-tls-selfsigned-values.yaml)
+
+## server-e2e-tls-certmanager: TLS e2e with cert-manager
+server-e2e-tls-certmanager: _check-kind docker-build _install-cert-manager
+	$(call tls-e2e,$(HELM_CHART)/ci/kind-tls-certmanager-values.yaml)
+
+## server-e2e-tls-existingsecret: TLS e2e with pre-created Secret
+server-e2e-tls-existingsecret: _check-kind docker-build
+	@$(SERVER_DIR)/test/e2e/scripts/create-tls-secret.sh \
+		$(KIND_CLUSTER) $(TLS_NAMESPACE) vrata-e2e-tls
+	$(call tls-e2e,$(HELM_CHART)/ci/kind-tls-existingsecret-values.yaml)
+
+_install-cert-manager:
+	@kubectl --context kind-$(KIND_CLUSTER) get ns cert-manager 2>/dev/null \
+		|| (echo "→ Installing cert-manager..." && \
+			kubectl --context kind-$(KIND_CLUSTER) apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml && \
+			kubectl --context kind-$(KIND_CLUSTER) -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=120s)
 
 ## server-docs: regenerate OpenAPI docs from handler annotations
 server-docs:

@@ -37,7 +37,8 @@ server/
 │   ├── raft/                   # Embedded Raft HA (hashicorp/raft)
 │   ├── k8s/                    # EndpointSlice + ExternalName watcher
 │   ├── sync/                   # SSE client for proxy-mode instances
-│   └── session/                # Session store interface + Redis implementation
+│   ├── session/                # Session store interface + Redis implementation
+│   └── tlsutil/                # TLS config builders (server + client, inline PEM + file path)
 ├── proto/                      # gRPC protobuf (extproc, extauthz)
 ├── test/e2e/                   # End-to-end tests
 └── docs/                       # Generated OpenAPI spec

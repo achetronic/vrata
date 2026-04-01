@@ -1,0 +1,69 @@
+# Values for TLS e2e tests: cert-manager mode.
+# Requires cert-manager to be installed in the cluster.
+# The chart creates SelfSigned Issuer -> CA cert -> CA Issuer -> leaf certs.
+image:
+  repository: vrata
+  tag: e2e-tls
+  pullPolicy: Never
+
+tls:
+  enabled: true
+  certManager:
+    enabled: true
+
+auth:
+  apiKeys:
+    - name: proxy-fleet
+      key: "e2e-proxy-key"
+    - name: controller
+      key: "e2e-controller-key"
+    - name: operator
+      key: "e2e-operator-key"
+
+controlPlane:
+  enabled: true
+  replicas: 1
+  persistence:
+    enabled: false
+  service:
+    type: NodePort
+    port: 8080
+    nodePort: 31082
+  config:
+    controlPlane:
+      address: ":8080"
+      storePath: "/data"
+      tls:
+        cert: "${VRATA_TLS_CERT}"
+        key: "${VRATA_TLS_KEY}"
+        ca: "${VRATA_TLS_CA}"
+        clientAuth: "optional"
+      auth:
+        apiKeys:
+          - name: "proxy-fleet"
+            key: "e2e-proxy-key"
+          - name: "controller"
+            key: "e2e-controller-key"
+          - name: "operator"
+            key: "e2e-operator-key"
+    log:
+      format: json
+      level: debug
+
+proxy:
+  enabled: true
+  replicas: 1
+  service:
+    type: ClusterIP
+    port: 3000
+  config:
+    proxy:
+      reconnectInterval: "2s"
+      tls:
+        cert: "${VRATA_TLS_CERT}"
+        key: "${VRATA_TLS_KEY}"
+        ca: "${VRATA_TLS_CA}"
+      apiKey: "${VRATA_API_KEY}"
+    log:
+      format: json
+      level: debug

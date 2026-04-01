@@ -32,6 +32,12 @@ type Dependencies struct {
 	SessionStore      proxy.SessionStore
 	Logger            *slog.Logger
 	CELBodyMaxSize    int
+	// HTTPClient is the HTTP client used to connect to the control plane.
+	// When nil, a default client with no timeout is used.
+	HTTPClient *http.Client
+	// APIKey is the bearer token sent in the Authorization header on every
+	// request to the control plane. When empty, no auth header is sent.
+	APIKey string
 }
 
 // Client connects to the control plane SSE stream and applies configuration
@@ -76,9 +82,13 @@ func (c *Client) stream(ctx context.Context) error {
 		return fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
+	if c.deps.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.deps.APIKey)
+	}
 
-	client := &http.Client{
-		Timeout: 0,
+	client := c.deps.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 0}
 	}
 	resp, err := client.Do(req)
 	if err != nil {

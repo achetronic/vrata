@@ -43,3 +43,36 @@ Returns the Raft bind port from controlPlane.config, defaulting to 7000.
 {{- $bindAddr := dig "controlPlane" "raft" "bindAddress" ":7000" .Values.controlPlane.config -}}
 {{- trimPrefix ":" $bindAddr -}}
 {{- end -}}
+
+{{/*
+Returns the name of the TLS Secret for each component.
+When existingSecret is set, all components share that single Secret.
+Otherwise, each component gets its own Secret.
+*/}}
+{{- define "vrata.tlsServerSecretName" -}}
+{{- if .Values.tls.existingSecret -}}
+{{ .Values.tls.existingSecret }}
+{{- else -}}
+{{ include "vrata.fullname" . }}-tls-server
+{{- end -}}
+{{- end -}}
+
+{{- define "vrata.tlsProxySecretName" -}}
+{{- if .Values.tls.existingSecret -}}
+{{ .Values.tls.existingSecret }}
+{{- else -}}
+{{ include "vrata.fullname" . }}-tls-proxy
+{{- end -}}
+{{- end -}}
+
+{{- define "vrata.tlsControllerSecretName" -}}
+{{- if .Values.tls.existingSecret -}}
+{{ .Values.tls.existingSecret }}
+{{- else -}}
+{{ include "vrata.fullname" . }}-tls-controller
+{{- end -}}
+{{- end -}}
+
+{{- define "vrata.tlsCASecretName" -}}
+{{ include "vrata.fullname" . }}-tls-ca
+{{- end -}}

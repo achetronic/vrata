@@ -108,6 +108,10 @@ SSE client for proxy-mode instances. Connects to `GET /api/v1/sync/snapshot`, re
 
 Session store interface and Redis implementation for STICKY balancing.
 
+### internal/tlsutil
+
+Builds `tls.Config` and `http.Transport` from `config.TLSConfig`. Supports inline PEM and file paths via `resolvePEM`. Used by the CP HTTP server (server TLS + mTLS) and the sync client (client TLS + mTLS).
+
 ## Data Flow
 
 ```

@@ -12,6 +12,8 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -116,7 +118,18 @@ func run() error {
 	}
 
 	// Build Vrata client, reconciler, batcher, status writer, dedup detector.
-	vrataClient := vrata.NewClient(cfg.ControlPlaneURL)
+	var vrataOpts []vrata.Option
+	if cfg.TLS != nil {
+		httpClient, err := buildVrataHTTPClient(cfg.TLS)
+		if err != nil {
+			return fmt.Errorf("building vrata TLS client: %w", err)
+		}
+		vrataOpts = append(vrataOpts, vrata.WithHTTPClient(httpClient))
+	}
+	if cfg.APIKey != "" {
+		vrataOpts = append(vrataOpts, vrata.WithAPIKey(cfg.APIKey))
+	}
+	vrataClient := vrata.NewClient(cfg.ControlPlaneURL, vrataOpts...)
 	rec := reconciler.NewReconciler(vrataClient, logger)
 	debounce, _ := time.ParseDuration(cfg.Snapshot.Debounce)
 	if debounce == 0 {
@@ -855,4 +868,61 @@ func buildK8sConfig() (*rest.Config, error) {
 // controller-runtime internal components share the same structured logger.
 func slogLogr(l *slog.Logger) logr.Logger {
 	return logr.FromSlogHandler(l.Handler())
+}
+
+// buildVrataHTTPClient creates an *http.Client with TLS configured for
+// connecting to the Vrata control plane. Cert, Key, and CA values can be
+// inline PEM or file paths.
+func buildVrataHTTPClient(tc *config.TLSConfig) (*http.Client, error) {
+	tlsCfg := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	if tc.CA != "" {
+		caPEM, err := resolvePEM(tc.CA)
+		if err != nil {
+			return nil, fmt.Errorf("resolving CA bundle: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("parsing CA bundle: no valid certificates found")
+		}
+		tlsCfg.RootCAs = pool
+	}
+
+	if tc.Cert != "" && tc.Key != "" {
+		certPEM, err := resolvePEM(tc.Cert)
+		if err != nil {
+			return nil, fmt.Errorf("resolving client cert: %w", err)
+		}
+		keyPEM, err := resolvePEM(tc.Key)
+		if err != nil {
+			return nil, fmt.Errorf("resolving client key: %w", err)
+		}
+		cert, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("parsing client certificate: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = tlsCfg
+	return &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: transport,
+	}, nil
+}
+
+// resolvePEM returns PEM content from a value that is either inline PEM
+// or a file path. Values starting with "-----BEGIN" are inline PEM.
+func resolvePEM(value string) ([]byte, error) {
+	if strings.HasPrefix(strings.TrimSpace(value), "-----BEGIN") {
+		return []byte(value), nil
+	}
+	data, err := os.ReadFile(value)
+	if err != nil {
+		return nil, fmt.Errorf("reading PEM from %q: %w", value, err)
+	}
+	return data, nil
 }

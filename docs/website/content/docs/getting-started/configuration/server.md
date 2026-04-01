@@ -23,6 +23,17 @@ controlPlane:
   #   advertiseAddress: "${POD_IP}:7000"
   #   discovery:
   #     dns: "vrata-headless.vrata.svc.cluster.local"
+  # tls:                        # Uncomment for HTTPS / mTLS
+  #   cert: "${CP_TLS_CERT}"
+  #   key: "${CP_TLS_KEY}"
+  #   ca: "${MTLS_CA}"          # CA for client cert verification
+  #   clientAuth: "optional"    # none | optional | require
+  # auth:                       # Uncomment for API key auth
+  #   apiKeys:
+  #     - name: "proxy-fleet"
+  #       key: "${PROXY_API_KEY}"
+  #     - name: "controller"
+  #       key: "${CONTROLLER_API_KEY}"
 
 #############################
 ## Proxy mode
@@ -30,6 +41,11 @@ controlPlane:
 proxy:
   controlPlaneUrl: "http://control-plane:8080"  # Required in proxy mode
   reconnectInterval: "5s"                        # SSE reconnection delay
+  # tls:                                         # Uncomment for TLS / mTLS
+  #   cert: "${PROXY_TLS_CERT}"                  # Client cert for mTLS
+  #   key: "${PROXY_TLS_KEY}"
+  #   ca: "${CP_CA}"                             # CA to verify the CP
+  # apiKey: "${PROXY_API_KEY}"                   # Bearer token for auth
 
 #############################
 ## Logging
@@ -66,6 +82,8 @@ controlPlane:
 | `controlPlane.address` | `:8080` | HTTP API listen address |
 | `controlPlane.storePath` | `/data` | Root directory — bbolt DB at `<storePath>/vrata.db`, Raft data at `<storePath>/raft/` |
 | `controlPlane.raft` | — | Raft HA config (see [HA with Raft]({{< relref "ha-raft" >}})) |
+| `controlPlane.tls` | — | TLS/mTLS config (see [TLS & Auth](#tls--authentication)) |
+| `controlPlane.auth` | — | API key auth (see [TLS & Auth](#tls--authentication)) |
 
 In this mode, the control plane also runs the proxy internally — one process does everything. Useful for development or small deployments.
 
@@ -84,6 +102,8 @@ proxy:
 |-------|---------|-------------|
 | `proxy.controlPlaneUrl` | required | Base URL of the control plane |
 | `proxy.reconnectInterval` | `5s` | SSE reconnection delay after disconnect |
+| `proxy.tls` | — | TLS config for the CP connection (see [TLS & Auth](#tls--authentication)) |
+| `proxy.apiKey` | — | Bearer token sent to the CP on every request |
 
 Scale proxies freely — they're disposable. If the control plane is unavailable, proxies keep routing with their last snapshot.
 
@@ -136,3 +156,68 @@ proxy:
 ```
 
 The raw YAML is expanded before parsing, so `${VAR}` works anywhere.
+
+## TLS & authentication
+
+The control plane API supports TLS encryption, mutual TLS (mTLS), and API key authentication. These are configured via `controlPlane.tls` and `controlPlane.auth`. Clients (proxy, controller, operators) configure their side via `proxy.tls` / `proxy.apiKey`.
+
+### TLS on the control plane (server)
+
+```yaml
+controlPlane:
+  tls:
+    cert: "${CP_TLS_CERT}"       # PEM server certificate
+    key: "${CP_TLS_KEY}"         # PEM private key
+    ca: "${MTLS_CA}"             # PEM CA bundle for client certs
+    clientAuth: "optional"       # none | optional | require
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `tls.cert` | yes (if tls set) | PEM-encoded server certificate |
+| `tls.key` | yes (if tls set) | PEM-encoded private key |
+| `tls.ca` | when clientAuth is optional/require | PEM CA bundle to verify client certificates |
+| `tls.clientAuth` | no | `none` (default) — TLS only. `optional` — request client cert, allow without. `require` — reject without valid client cert. |
+
+### TLS on the proxy (client)
+
+```yaml
+proxy:
+  controlPlaneUrl: "https://cp:8080"
+  tls:
+    cert: "${PROXY_TLS_CERT}"    # Client cert for mTLS
+    key: "${PROXY_TLS_KEY}"      # Client private key
+    ca: "${CP_CA}"               # CA to verify the CP server cert
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `tls.cert` + `tls.key` | for mTLS | Client certificate presented to the CP |
+| `tls.ca` | no | CA bundle to verify the CP cert. Uses system CAs if empty. |
+
+### API key authentication
+
+```yaml
+controlPlane:
+  auth:
+    apiKeys:
+      - name: "proxy-fleet"
+        key: "${PROXY_API_KEY}"
+      - name: "operator"
+        key: "${OPERATOR_API_KEY}"
+```
+
+Clients send `Authorization: Bearer <key>` on every request. When `auth` is absent, no authentication is required (dev mode). The proxy configures its key via `proxy.apiKey`.
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `auth.apiKeys[].name` | yes | Human-readable label |
+| `auth.apiKeys[].key` | yes | Bearer token value |
+
+### Deployment modes
+
+| Mode | CP config | Proxy config | Security |
+|------|-----------|--------------|----------|
+| **Dev** | no `tls`, no `auth` | `http://` URL | None — plain HTTP, no auth |
+| **TLS + API key** | `tls` (cert+key), `auth` | `tls` (ca), `apiKey` | Encrypted + identified |
+| **Full mTLS + API key** | `tls` (cert+key+ca, clientAuth), `auth` | `tls` (cert+key+ca), `apiKey` | Encrypted + transport-auth + identified |

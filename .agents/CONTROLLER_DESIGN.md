@@ -160,6 +160,8 @@ full reference with inline comments.
 | Section          | Key fields                                                | Description                                                |
 | ---------------- | --------------------------------------------------------- | ---------------------------------------------------------- |
 | `vrata`          | `url`                                                     | Base URL of the Vrata control plane API                    |
+| `tls`            | `cert`, `key`, `ca`                                       | TLS for the CP connection (inline PEM or file paths)       |
+| `apiKey`         |                                                           | Bearer token sent to the CP on every request               |
 | `watch`          | `namespaces`, `httpRoutes`, `superHttpRoutes`, `gateways` | Which k8s resources to watch and optional namespace filter |
 | `snapshot`       | `debounce`, `maxBatch`                                    | Batching before creating a Vrata snapshot                  |
 | `duplicates`     | `mode` (`off` / `warn` / `reject`)                        | Overlap detection with semantic path matching              |

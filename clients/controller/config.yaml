@@ -4,6 +4,19 @@
 # Connection to the Vrata control plane REST API.
 controlPlaneUrl: "${CONTROLPLANE_URL:-http://localhost:8080}"
 
+# TLS for the connection to the control plane (optional).
+# When absent, plain HTTP or system CA defaults are used.
+#
+# tls:
+#   # PEM-encoded client certificate and key for mTLS (optional).
+#   cert: "${CONTROLLER_TLS_CERT}"
+#   key: "${CONTROLLER_TLS_KEY}"
+#   # PEM-encoded CA bundle to verify the control plane server cert.
+#   ca: "${CP_CA}"
+
+# API key sent to the control plane on every request (optional).
+# apiKey: "${CONTROLLER_API_KEY}"
+
 # Which Kubernetes resources to watch.
 watch:
   # Restrict to specific namespaces. Empty list = all namespaces.

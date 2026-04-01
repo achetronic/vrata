@@ -1,0 +1,21 @@
+{{- if and .Values.tls.enabled .Values.tls.certManager.enabled .Values.proxy.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "vrata.fullname" . }}-tls-proxy
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "vrata.tlsProxySecretName" . }}
+  duration: 8760h
+  renewBefore: 720h
+  isCA: false
+  commonName: {{ include "vrata.proxyName" . }}
+  usages:
+    - client auth
+    - digital signature
+    - key encipherment
+  issuerRef:
+    name: {{ include "vrata.fullname" . }}-ca
+    kind: Issuer
+{{- end }}

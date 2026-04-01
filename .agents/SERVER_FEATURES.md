@@ -1,6 +1,6 @@
 # Feature Coverage Report — Vrata
 
-Generated: 2026-03-31
+Generated: 2026-04-01
 Method: Line-by-line source audit + unit tests + e2e tests
 
 ## API CRUD
@@ -199,6 +199,11 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Respond helpers            | 100%   | Unit   |
 | Gateway rebuild            | 100%   | Unit   |
 | Swagger UI                 | 100%   | Manual |
+| TLS server (inline PEM + file path) | 100% | Unit (5) + Integration (7) |
+| mTLS client auth (none/optional/require) | 100% | Integration (3) |
+| API key authentication (Bearer token) | 100% | Unit (5) + Integration (3) + E2E kind (8×3 modes) |
+| Auth middleware chain (Recovery → Auth → Logger) | 100% | Unit (7) |
+| TLS config validation      | 100%   | Unit (5) |
 
 ## Test Summary
 
@@ -207,9 +212,10 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Model                                                              | 3       | 3       |
 | Store (bolt + memory)                                              | 9       | 9       |
 | API handlers                                                       | 61      | 61      |
-| API middleware                                                     | 3       | 3       |
+| API middleware                                                     | 8       | 8       |
+| API router (auth chain integration)                                | 7       | 7       |
 | Respond                                                            | 2       | 2       |
-| Config                                                             | 14      | 14      |
+| Config                                                             | 23      | 23      |
 | Gateway                                                            | 2       | 2       |
 | K8s watcher                                                        | 4       | 4       |
 | Session store (Redis)                                              | 5       | 5       |
@@ -218,14 +224,16 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Proxy middlewares (incl. inlineAuthz)                              | 74      | 74      |
 | Raft (FSM, cluster, peers)                                         | 7       | 7       |
 | Sync client                                                        | 2       | 2       |
-| Controller (all packages)                                          | 163     | 163     |
-| **Unit total**                                                     | **479** | **479** |
+| TLS util (server, client, integration)                             | 18      | 18      |
+| Controller (all packages)                                          | 170     | 170     |
+| **Unit total**                                                     | **535** | **535** |
 | E2E (proxy, live)                                                  | 71      | 71      |
 | E2E (metrics)                                                      | 5       | 5       |
 | E2E (proxy errors)                                                 | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
+| E2E (TLS + auth, kind × 3 modes)                                   | 24      | 24      |
 | E2E (controller)                                                   | 23      | 23      |
-| **E2E total**                                                      | **119** | **119** |
+| **E2E total**                                                      | **143** | **143** |
 
 ## Known Remaining Issues
 

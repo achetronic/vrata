@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestListRoutes(t *testing.T) {
@@ -140,5 +141,86 @@ func TestOwned(t *testing.T) {
 	owned := Owned(routes)
 	if len(owned) != 2 {
 		t.Errorf("expected 2 owned, got %d", len(owned))
+	}
+}
+
+func TestAPIKeySentInRequests(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode([]Route{})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, WithAPIKey("test-key-123"))
+	_, err := c.ListRoutes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "Bearer test-key-123" {
+		t.Errorf("expected 'Bearer test-key-123', got %q", gotAuth)
+	}
+}
+
+func TestNoAuthHeaderWithoutAPIKey(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		json.NewEncoder(w).Encode([]Route{})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL)
+	_, err := c.ListRoutes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "" {
+		t.Errorf("expected no auth header, got %q", gotAuth)
+	}
+}
+
+func TestAPIKeySentOnAllMethods(t *testing.T) {
+	methods := make(map[string]string)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods[r.Method] = r.Header.Get("Authorization")
+		switch r.Method {
+		case http.MethodPost:
+			w.WriteHeader(201)
+			json.NewEncoder(w).Encode(Route{ID: "r1", Name: "test"})
+		case http.MethodGet:
+			json.NewEncoder(w).Encode([]Route{})
+		default:
+			w.WriteHeader(200)
+		}
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, WithAPIKey("k"))
+	ctx := context.Background()
+
+	c.ListRoutes(ctx)
+	c.CreateRoute(ctx, Route{Name: "test"})
+	c.UpdateRoute(ctx, "r1", Route{Name: "test"})
+	c.DeleteRoute(ctx, "r1")
+
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE"} {
+		if methods[method] != "Bearer k" {
+			t.Errorf("%s: expected 'Bearer k', got %q", method, methods[method])
+		}
+	}
+}
+
+func TestWithHTTPClient(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]Route{})
+	}))
+	defer srv.Close()
+
+	custom := &http.Client{Timeout: 1 * time.Second}
+	c := NewClient(srv.URL, WithHTTPClient(custom))
+	_, err := c.ListRoutes(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
 }

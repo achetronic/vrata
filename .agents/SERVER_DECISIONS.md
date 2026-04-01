@@ -1115,3 +1115,72 @@ generic CEL expressions — what those expressions inspect (MCP bodies, GraphQL 
 JWT headers) is determined by whoever writes the rules (user or controller), not by
 the middleware. Do not add non-CEL rule types (regex, glob, etc.) — CEL covers all
 cases and adding alternatives fragments the evaluation model.
+
+---
+
+## Control plane security: TLS + mTLS + API keys
+
+**Date**: 2026-03-31
+**Status**: Implemented
+
+The control plane API (REST + SSE) supports two independent security layers,
+both configured in `config.yaml` via `os.ExpandEnv`:
+
+### Layer 1 — TLS / mTLS (transport security)
+
+`controlPlane.tls` on the server, `proxy.tls` on the client. Same `TLSConfig`
+struct shape on both sides: `cert`, `key`, `ca`, and `clientAuth` (server only).
+
+`clientAuth` modes:
+- `none` (default) — TLS only, no client certs.
+- `optional` — request client cert, allow without. Mixed clients (proxies
+  with certs + operators without).
+- `require` — reject TLS handshake without valid client cert.
+
+Cert, Key, and CA values can be inline PEM or file paths. The `resolvePEM`
+function in `internal/tlsutil` detects which: values starting with
+`-----BEGIN` are inline PEM, otherwise the value is read from disk. This
+supports both Kubernetes volume mounts (file paths) and future inline
+secret injection.
+
+### Layer 2 — API keys (identity)
+
+`controlPlane.auth.apiKeys` is a list of `{name, key}` entries. Clients
+send `Authorization: Bearer <key>`. The `Auth` middleware validates the
+key. When `auth` is absent, no authentication is required (dev mode).
+
+All valid API keys have full access. Authorization (restricting what each
+key can do) is not implemented — it may be added later if needed.
+
+### Three deployment modes (config-driven, no code changes)
+
+| Mode | CP config | Proxy config | Security |
+| --- | --- | --- | --- |
+| Dev local | no `tls`, no `auth` | `http://` URL | None |
+| TLS + API key | `tls` (cert+key), `auth` | `tls` (ca), `apiKey` | Encrypted + identified |
+| Full mTLS + API key | `tls` (cert+key+ca, clientAuth), `auth` | `tls` (cert+key+ca), `apiKey` | Encrypted + transport-auth + identified |
+
+### Helm chart TLS options
+
+Three cert provisioning modes in `values.yaml`:
+- **cert-manager**: full chain (SelfSigned Issuer → CA cert → CA Issuer →
+  three leaf certs: server, proxy, controller). Each with dedicated
+  `extendedKeyUsage` (serverAuth vs clientAuth).
+- **Self-signed**: a Helm pre-install Job generates a CA + three certs
+  with openssl and creates k8s Secrets.
+- **existingSecret**: operator provides a pre-created Secret.
+
+**Reasoning**: the control plane API carries sensitive configuration
+(TLS certs, upstream addresses, middleware configs) and will carry
+resolved secret values via SSE once the Secrets feature is implemented.
+The channel must be secure before we send resolved secrets. mTLS provides
+transport-level authentication (machine-to-machine), API keys provide
+identity (who is calling), and the combination covers all client types
+(proxies, controller, operators, future dashboard).
+
+**Do not**: add per-endpoint authentication rules. All endpoints share
+the same auth middleware. Do not store API keys hashed — the config
+already uses `os.ExpandEnv` so the raw key is in an env var anyway. Do
+not add role-based authorization without an explicit decision — all keys
+have full access for now. Do not require mTLS for all clients — `optional`
+mode allows mixed access (certs for machines, API key only for humans).

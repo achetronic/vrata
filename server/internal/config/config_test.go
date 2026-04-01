@@ -162,3 +162,121 @@ func TestRaftDataDir(t *testing.T) {
 		t.Errorf("expected /data/raft, got %s", got)
 	}
 }
+
+func TestValidateTLSCertAndKeyRequired(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		ControlPlane: ControlPlaneConfig{
+			TLS: &TLSConfig{Cert: "CERT"},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected error when key is missing")
+	}
+}
+
+func TestValidateTLSClientAuthRequiresCA(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		ControlPlane: ControlPlaneConfig{
+			TLS: &TLSConfig{
+				Cert:       "CERT",
+				Key:        "KEY",
+				ClientAuth: "require",
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected error when clientAuth=require without ca")
+	}
+}
+
+func TestValidateTLSClientAuthInvalid(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		ControlPlane: ControlPlaneConfig{
+			TLS: &TLSConfig{
+				Cert:       "CERT",
+				Key:        "KEY",
+				ClientAuth: "bogus",
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected error for invalid clientAuth value")
+	}
+}
+
+func TestValidateTLSValid(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		ControlPlane: ControlPlaneConfig{
+			TLS: &TLSConfig{
+				Cert:       "CERT",
+				Key:        "KEY",
+				CA:         "CA",
+				ClientAuth: "optional",
+			},
+		},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateProxyTLS(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeProxy,
+		Proxy: ProxyConfig{
+			ControlPlaneURL: "https://cp:8080",
+			TLS:             &TLSConfig{Cert: "CERT"},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected error when proxy tls.key is missing")
+	}
+}
+
+func TestValidateAuthAPIKeyMissingName(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		ControlPlane: ControlPlaneConfig{
+			Auth: &AuthConfig{
+				APIKeys: []APIKeyEntry{{Key: "secret"}},
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected error when apiKey name is empty")
+	}
+}
+
+func TestValidateAuthAPIKeyMissingKey(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		ControlPlane: ControlPlaneConfig{
+			Auth: &AuthConfig{
+				APIKeys: []APIKeyEntry{{Name: "proxy"}},
+			},
+		},
+	}
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected error when apiKey key is empty")
+	}
+}
+
+func TestValidateAuthValid(t *testing.T) {
+	cfg := &Config{
+		Mode: ModeControlPlane,
+		ControlPlane: ControlPlaneConfig{
+			Auth: &AuthConfig{
+				APIKeys: []APIKeyEntry{
+					{Name: "proxy", Key: "secret123"},
+				},
+			},
+		},
+	}
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
