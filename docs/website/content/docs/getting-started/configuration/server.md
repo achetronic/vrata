@@ -221,3 +221,44 @@ Clients send `Authorization: Bearer <key>` on every request. When `auth` is abse
 | **Dev** | no `tls`, no `auth` | `http://` URL | None — plain HTTP, no auth |
 | **TLS + API key** | `tls` (cert+key), `auth` | `tls` (ca), `apiKey` | Encrypted + identified |
 | **Full mTLS + API key** | `tls` (cert+key+ca, clientAuth), `auth` | `tls` (cert+key+ca), `apiKey` | Encrypted + transport-auth + identified |
+
+## At-rest encryption
+
+Secrets and snapshots in bbolt can be encrypted with AES-256-GCM. When absent, data is stored in plaintext (dev mode).
+
+```yaml
+controlPlane:
+  encryption:
+    key: "${ENCRYPTION_KEY}"   # base64-encoded 32-byte key
+```
+
+Generate a key:
+
+```bash
+openssl rand -base64 32
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `encryption.key` | yes (if encryption set) | Base64-encoded 32-byte AES-256 key |
+
+### Mode detection
+
+On startup, Vrata checks whether the data in bbolt is encrypted or not and compares with the config:
+
+| Config | Data | Result |
+|--------|------|--------|
+| No `encryption` | Plaintext | Dev mode, works |
+| No `encryption` | Encrypted | Error, exit |
+| `encryption.key` set | Encrypted | Production mode, works |
+| `encryption.key` set | Plaintext | Error, exit |
+
+If you need to switch modes, dump the data, wipe the bbolt file, and restore with the new config.
+
+### What is encrypted
+
+Only sensitive buckets are encrypted:
+- **Secrets** — the full Secret entity (ID, Name, Value)
+- **Snapshots** — the full snapshot payload (contains resolved secret values)
+
+Routes, groups, listeners, destinations, and middlewares are stored in plaintext — they contain no sensitive material.

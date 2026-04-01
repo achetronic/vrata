@@ -1233,3 +1233,45 @@ references. Do not validate secret references at entity creation time —
 defer to snapshot build time to avoid ordering dependencies. Do not
 auto-create snapshots when a Secret is updated — the snapshot is an
 explicit "publish" step. Do not log Secret values.
+
+---
+
+## At-rest encryption for secrets and snapshots
+
+**Date**: 2026-04-01
+**Status**: Implemented
+
+Secrets and snapshots in bbolt are encrypted with AES-256-GCM when
+`controlPlane.encryption.key` is configured. The key is a base64-encoded
+32-byte value loaded from config (via `os.ExpandEnv`).
+
+On startup, the store checks a marker in the `meta` bucket (`encrypted:
+"true"`) and compares with the config:
+- No key + plaintext data → dev mode, operates normally.
+- No key + encrypted data → error, exit.
+- Key + encrypted data → production mode, operates normally.
+- Key + plaintext data with existing secrets/snapshots → error, exit.
+- Key + empty db → sets the marker and starts encrypted.
+
+Only the `secrets` and `snapshots` buckets are encrypted. Routes, groups,
+listeners, destinations, and middlewares are plaintext — they contain no
+sensitive material after the Secrets feature resolves references at
+snapshot build time.
+
+The `internal/encrypt` package provides `Cipher` with `Seal` (encrypt)
+and `Open` (decrypt) using AES-256-GCM with random nonces. The bolt
+store calls `encryptValue`/`decryptValue` which are no-ops when no
+cipher is configured.
+
+There is no key rotation mechanism. If you need to change the key, dump
+the data, wipe the bbolt file, and restore with the new config.
+
+**Reasoning**: secrets are now stored in bbolt in plaintext. A simple
+`cp` of the database file exposes all secret values. At-rest encryption
+protects backups and cold storage. AES-256-GCM is standard, fast, and
+authenticated (tamper-evident). The per-bucket approach avoids
+encrypting the entire database (routes/groups don't need it) while
+protecting everything sensitive.
+
+**Do not**: add key rotation logic. Do not encrypt non-sensitive buckets.
+Do not make encryption mandatory — dev mode must work without a key.

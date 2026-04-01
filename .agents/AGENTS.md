@@ -39,7 +39,8 @@ server/
 │   ├── sync/                   # SSE client for proxy-mode instances
 │   ├── session/                # Session store interface + Redis implementation
 │   ├── tlsutil/                # TLS config builders (server + client, inline PEM + file path)
-│   └── resolve/                # {{secret:...}} pattern resolution for snapshots
+│   ├── resolve/                # {{secret:...}} pattern resolution for snapshots
+│   └── encrypt/                # AES-256-GCM at-rest encryption for secrets and snapshots
 ├── proto/                      # gRPC protobuf (extproc, extauthz)
 ├── test/e2e/                   # End-to-end tests
 └── docs/                       # Generated OpenAPI spec

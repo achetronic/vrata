@@ -28,7 +28,7 @@ func factories() map[string]storeFactory {
 		},
 		"bolt": func(t *testing.T) store.Store {
 			dir := t.TempDir()
-			s, err := boltstore.New(filepath.Join(dir, "test.db"))
+			s, err := boltstore.New(filepath.Join(dir, "test.db"), nil)
 			if err != nil {
 				t.Fatal(err)
 			}

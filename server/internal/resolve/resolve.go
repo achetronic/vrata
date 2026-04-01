@@ -41,7 +41,6 @@ func Secrets(ctx context.Context, st store.Store, data []byte) ([]byte, error) {
 		ref := string(parts[2])
 
 		var value string
-		var err error
 
 		switch source {
 		case "value":
@@ -69,7 +68,6 @@ func Secrets(ctx context.Context, st store.Store, data []byte) ([]byte, error) {
 			return match
 		}
 
-		_ = err
 		return []byte(escapeJSON(value))
 	})
 

@@ -5,6 +5,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,6 +74,12 @@ type ControlPlaneConfig struct {
 	// Auth configures client authentication for the REST API and SSE
 	// endpoints. When absent, no authentication is required (dev mode).
 	Auth *AuthConfig `yaml:"auth,omitempty"`
+
+	// Encryption configures at-rest encryption for sensitive data in bbolt
+	// (secrets and snapshots). When absent, data is stored in plaintext
+	// (dev mode). When set, the Key field must contain a base64-encoded
+	// 32-byte AES-256 key.
+	Encryption *EncryptionConfig `yaml:"encryption,omitempty"`
 }
 
 // BoltDBPath returns the path to the bbolt database file, derived from StorePath.
@@ -231,6 +238,14 @@ type APIKeyEntry struct {
 	Key string `yaml:"key"`
 }
 
+// EncryptionConfig configures at-rest encryption for sensitive data.
+type EncryptionConfig struct {
+	// Key is a base64-encoded 32-byte AES-256 key used to encrypt secret
+	// values and snapshot payloads in bbolt. Generate with:
+	//   openssl rand -base64 32
+	Key string `yaml:"key"`
+}
+
 // Load reads the YAML file at path, expands environment variables in its
 // raw content, unmarshals it into a Config, and applies defaults.
 func Load(path string) (*Config, error) {
@@ -315,6 +330,15 @@ func Validate(cfg *Config) error {
 			if k.Key == "" {
 				return fmt.Errorf("controlPlane.auth.apiKeys[%d].key is required", i)
 			}
+		}
+	}
+	if cfg.ControlPlane.Encryption != nil && cfg.ControlPlane.Encryption.Key != "" {
+		raw, err := base64.StdEncoding.DecodeString(cfg.ControlPlane.Encryption.Key)
+		if err != nil {
+			return fmt.Errorf("controlPlane.encryption.key: invalid base64: %w", err)
+		}
+		if len(raw) != 32 {
+			return fmt.Errorf("controlPlane.encryption.key: must be exactly 32 bytes (AES-256), got %d", len(raw))
 		}
 	}
 	return nil

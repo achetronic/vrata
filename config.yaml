@@ -69,6 +69,14 @@ controlPlane:
   #     - name: "operator"
   #       key: "${OPERATOR_API_KEY}"
 
+  # At-rest encryption for secrets and snapshots in bbolt (optional).
+  # When absent, data is stored in plaintext (dev mode).
+  # The key must be a base64-encoded 32-byte AES-256 key.
+  # Generate with: openssl rand -base64 32
+  #
+  # encryption:
+  #   key: "${ENCRYPTION_KEY}"
+
 # Proxy settings — only used when mode is "proxy".
 proxy:
   # Base URL of the control plane to sync from (e.g. "http://10.0.0.1:8080").

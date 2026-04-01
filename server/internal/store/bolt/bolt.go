@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/achetronic/vrata/internal/encrypt"
 	"github.com/achetronic/vrata/internal/model"
 	"github.com/achetronic/vrata/internal/store"
 	bolt "go.etcd.io/bbolt"
@@ -28,20 +29,24 @@ const (
 	bucketMeta         = "meta"
 
 	metaActiveSnapshot = "active_snapshot_id"
+	metaEncrypted      = "encrypted"
 )
 
-// Store wraps a bbolt database and exposes CRUD operations for routes and groups.
+// Store wraps a bbolt database and exposes CRUD operations for all entities.
 // It implements store.Store and is safe for concurrent use.
 type Store struct {
-	db *bolt.DB
+	db     *bolt.DB
+	cipher *encrypt.Cipher
 
 	subsMu sync.Mutex
 	subs   []chan store.StoreEvent
 }
 
 // New opens (or creates) the bbolt database at the given path and initialises
-// the required buckets. It returns an error if the database cannot be opened.
-func New(path string) (*Store, error) {
+// the required buckets. The optional cipher enables at-rest encryption for
+// secrets and snapshots. Pass nil for plaintext (dev mode).
+// Returns an error if the encryption mode does not match the stored data.
+func New(path string, cipher *encrypt.Cipher) (*Store, error) {
 	db, err := bolt.Open(path, 0600, nil)
 	if err != nil {
 		return nil, fmt.Errorf("opening bolt db: %w", err)
@@ -60,12 +65,73 @@ func New(path string) (*Store, error) {
 		return nil, fmt.Errorf("initialising buckets: %w", err)
 	}
 
-	return &Store{db: db}, nil
+	st := &Store{db: db, cipher: cipher}
+	if err := st.checkEncryptionMode(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	return st, nil
 }
 
 // Close releases the database file handle. Call via defer in main.
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// checkEncryptionMode verifies that the configured encryption mode matches
+// the data in bbolt. If there is a mismatch, it returns an error.
+func (s *Store) checkEncryptionMode() error {
+	var marker []byte
+	if err := s.db.View(func(tx *bolt.Tx) error {
+		marker = tx.Bucket([]byte(bucketMeta)).Get([]byte(metaEncrypted))
+		return nil
+	}); err != nil {
+		return fmt.Errorf("reading encryption marker: %w", err)
+	}
+
+	dataEncrypted := len(marker) > 0 && string(marker) == "true"
+
+	if s.cipher == nil && dataEncrypted {
+		return fmt.Errorf("data is encrypted but no encryption key is configured")
+	}
+	if s.cipher != nil && !dataEncrypted {
+		hasData := false
+		if err := s.db.View(func(tx *bolt.Tx) error {
+			for _, name := range []string{bucketSecrets, bucketSnapshots} {
+				b := tx.Bucket([]byte(name))
+				if b != nil && b.Stats().KeyN > 0 {
+					hasData = true
+				}
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("checking existing data: %w", err)
+		}
+		if hasData {
+			return fmt.Errorf("data is not encrypted but an encryption key is configured")
+		}
+		return s.db.Update(func(tx *bolt.Tx) error {
+			return tx.Bucket([]byte(bucketMeta)).Put([]byte(metaEncrypted), []byte("true"))
+		})
+	}
+	return nil
+}
+
+// encryptValue encrypts data if a cipher is configured. Returns plaintext as-is otherwise.
+func (s *Store) encryptValue(data []byte) ([]byte, error) {
+	if s.cipher == nil {
+		return data, nil
+	}
+	return s.cipher.Seal(data)
+}
+
+// decryptValue decrypts data if a cipher is configured. Returns data as-is otherwise.
+func (s *Store) decryptValue(data []byte) ([]byte, error) {
+	if s.cipher == nil {
+		return data, nil
+	}
+	return s.cipher.Open(data)
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -513,8 +579,12 @@ func (s *Store) ListSecrets(_ context.Context) ([]model.SecretSummary, error) {
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketSecrets))
 		return b.ForEach(func(k, v []byte) error {
+			plain, err := s.decryptValue(v)
+			if err != nil {
+				return fmt.Errorf("decrypting secret %q: %w", string(k), err)
+			}
 			var sec model.Secret
-			if err := json.Unmarshal(v, &sec); err != nil {
+			if err := json.Unmarshal(plain, &sec); err != nil {
 				return fmt.Errorf("decoding secret %q: %w", string(k), err)
 			}
 			summaries = append(summaries, model.SecretSummary{ID: sec.ID, Name: sec.Name})
@@ -539,7 +609,11 @@ func (s *Store) GetSecret(_ context.Context, id string) (model.Secret, error) {
 		if data == nil {
 			return fmt.Errorf("secret %q: %w", id, model.ErrNotFound)
 		}
-		return json.Unmarshal(data, &sec)
+		plain, err := s.decryptValue(data)
+		if err != nil {
+			return fmt.Errorf("decrypting secret %q: %w", id, err)
+		}
+		return json.Unmarshal(plain, &sec)
 	})
 	return sec, err
 }
@@ -554,7 +628,11 @@ func (s *Store) SaveSecret(_ context.Context, sec model.Secret) error {
 		if err != nil {
 			return fmt.Errorf("encoding secret: %w", err)
 		}
-		return b.Put([]byte(sec.ID), data)
+		encrypted, err := s.encryptValue(data)
+		if err != nil {
+			return fmt.Errorf("encrypting secret: %w", err)
+		}
+		return b.Put([]byte(sec.ID), encrypted)
 	})
 	if err != nil {
 		return err
@@ -603,8 +681,12 @@ func (s *Store) ListSnapshots(_ context.Context) ([]model.SnapshotSummary, error
 
 		b := tx.Bucket([]byte(bucketSnapshots))
 		return b.ForEach(func(_, v []byte) error {
+			plain, err := s.decryptValue(v)
+			if err != nil {
+				return fmt.Errorf("decrypting snapshot: %w", err)
+			}
 			var vs model.VersionedSnapshot
-			if err := json.Unmarshal(v, &vs); err != nil {
+			if err := json.Unmarshal(plain, &vs); err != nil {
 				return fmt.Errorf("unmarshalling snapshot: %w", err)
 			}
 			summaries = append(summaries, model.SnapshotSummary{
@@ -636,7 +718,11 @@ func (s *Store) GetSnapshot(_ context.Context, id string) (model.VersionedSnapsh
 		if v == nil {
 			return fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
 		}
-		return json.Unmarshal(v, &vs)
+		plain, err := s.decryptValue(v)
+		if err != nil {
+			return fmt.Errorf("decrypting snapshot %q: %w", id, err)
+		}
+		return json.Unmarshal(plain, &vs)
 	})
 	if err != nil {
 		return model.VersionedSnapshot{}, err
@@ -650,10 +736,14 @@ func (s *Store) SaveSnapshot(_ context.Context, vs model.VersionedSnapshot) erro
 	if err != nil {
 		return fmt.Errorf("marshalling snapshot: %w", err)
 	}
+	encrypted, err := s.encryptValue(data)
+	if err != nil {
+		return fmt.Errorf("encrypting snapshot: %w", err)
+	}
 
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketSnapshots))
-		if err := b.Put([]byte(vs.ID), data); err != nil {
+		if err := b.Put([]byte(vs.ID), encrypted); err != nil {
 			return fmt.Errorf("saving snapshot %q: %w", vs.ID, err)
 		}
 		return nil
@@ -723,7 +813,11 @@ func (s *Store) GetActiveSnapshot(_ context.Context) (model.VersionedSnapshot, e
 		if v == nil {
 			return model.ErrNoActiveSnapshot
 		}
-		return json.Unmarshal(v, &vs)
+		plain, err := s.decryptValue(v)
+		if err != nil {
+			return fmt.Errorf("decrypting active snapshot: %w", err)
+		}
+		return json.Unmarshal(plain, &vs)
 	})
 	if err != nil {
 		return model.VersionedSnapshot{}, err

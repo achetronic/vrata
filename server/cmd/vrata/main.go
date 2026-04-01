@@ -24,6 +24,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -38,6 +39,7 @@ import (
 	"github.com/achetronic/vrata/internal/api"
 	"github.com/achetronic/vrata/internal/api/handlers"
 	"github.com/achetronic/vrata/internal/config"
+	"github.com/achetronic/vrata/internal/encrypt"
 	"github.com/achetronic/vrata/internal/gateway"
 	"github.com/achetronic/vrata/internal/k8s"
 	"github.com/achetronic/vrata/internal/proxy"
@@ -92,7 +94,20 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		slog.String("store", boltPath),
 	)
 
-	st, err := boltstore.New(boltPath)
+	var storeCipher *encrypt.Cipher
+	if cfg.ControlPlane.Encryption != nil && cfg.ControlPlane.Encryption.Key != "" {
+		raw, err := base64.StdEncoding.DecodeString(cfg.ControlPlane.Encryption.Key)
+		if err != nil {
+			return fmt.Errorf("decoding encryption key: %w", err)
+		}
+		storeCipher, err = encrypt.NewCipher(raw)
+		if err != nil {
+			return fmt.Errorf("creating encryption cipher: %w", err)
+		}
+		logger.Info("store encryption enabled")
+	}
+
+	st, err := boltstore.New(boltPath, storeCipher)
 	if err != nil {
 		return fmt.Errorf("opening store: %w", err)
 	}

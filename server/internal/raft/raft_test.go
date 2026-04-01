@@ -18,7 +18,7 @@ import (
 
 func newTestStore(t *testing.T) *boltstore.Store {
 	t.Helper()
-	s, err := boltstore.New(filepath.Join(t.TempDir(), "test.db"))
+	s, err := boltstore.New(filepath.Join(t.TempDir(), "test.db"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

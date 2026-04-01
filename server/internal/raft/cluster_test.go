@@ -45,7 +45,7 @@ func TestClusterSingleNode(t *testing.T) {
 	defer cancel()
 
 	dir := t.TempDir()
-	st, err := boltstore.New(dir + "/store.db")
+	st, err := boltstore.New(dir + "/store.db", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestClusterThreeNodesReplication(t *testing.T) {
 
 	newNode := func(id, addr string) (*raftnode.Node, *boltstore.Store) {
 		dir := t.TempDir()
-		st, _ := boltstore.New(dir + "/store.db")
+		st, _ := boltstore.New(dir + "/store.db", nil)
 		t.Cleanup(func() { st.Close() })
 		cfg := &config.RaftConfig{NodeID: id, BindAddress: addr, Peers: peers}
 		n, err := raftnode.NewNode(ctx, cfg, dir, st, logger, ":8080")
@@ -173,7 +173,7 @@ func TestClusterThreeNodesReplication(t *testing.T) {
 func TestClusterDumpRestore(t *testing.T) {
 	ctx := context.Background()
 	dir1 := t.TempDir()
-	st1, _ := boltstore.New(dir1 + "/store.db")
+	st1, _ := boltstore.New(dir1 + "/store.db", nil)
 	defer st1.Close()
 
 	st1.SaveRoute(ctx, model.Route{
@@ -195,7 +195,7 @@ func TestClusterDumpRestore(t *testing.T) {
 	}
 
 	dir2 := t.TempDir()
-	st2, _ := boltstore.New(dir2 + "/store.db")
+	st2, _ := boltstore.New(dir2 + "/store.db", nil)
 	defer st2.Close()
 
 	if err := st2.Restore(data); err != nil {

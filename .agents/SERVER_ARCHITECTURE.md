@@ -116,6 +116,10 @@ Builds `tls.Config` and `http.Transport` from `config.TLSConfig`. Supports inlin
 
 Resolves `{{secret:value/env/file}}` patterns in serialized JSON. Used by `buildSnapshot()` to resolve secret references before the snapshot is stored and pushed to proxies.
 
+### internal/encrypt
+
+AES-256-GCM encryption for at-rest protection of secrets and snapshots in bbolt. The `Cipher` type provides `Seal` and `Open` methods. Integrated into the bolt store via `encryptValue`/`decryptValue` — no-ops when no cipher is configured.
+
 ## Data Flow
 
 ```
