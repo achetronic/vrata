@@ -9,7 +9,8 @@ data:
   config.yaml: |
     {{- $cfg := .Values.controller.config | deepCopy }}
     {{- if not (dig "controlPlaneUrl" "" $cfg) }}
-    {{- $url := printf "http://%s:%d" (include "vrata.cpName" .) (int .Values.controlPlane.service.port) }}
+    {{- $scheme := ternary "https" "http" .Values.tls.enabled }}
+    {{- $url := printf "%s://%s:%d" $scheme (include "vrata.cpName" .) (int .Values.controlPlane.service.port) }}
     {{- $_ := set $cfg "controlPlaneUrl" $url }}
     {{- end }}
     {{- toYaml $cfg | nindent 4 }}

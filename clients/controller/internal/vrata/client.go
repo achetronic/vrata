@@ -78,16 +78,34 @@ type Snapshot struct {
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	apiKey     string
+}
+
+// Option configures the Client.
+type Option func(*Client)
+
+// WithHTTPClient sets the underlying HTTP client (e.g. for TLS).
+func WithHTTPClient(c *http.Client) Option {
+	return func(cl *Client) { cl.httpClient = c }
+}
+
+// WithAPIKey sets the bearer token sent in the Authorization header.
+func WithAPIKey(key string) Option {
+	return func(cl *Client) { cl.apiKey = key }
 }
 
 // NewClient creates a Vrata API client pointing at the given base URL.
-func NewClient(baseURL string) *Client {
-	return &Client{
+func NewClient(baseURL string, opts ...Option) *Client {
+	c := &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
+	for _, o := range opts {
+		o(c)
+	}
+	return c
 }
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
@@ -316,12 +334,20 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("vrata API error %d: %s", e.StatusCode, e.Body)
 }
 
+// setAuth adds the Authorization header if an API key is configured.
+func (c *Client) setAuth(req *http.Request) {
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+}
+
 // get performs a GET request and decodes the response.
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
+	c.setAuth(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
@@ -352,6 +378,7 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 		return fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.setAuth(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
@@ -378,6 +405,7 @@ func (c *Client) put(ctx context.Context, path string, body any) error {
 		return fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	c.setAuth(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)
@@ -396,6 +424,7 @@ func (c *Client) del(ctx context.Context, path string) error {
 	if err != nil {
 		return fmt.Errorf("building request: %w", err)
 	}
+	c.setAuth(req)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("executing request: %w", err)

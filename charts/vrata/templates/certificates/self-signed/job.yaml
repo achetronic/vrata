@@ -1,0 +1,98 @@
+{{- if and .Values.tls.enabled (not .Values.tls.certManager.enabled) (not .Values.tls.existingSecret) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "vrata.fullname" . }}-tls-init
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "vrata.name" . }}
+        app.kubernetes.io/component: tls-init
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "vrata.fullname" . }}-tls-init
+      containers:
+        - name: generate
+          image: bitnami/kubectl:latest
+          command:
+            - bash
+            - -c
+            - |
+              set -e
+              apt-get update -qq && apt-get install -y -qq openssl > /dev/null 2>&1
+              DAYS=365
+              NS="{{ .Release.Namespace }}"
+              CP_CN="{{ include "vrata.cpName" . }}.$NS.svc.cluster.local"
+              CP_SHORT="{{ include "vrata.cpName" . }}"
+              PROXY_CN="{{ include "vrata.proxyName" . }}"
+              CTRL_CN="{{ include "vrata.fullname" . }}-controller"
+
+              # CA
+              openssl genrsa -out /certs/ca.key 4096
+              openssl req -new -x509 -key /certs/ca.key -out /certs/ca.crt \
+                -days $DAYS -subj "/CN=Vrata CA"
+
+              # Server cert (control plane)
+              openssl genrsa -out /certs/server.key 4096
+              openssl req -new -key /certs/server.key -out /certs/server.csr \
+                -subj "/CN=$CP_CN" \
+                -addext "subjectAltName=DNS:$CP_CN,DNS:$CP_SHORT,DNS:$CP_SHORT.$NS,DNS:$CP_SHORT.$NS.svc,DNS:localhost,IP:127.0.0.1"
+              openssl x509 -req -in /certs/server.csr -CA /certs/ca.crt -CAkey /certs/ca.key \
+                -CAcreateserial -out /certs/server.crt -days $DAYS \
+                -extfile <(printf "subjectAltName=DNS:$CP_CN,DNS:$CP_SHORT,DNS:$CP_SHORT.$NS,DNS:$CP_SHORT.$NS.svc,DNS:localhost,IP:127.0.0.1\nextendedKeyUsage=serverAuth")
+
+              # Proxy client cert
+              openssl genrsa -out /certs/proxy.key 4096
+              openssl req -new -key /certs/proxy.key -out /certs/proxy.csr \
+                -subj "/CN=$PROXY_CN"
+              openssl x509 -req -in /certs/proxy.csr -CA /certs/ca.crt -CAkey /certs/ca.key \
+                -CAcreateserial -out /certs/proxy.crt -days $DAYS \
+                -extfile <(printf "extendedKeyUsage=clientAuth")
+
+              # Controller client cert
+              openssl genrsa -out /certs/ctrl.key 4096
+              openssl req -new -key /certs/ctrl.key -out /certs/ctrl.csr \
+                -subj "/CN=$CTRL_CN"
+              openssl x509 -req -in /certs/ctrl.csr -CA /certs/ca.crt -CAkey /certs/ca.key \
+                -CAcreateserial -out /certs/ctrl.crt -days $DAYS \
+                -extfile <(printf "extendedKeyUsage=clientAuth")
+
+              CA_B64=$(base64 -w0 /certs/ca.crt)
+
+              # Create Secrets
+              for COMP in server proxy ctrl; do
+                case $COMP in
+                  server) SECRET="{{ include "vrata.tlsServerSecretName" . }}" ;;
+                  proxy)  SECRET="{{ include "vrata.tlsProxySecretName" . }}" ;;
+                  ctrl)   SECRET="{{ include "vrata.tlsControllerSecretName" . }}" ;;
+                esac
+                cat <<EOF | kubectl apply -f -
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: $SECRET
+                namespace: $NS
+                labels:
+                  {{- include "vrata.labels" . | nindent 18 }}
+              type: kubernetes.io/tls
+              data:
+                tls.crt: $(base64 -w0 /certs/$COMP.crt)
+                tls.key: $(base64 -w0 /certs/$COMP.key)
+                ca.crt: $CA_B64
+              EOF
+              done
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+      volumes:
+        - name: certs
+          emptyDir: {}
+{{- end }}

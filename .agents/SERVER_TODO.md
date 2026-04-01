@@ -4,7 +4,7 @@
 
 ### Housekeeping
 
-- [ ] Add authentication to the REST API
+(No pending housekeeping items.)
 
 ### Destination priority levels
 
@@ -45,3 +45,4 @@ production, and canary fleets without separate deployments.
 - [x] **CEL body access** — `request.body.raw` and `request.body.json` available in all CEL contexts (route matching, skipWhen/onlyWhen, inlineAuthz). Lazy buffering, configurable max size. See `SERVER_DECISIONS.md`.
 - [x] **mTLS client authentication** — `clientAuth` on ListenerTLS with modes none/optional/require. Client cert metadata exposed in CEL (`request.tls.peerCertificate.*`). XFCC header injection with spoof protection. See `SERVER_DECISIONS.md`.
 - [x] **Inline authorization middleware** — `inlineAuthz` type with ordered CEL rules, first-match-wins semantics, configurable deny response. See `SERVER_DECISIONS.md`.
+- [x] **Control plane security** — TLS/mTLS on the CP HTTP server + API key authentication via `Auth` middleware. `TLSConfig` struct shared by server and client. `resolvePEM` supports inline PEM and file paths. Helm chart supports cert-manager, self-signed Job, and existingSecret. Three separate certs (server, proxy, controller) with dedicated key usage. See `SERVER_DECISIONS.md`.

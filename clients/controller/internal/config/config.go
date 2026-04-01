@@ -17,6 +17,16 @@ type Config struct {
 	// (e.g. "http://localhost:8080").
 	ControlPlaneURL string `yaml:"controlPlaneUrl"`
 
+	// TLS configures TLS for the connection to the control plane.
+	// Cert and Key enable mutual TLS (the controller presents a client cert).
+	// CA is the CA bundle used to verify the control plane server cert.
+	// When absent, plain HTTP or system CA defaults are used.
+	TLS *TLSConfig `yaml:"tls,omitempty"`
+
+	// APIKey is the bearer token sent in the Authorization header on every
+	// request to the control plane. When empty, no auth header is sent.
+	APIKey string `yaml:"apiKey,omitempty"`
+
 	// Watch controls which Kubernetes resources the controller observes.
 	Watch WatchConfig `yaml:"watch"`
 
@@ -268,5 +278,25 @@ func validate(cfg *Config) error {
 	if cfg.ControlPlaneURL == "" {
 		return fmt.Errorf("controlPlaneUrl is required")
 	}
+	if cfg.TLS != nil {
+		if cfg.TLS.Cert != "" && cfg.TLS.Key == "" {
+			return fmt.Errorf("tls: key is required when cert is set")
+		}
+		if cfg.TLS.Key != "" && cfg.TLS.Cert == "" {
+			return fmt.Errorf("tls: cert is required when key is set")
+		}
+	}
 	return nil
+}
+
+// TLSConfig holds TLS parameters for the connection to the control plane.
+type TLSConfig struct {
+	// Cert is the PEM-encoded client certificate for mTLS.
+	Cert string `yaml:"cert,omitempty"`
+
+	// Key is the PEM-encoded private key matching Cert.
+	Key string `yaml:"key,omitempty"`
+
+	// CA is the PEM-encoded CA bundle to verify the control plane server cert.
+	CA string `yaml:"ca,omitempty"`
 }

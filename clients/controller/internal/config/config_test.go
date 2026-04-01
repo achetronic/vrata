@@ -128,3 +128,66 @@ func TestLoadInvalidYAML(t *testing.T) {
 		t.Fatal("expected error for invalid YAML")
 	}
 }
+
+func TestLoadWithTLSAndAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(`
+controlPlaneUrl: "https://cp:8080"
+tls:
+  cert: "CERT_PEM"
+  key: "KEY_PEM"
+  ca: "CA_PEM"
+apiKey: "my-secret-key"
+`), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.TLS == nil {
+		t.Fatal("expected TLS config")
+	}
+	if cfg.TLS.Cert != "CERT_PEM" {
+		t.Errorf("expected cert CERT_PEM, got %q", cfg.TLS.Cert)
+	}
+	if cfg.TLS.Key != "KEY_PEM" {
+		t.Errorf("expected key KEY_PEM, got %q", cfg.TLS.Key)
+	}
+	if cfg.TLS.CA != "CA_PEM" {
+		t.Errorf("expected ca CA_PEM, got %q", cfg.TLS.CA)
+	}
+	if cfg.APIKey != "my-secret-key" {
+		t.Errorf("expected apiKey my-secret-key, got %q", cfg.APIKey)
+	}
+}
+
+func TestValidateTLSCertWithoutKey(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(`
+controlPlaneUrl: "https://cp:8080"
+tls:
+  cert: "CERT_PEM"
+`), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error when cert is set without key")
+	}
+}
+
+func TestValidateTLSKeyWithoutCert(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(`
+controlPlaneUrl: "https://cp:8080"
+tls:
+  key: "KEY_PEM"
+`), 0644)
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error when key is set without cert")
+	}
+}

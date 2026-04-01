@@ -40,12 +40,54 @@ controlPlane:
   #   # discovery:
   #   #   dns: "vrata-headless.vrata.svc.cluster.local"
 
+  # TLS for the REST API and SSE endpoints (optional).
+  # When absent, the server listens in plain HTTP.
+  #
+  # tls:
+  #   # PEM-encoded server certificate and private key.
+  #   cert: "${CP_TLS_CERT}"
+  #   key: "${CP_TLS_KEY}"
+  #   # PEM-encoded CA bundle for verifying client certificates (mTLS).
+  #   # Required when clientAuth is "optional" or "require".
+  #   ca: "${MTLS_CA}"
+  #   # Client certificate verification mode:
+  #   #   "none"     — TLS only, no client certs (default)
+  #   #   "optional" — request client cert, don't reject if absent
+  #   #   "require"  — reject TLS handshake without a valid client cert
+  #   clientAuth: "optional"
+
+  # API key authentication for the REST API (optional).
+  # When absent, no authentication is required (dev mode).
+  # Clients send: Authorization: Bearer <key>
+  #
+  # auth:
+  #   apiKeys:
+  #     - name: "proxy-fleet"
+  #       key: "${PROXY_API_KEY}"
+  #     - name: "controller"
+  #       key: "${CONTROLLER_API_KEY}"
+  #     - name: "operator"
+  #       key: "${OPERATOR_API_KEY}"
+
 # Proxy settings — only used when mode is "proxy".
 proxy:
   # Base URL of the control plane to sync from (e.g. "http://10.0.0.1:8080").
   controlPlaneUrl: "${PROXY_CONTROLPLANE_URL:-}"
   # How long to wait before reconnecting after a stream disconnection.
   reconnectInterval: "${PROXY_RECONNECT_INTERVAL:-5s}"
+
+  # TLS for the connection to the control plane (optional).
+  # When absent, plain HTTP or system CA defaults are used.
+  #
+  # tls:
+  #   # PEM-encoded client certificate and key for mTLS (optional).
+  #   cert: "${PROXY_TLS_CERT}"
+  #   key: "${PROXY_TLS_KEY}"
+  #   # PEM-encoded CA bundle to verify the control plane server cert.
+  #   ca: "${CP_CA}"
+
+  # API key sent to the control plane on every request (optional).
+  # apiKey: "${PROXY_API_KEY}"
 
 log:
   # format: "console" (human-readable) or "json"

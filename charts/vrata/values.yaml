@@ -10,6 +10,43 @@ image:
   # imagePullSecrets:
   #   - name: my-registry-secret
 
+# TLS for CP↔proxy/controller communication (optional).
+# When enabled, a k8s Secret with cert/key/ca is created (or referenced)
+# and mounted into all Vrata pods. The config.yaml uses env vars
+# (VRATA_TLS_CERT, VRATA_TLS_KEY, VRATA_TLS_CA) to reference them.
+tls:
+  enabled: false
+
+  # Option A: cert-manager generates and rotates the certificates.
+  certManager:
+    enabled: false
+    # Issuer that signs the certificates.
+    issuerRef:
+      name: ""
+      kind: ClusterIssuer
+
+  # Option B: bring your own k8s Secret containing tls.crt, tls.key, ca.crt.
+  existingSecret: ""
+
+  # Option C: if neither certManager nor existingSecret is set and tls.enabled
+  # is true, the chart generates a self-signed CA + certs via a Helm hook Job.
+
+# API key authentication for the CP API (optional).
+# Each entry becomes an apiKeys item in controlPlane.auth. The key is also
+# injected as VRATA_API_KEY env var into the proxy and controller pods
+# (using the first entry's key).
+# Example:
+#   auth:
+#     apiKeys:
+#       - name: proxy-fleet
+#         key: "change-me-proxy"
+#       - name: controller
+#         key: "change-me-controller"
+#       - name: operator
+#         key: "change-me-operator"
+auth:
+  apiKeys: []
+
 # Control plane nodes expose the REST API, store configuration in bbolt,
 # and push active snapshots to connected proxies via SSE.
 # Set enabled: false when deploying a proxy fleet that connects to an
@@ -68,6 +105,19 @@ controlPlane:
     controlPlane:
       address: ":8080"
       storePath: "/data"
+      # TLS for the REST API and SSE endpoints (optional).
+      # tls:
+      #   cert: "${CP_TLS_CERT}"
+      #   key: "${CP_TLS_KEY}"
+      #   ca: "${MTLS_CA}"
+      #   clientAuth: "optional"
+      # API key authentication (optional).
+      # auth:
+      #   apiKeys:
+      #     - name: "proxy-fleet"
+      #       key: "${PROXY_API_KEY}"
+      #     - name: "controller"
+      #       key: "${CONTROLLER_API_KEY}"
     log:
       format: console
       level: info
@@ -116,6 +166,12 @@ proxy:
     proxy:
       # controlPlaneUrl: "http://external-cp:8080"
       reconnectInterval: 5s
+      # TLS for the connection to the control plane (optional).
+      # tls:
+      #   cert: "${PROXY_TLS_CERT}"
+      #   key: "${PROXY_TLS_KEY}"
+      #   ca: "${CP_CA}"
+      # apiKey: "${PROXY_API_KEY}"
     log:
       format: console
       level: info
@@ -157,6 +213,12 @@ controller:
     # controlPlaneUrl defaults to the in-cluster control plane Service
     # when not set — override it to connect to an external control plane.
     # controlPlaneUrl: "http://external-cp:8080"
+    # TLS for the connection to the control plane (optional).
+    # tls:
+    #   cert: "${CONTROLLER_TLS_CERT}"
+    #   key: "${CONTROLLER_TLS_KEY}"
+    #   ca: "${CP_CA}"
+    # apiKey: "${CONTROLLER_API_KEY}"
     watch:
       # Restrict to specific namespaces. Empty = all.
       namespaces: []

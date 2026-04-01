@@ -11,6 +11,15 @@ The controller reads a YAML config file via `--config`. All string values suppor
 # URL of the Vrata control plane REST API.
 controlPlaneUrl: "${CONTROLPLANE_URL:-http://localhost:8080}"
 
+# TLS for the connection to the control plane (optional).
+# tls:
+#   cert: "${CONTROLLER_TLS_CERT}"   # Client cert for mTLS
+#   key: "${CONTROLLER_TLS_KEY}"     # Client private key
+#   ca: "${CP_CA}"                   # CA to verify the CP server cert
+
+# API key sent to the control plane on every request (optional).
+# apiKey: "${CONTROLLER_API_KEY}"
+
 # Which Kubernetes resources to watch.
 watch:
   namespaces: []          # Empty = all namespaces
@@ -58,6 +67,8 @@ metrics:
 | Field | Default | Description |
 |-------|---------|-------------|
 | `controlPlaneUrl` | `http://localhost:8080` | Vrata control plane URL |
+| `tls` | — | TLS config for the CP connection: `cert`, `key`, `ca` (same as proxy) |
+| `apiKey` | — | Bearer token sent to the CP on every request |
 | `watch.namespaces` | `[]` (all) | Restrict to specific namespaces |
 | `watch.httpRoutes` | `true` | Watch HTTPRoute resources |
 | `watch.superHttpRoutes` | `false` | Watch SuperHTTPRoute resources |

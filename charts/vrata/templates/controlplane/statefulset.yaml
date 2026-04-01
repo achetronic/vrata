@@ -64,6 +64,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            {{- if .Values.tls.enabled }}
+            - name: VRATA_TLS_CERT
+              value: /tls/tls.crt
+            - name: VRATA_TLS_KEY
+              value: /tls/tls.key
+            - name: VRATA_TLS_CA
+              value: /tls/ca.crt
+            {{- end }}
             {{- with .Values.controlPlane.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -82,6 +90,11 @@ spec:
               mountPath: /config
             - name: data
               mountPath: /data
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
             {{- with .Values.controlPlane.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -93,6 +106,15 @@ spec:
         - name: config
           configMap:
             name: {{ include "vrata.cpName" . }}
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ include "vrata.tlsServerSecretName" . }}
+        {{- end }}
+        {{- if not .Values.controlPlane.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
         {{- with .Values.controlPlane.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -108,8 +130,5 @@ spec:
         resources:
           requests:
             storage: {{ .Values.controlPlane.persistence.size }}
-  {{- else }}
-      - name: data
-        emptyDir: {}
   {{- end }}
 {{- end }}

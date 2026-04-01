@@ -1,0 +1,20 @@
+{{- if and .Values.tls.enabled .Values.tls.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "vrata.fullname" . }}-ca
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "vrata.tlsCASecretName" . }}
+  duration: 87600h
+  renewBefore: 8760h
+  isCA: true
+  commonName: "Vrata CA"
+  usages:
+    - cert sign
+    - crl sign
+  issuerRef:
+    name: {{ include "vrata.fullname" . }}-selfsigned
+    kind: Issuer
+{{- end }}

@@ -15,12 +15,14 @@ import (
 	"github.com/achetronic/vrata/internal/api/handlers"
 	"github.com/achetronic/vrata/internal/api/middleware"
 	"github.com/achetronic/vrata/internal/api/respond"
+	"github.com/achetronic/vrata/internal/config"
 	"github.com/achetronic/vrata/internal/store"
 )
 
 // NewRouter creates and returns the root http.Handler for the Vrata REST API.
 // raftApplier is optional; pass nil when running in single-node mode.
-func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApplier) http.Handler {
+// apiKeys is optional; when nil or empty, no authentication is required.
+func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApplier, apiKeys []config.APIKeyEntry) http.Handler {
 	mux := http.NewServeMux()
 
 	deps := &handlers.Dependencies{
@@ -93,6 +95,6 @@ func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApp
 		httpSwagger.URL("/api/v1/docs/doc.json"),
 	))
 
-	// Chain middleware: recovery wraps logger wraps mux.
-	return middleware.Recovery(logger)(middleware.Logger(logger)(mux))
+	// Chain middleware: recovery wraps auth wraps logger wraps mux.
+	return middleware.Recovery(logger)(middleware.Auth(apiKeys, logger)(middleware.Logger(logger)(mux)))
 }

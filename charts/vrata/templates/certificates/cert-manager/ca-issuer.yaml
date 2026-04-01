@@ -1,0 +1,11 @@
+{{- if and .Values.tls.enabled .Values.tls.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "vrata.fullname" . }}-ca
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ include "vrata.tlsCASecretName" . }}
+{{- end }}

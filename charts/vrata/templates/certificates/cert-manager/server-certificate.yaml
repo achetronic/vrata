@@ -1,0 +1,29 @@
+{{- if and .Values.tls.enabled .Values.tls.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "vrata.fullname" . }}-tls-server
+  labels:
+    {{- include "vrata.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "vrata.tlsServerSecretName" . }}
+  duration: 8760h
+  renewBefore: 720h
+  isCA: false
+  commonName: {{ include "vrata.cpName" . }}
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  dnsNames:
+    - {{ include "vrata.cpName" . }}
+    - {{ include "vrata.cpName" . }}.{{ .Release.Namespace }}
+    - {{ include "vrata.cpName" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "vrata.cpName" . }}.{{ .Release.Namespace }}.svc.cluster.local
+    - localhost
+  ipAddresses:
+    - 127.0.0.1
+  issuerRef:
+    name: {{ include "vrata.fullname" . }}-ca
+    kind: Issuer
+{{- end }}

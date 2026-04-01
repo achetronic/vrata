@@ -4,11 +4,14 @@
 package middleware
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+
+	"github.com/achetronic/vrata/internal/config"
 )
 
 func testLogger() *slog.Logger {
@@ -55,5 +58,90 @@ func TestRecoveryMiddlewareNoPanic(t *testing.T) {
 
 	if w.Code != 200 {
 		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestAuthNoKeysIsNoop(t *testing.T) {
+	handler := Auth(nil, testLogger())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+
+	if w.Code != 200 {
+		t.Errorf("expected 200 (no auth configured), got %d", w.Code)
+	}
+}
+
+func TestAuthMissingHeader(t *testing.T) {
+	keys := []config.APIKeyEntry{{Name: "test", Key: "secret123"}}
+	handler := Auth(keys, testLogger())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	}))
+
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest("GET", "/", nil))
+
+	if w.Code != 401 {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestAuthInvalidScheme(t *testing.T) {
+	keys := []config.APIKeyEntry{{Name: "test", Key: "secret123"}}
+	handler := Auth(keys, testLogger())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	}))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 401 {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+	var body map[string]string
+	json.NewDecoder(w.Body).Decode(&body)
+	if body["error"] != "authorization header must use Bearer scheme" {
+		t.Errorf("unexpected error: %s", body["error"])
+	}
+}
+
+func TestAuthInvalidKey(t *testing.T) {
+	keys := []config.APIKeyEntry{{Name: "test", Key: "secret123"}}
+	handler := Auth(keys, testLogger())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler should not be called")
+	}))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer wrong-key")
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 401 {
+		t.Errorf("expected 401, got %d", w.Code)
+	}
+}
+
+func TestAuthValidKey(t *testing.T) {
+	keys := []config.APIKeyEntry{{Name: "proxy", Key: "secret123"}}
+	called := false
+	handler := Auth(keys, testLogger())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer secret123")
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if !called {
+		t.Error("expected handler to be called")
 	}
 }

@@ -55,6 +55,11 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
             {{- with .Values.proxy.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -62,14 +67,31 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.proxy.extraEnv }}
           env:
+            {{- with .Values.proxy.extraEnv }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: VRATA_TLS_CERT
+              value: /tls/tls.crt
+            - name: VRATA_TLS_KEY
+              value: /tls/tls.key
+            - name: VRATA_TLS_CA
+              value: /tls/ca.crt
+            {{- end }}
+            {{- if .Values.auth.apiKeys }}
+            - name: VRATA_API_KEY
+              value: {{ (index .Values.auth.apiKeys 0).key | quote }}
+            {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "vrata.proxyName" . }}
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ include "vrata.tlsProxySecretName" . }}
+        {{- end }}
         {{- with .Values.proxy.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
