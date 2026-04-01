@@ -27,9 +27,9 @@ By default, Vrata connects to backends in plaintext. Enable TLS when your upstre
 |-------|------|---------|-------------|
 | `mode` | string | `none` | `none` (plaintext), `tls` (verify server), `mtls` (mutual TLS) |
 | `sni` | string | destination host | Server Name Indication override |
-| `ca` | string | system CA bundle | CA certificate PEM, file path, or `{{secret:...}}` reference |
-| `cert` | string | — | Client certificate PEM, file path, or `{{secret:...}}` reference (required for `mtls`) |
-| `key` | string | — | Client private key PEM, file path, or `{{secret:...}}` reference (required for `mtls`) |
+| `ca` | string | system CA bundle | CA certificate PEM or `{{secret:...}}` reference |
+| `cert` | string | — | Client certificate PEM or `{{secret:...}}` reference (required for `mtls`) |
+| `key` | string | — | Client private key PEM or `{{secret:...}}` reference (required for `mtls`) |
 | `minVersion` | string | — | Minimum TLS version: `TLSv1_0` to `TLSv1_3` |
 | `maxVersion` | string | — | Maximum TLS version |
 

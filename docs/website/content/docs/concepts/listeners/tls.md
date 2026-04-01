@@ -24,8 +24,8 @@ A listener can terminate TLS so clients connect over HTTPS. Vrata handles the ce
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `cert` | string | required | PEM-encoded TLS certificate, file path, or `{{secret:...}}` reference |
-| `key` | string | required | PEM-encoded private key, file path, or `{{secret:...}}` reference |
+| `cert` | string | required | PEM-encoded TLS certificate or `{{secret:...}}` reference |
+| `key` | string | required | PEM-encoded private key or `{{secret:...}}` reference |
 | `minVersion` | string | `TLSv1_2` | Minimum TLS protocol version |
 | `maxVersion` | string | — | Maximum TLS protocol version (empty = no upper bound) |
 

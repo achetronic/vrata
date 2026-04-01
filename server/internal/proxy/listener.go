@@ -11,8 +11,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -121,25 +119,7 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 
 	// TLS.
 	if l.TLS != nil && l.TLS.Cert != "" && l.TLS.Key != "" {
-		certPEM, err := resolvePEM(l.TLS.Cert)
-		if err != nil {
-			lm.logger.Error("proxy: failed to resolve TLS cert",
-				slog.String("id", l.ID),
-				slog.String("error", err.Error()),
-			)
-			cancel()
-			return
-		}
-		keyPEM, err := resolvePEM(l.TLS.Key)
-		if err != nil {
-			lm.logger.Error("proxy: failed to resolve TLS key",
-				slog.String("id", l.ID),
-				slog.String("error", err.Error()),
-			)
-			cancel()
-			return
-		}
-		cert, err := tls.X509KeyPair(certPEM, keyPEM)
+		cert, err := tls.X509KeyPair([]byte(l.TLS.Cert), []byte(l.TLS.Key))
 		if err != nil {
 			lm.logger.Error("proxy: failed to parse TLS cert",
 				slog.String("id", l.ID),
@@ -174,17 +154,8 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 				return
 			}
 			if ca.CA != "" {
-				caData, err := resolvePEM(ca.CA)
-				if err != nil {
-					lm.logger.Error("proxy: failed to resolve client CA",
-						slog.String("id", l.ID),
-						slog.String("error", err.Error()),
-					)
-					cancel()
-					return
-				}
 				pool := x509.NewCertPool()
-				if !pool.AppendCertsFromPEM(caData) {
+				if !pool.AppendCertsFromPEM([]byte(ca.CA)) {
 					lm.logger.Error("proxy: no valid certificates in client CA",
 						slog.String("id", l.ID),
 					)
@@ -395,17 +366,4 @@ func parseDurationOrDefault[T any](cfg *T, accessor func(*T) string, fallback ti
 		return fallback
 	}
 	return d
-}
-
-// resolvePEM returns PEM content from a value that is either inline PEM or a
-// file path. Values starting with "-----BEGIN" are treated as inline PEM.
-func resolvePEM(value string) ([]byte, error) {
-	if strings.HasPrefix(strings.TrimSpace(value), "-----BEGIN") {
-		return []byte(value), nil
-	}
-	data, err := os.ReadFile(value)
-	if err != nil {
-		return nil, fmt.Errorf("reading PEM from %q: %w", value, err)
-	}
-	return data, nil
 }

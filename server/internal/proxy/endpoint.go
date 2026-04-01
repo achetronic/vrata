@@ -181,27 +181,14 @@ func buildTLSConfig(d model.Destination) (*tls.Config, error) {
 		cfg.MaxVersion = v
 	}
 
-	caValue := tlsOpts.CA
-	if caValue == "" {
-		caValue = "/etc/ssl/certs/ca-certificates.crt"
-	}
-	caCert, err := resolvePEM(caValue)
-	if err == nil {
+	if tlsOpts.CA != "" {
 		pool := x509.NewCertPool()
-		pool.AppendCertsFromPEM(caCert)
+		pool.AppendCertsFromPEM([]byte(tlsOpts.CA))
 		cfg.RootCAs = pool
 	}
 
 	if tlsOpts.Mode == model.TLSModeMTLS && tlsOpts.Cert != "" && tlsOpts.Key != "" {
-		certPEM, err := resolvePEM(tlsOpts.Cert)
-		if err != nil {
-			return nil, fmt.Errorf("resolving client cert: %w", err)
-		}
-		keyPEM, err := resolvePEM(tlsOpts.Key)
-		if err != nil {
-			return nil, fmt.Errorf("resolving client key: %w", err)
-		}
-		cert, err := tls.X509KeyPair(certPEM, keyPEM)
+		cert, err := tls.X509KeyPair([]byte(tlsOpts.Cert), []byte(tlsOpts.Key))
 		if err != nil {
 			return nil, fmt.Errorf("parsing client cert: %w", err)
 		}
