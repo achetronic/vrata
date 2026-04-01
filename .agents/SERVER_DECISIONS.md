@@ -1184,3 +1184,52 @@ already uses `os.ExpandEnv` so the raw key is in an env var anyway. Do
 not add role-based authorization without an explicit decision — all keys
 have full access for now. Do not require mTLS for all clients — `optional`
 mode allows mixed access (certs for machines, API key only for humans).
+
+---
+
+## Secrets as first-class entities with interpolation-based resolution
+
+**Date**: 2026-04-01
+**Status**: Implemented
+
+`Secret` is a flat entity (ID, Name, Value) stored in bbolt, CRUD via
+`/api/v1/secrets`. Secrets hold sensitive values — TLS certs, private
+keys, tokens — and are referenced in any string field of any entity via
+the `{{secret:<source>:<ref>}}` pattern.
+
+Three sources, all resolved by the control plane at snapshot build time:
+- `{{secret:value:<id>}}` — looks up the Secret by ID in the store
+- `{{secret:env:<var>}}` — reads `os.Getenv(var)` on the CP
+- `{{secret:file:<path>}}` — reads `os.ReadFile(path)` on the CP
+
+The proxy never sees `{{secret:...}}` patterns — it receives a snapshot
+with literal values. Resolution happens in `buildSnapshot()` via regex
+replacement on the serialized JSON. If any reference fails to resolve,
+the entire snapshot creation fails with a clear error.
+
+Model field renames (breaking API change):
+- `ListenerTLS.CertPath` → `Cert`, `KeyPath` → `Key` (JSON: `cert`, `key`)
+- `ListenerClientAuth.CAFile` → `CA` (JSON: `ca`)
+- `TLSOptions.CertFile` → `Cert`, `KeyFile` → `Key`, `CAFile` → `CA`
+
+Fields now accept inline PEM, file paths, or `{{secret:...}}` references.
+The proxy's `resolvePEM` function handles both inline PEM (starts with
+`-----BEGIN`) and file paths transparently.
+
+The list endpoint (`GET /api/v1/secrets`) returns only `SecretSummary`
+(ID + Name) — the Value is never exposed in bulk. Secret values are
+never logged.
+
+**Reasoning**: entities reference sensitive material via paths, which
+breaks the CP → proxy distribution model. Secrets solve this: the CP
+holds the values and resolves them into entities before pushing to
+proxies. The proxy stays stateless — no file mounts, no env vars for
+secrets. The interpolation pattern is generic and works in any string
+field without schema changes per entity.
+
+**Do not**: add secrets to the Snapshot struct. They are resolved into
+entity fields — the snapshot contains literal values, never Secret
+references. Do not validate secret references at entity creation time —
+defer to snapshot build time to avoid ordering dependencies. Do not
+auto-create snapshots when a Secret is updated — the snapshot is an
+explicit "publish" step. Do not log Secret values.

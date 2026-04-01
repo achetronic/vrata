@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -182,21 +181,29 @@ func buildTLSConfig(d model.Destination) (*tls.Config, error) {
 		cfg.MaxVersion = v
 	}
 
-	caFile := tlsOpts.CAFile
-	if caFile == "" {
-		caFile = "/etc/ssl/certs/ca-certificates.crt"
+	caValue := tlsOpts.CA
+	if caValue == "" {
+		caValue = "/etc/ssl/certs/ca-certificates.crt"
 	}
-	caCert, err := os.ReadFile(caFile)
+	caCert, err := resolvePEM(caValue)
 	if err == nil {
 		pool := x509.NewCertPool()
 		pool.AppendCertsFromPEM(caCert)
 		cfg.RootCAs = pool
 	}
 
-	if tlsOpts.Mode == model.TLSModeMTLS && tlsOpts.CertFile != "" && tlsOpts.KeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(tlsOpts.CertFile, tlsOpts.KeyFile)
+	if tlsOpts.Mode == model.TLSModeMTLS && tlsOpts.Cert != "" && tlsOpts.Key != "" {
+		certPEM, err := resolvePEM(tlsOpts.Cert)
 		if err != nil {
-			return nil, fmt.Errorf("loading client cert: %w", err)
+			return nil, fmt.Errorf("resolving client cert: %w", err)
+		}
+		keyPEM, err := resolvePEM(tlsOpts.Key)
+		if err != nil {
+			return nil, fmt.Errorf("resolving client key: %w", err)
+		}
+		cert, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("parsing client cert: %w", err)
 		}
 		cfg.Certificates = []tls.Certificate{cert}
 	}

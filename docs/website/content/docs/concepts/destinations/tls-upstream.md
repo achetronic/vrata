@@ -13,7 +13,7 @@ By default, Vrata connects to backends in plaintext. Enable TLS when your upstre
     "tls": {
       "mode": "tls",
       "sni": "api.internal",
-      "caFile": "/certs/ca.pem",
+      "ca": "/certs/ca.pem",
       "minVersion": "TLSv1_2",
       "maxVersion": "TLSv1_3"
     }
@@ -27,9 +27,9 @@ By default, Vrata connects to backends in plaintext. Enable TLS when your upstre
 |-------|------|---------|-------------|
 | `mode` | string | `none` | `none` (plaintext), `tls` (verify server), `mtls` (mutual TLS) |
 | `sni` | string | destination host | Server Name Indication override |
-| `caFile` | string | system CA bundle | Path to CA certificate PEM for verification |
-| `certFile` | string | — | Client certificate PEM (required for `mtls`) |
-| `keyFile` | string | — | Client private key PEM (required for `mtls`) |
+| `ca` | string | system CA bundle | CA certificate PEM, file path, or `{{secret:...}}` reference |
+| `cert` | string | — | Client certificate PEM, file path, or `{{secret:...}}` reference (required for `mtls`) |
+| `key` | string | — | Client private key PEM, file path, or `{{secret:...}}` reference (required for `mtls`) |
 | `minVersion` | string | — | Minimum TLS version: `TLSv1_0` to `TLSv1_3` |
 | `maxVersion` | string | — | Maximum TLS version |
 
@@ -74,7 +74,7 @@ Vrata verifies the backend's certificate against the system CA bundle. Use for a
   "options": {
     "tls": {
       "mode": "tls",
-      "caFile": "/certs/internal-ca.pem"
+      "ca": "/certs/internal-ca.pem"
     }
   }
 }
@@ -110,15 +110,15 @@ When connecting to an IP address or a hostname that doesn't match the certificat
   "options": {
     "tls": {
       "mode": "mtls",
-      "certFile": "/certs/client.pem",
-      "keyFile": "/certs/client-key.pem",
-      "caFile": "/certs/ca.pem"
+      "cert": "/certs/client.pem",
+      "key": "/certs/client-key.pem",
+      "ca": "/certs/ca.pem"
     }
   }
 }
 ```
 
-Both sides verify each other. Vrata presents `certFile`/`keyFile` to the backend. The backend presents its certificate, which Vrata verifies against `caFile`. Use for zero-trust service mesh patterns.
+Both sides verify each other. Vrata presents `cert`/`key` to the backend. The backend presents its certificate, which Vrata verifies against `ca`. Use for zero-trust service mesh patterns.
 
 ### TLS 1.3 only
 

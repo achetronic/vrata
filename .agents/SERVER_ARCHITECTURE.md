@@ -112,6 +112,10 @@ Session store interface and Redis implementation for STICKY balancing.
 
 Builds `tls.Config` and `http.Transport` from `config.TLSConfig`. Supports inline PEM and file paths via `resolvePEM`. Used by the CP HTTP server (server TLS + mTLS) and the sync client (client TLS + mTLS).
 
+### internal/resolve
+
+Resolves `{{secret:value/env/file}}` patterns in serialized JSON. Used by `buildSnapshot()` to resolve secret references before the snapshot is stored and pushed to proxies.
+
 ## Data Flow
 
 ```

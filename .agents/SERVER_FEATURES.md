@@ -204,6 +204,9 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | API key authentication (Bearer token) | 100% | Unit (5) + Integration (3) + E2E kind (8×3 modes) |
 | Auth middleware chain (Recovery → Auth → Logger) | 100% | Unit (7) |
 | TLS config validation      | 100%   | Unit (5) |
+| Secret CRUD (list summary, get with value, create, update, delete) | 100% | Unit + E2E (3) |
+| Secret resolution in snapshots (`{{secret:value/env/file}}`) | 100% | Unit (11) + E2E (2) |
+| Snapshot fails on unresolved secret references | 100% | Unit (3) + E2E (1) |
 
 ## Test Summary
 
@@ -225,15 +228,16 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Raft (FSM, cluster, peers)                                         | 7       | 7       |
 | Sync client                                                        | 2       | 2       |
 | TLS util (server, client, integration)                             | 18      | 18      |
+| Secret resolution                                                  | 11      | 11      |
 | Controller (all packages)                                          | 170     | 170     |
-| **Unit total**                                                     | **535** | **535** |
-| E2E (proxy, live)                                                  | 71      | 71      |
+| **Unit total**                                                     | **546** | **546** |
+| E2E (proxy, live)                                                  | 74      | 74      |
 | E2E (metrics)                                                      | 5       | 5       |
 | E2E (proxy errors)                                                 | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
 | E2E (TLS + auth, kind × 3 modes)                                   | 24      | 24      |
 | E2E (controller)                                                   | 23      | 23      |
-| **E2E total**                                                      | **143** | **143** |
+| **E2E total**                                                      | **146** | **146** |
 
 ## Known Remaining Issues
 

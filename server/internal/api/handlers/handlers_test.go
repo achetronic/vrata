@@ -428,7 +428,7 @@ func TestListenerValidation_ClientAuthUnknownMode(t *testing.T) {
 	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
-			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"cert": "/cert.pem", "key": "/key.pem",
 			"clientAuth": map[string]any{"mode": "bogus"},
 		},
 	})))
@@ -443,12 +443,12 @@ func TestListenerValidation_ClientAuthRequireNoCA(t *testing.T) {
 	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
-			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"cert": "/cert.pem", "key": "/key.pem",
 			"clientAuth": map[string]any{"mode": "require"},
 		},
 	})))
 	if w.Code != 400 {
-		t.Errorf("require without caFile should be 400, got %d", w.Code)
+		t.Errorf("require without ca should be 400, got %d", w.Code)
 	}
 }
 
@@ -458,12 +458,12 @@ func TestListenerValidation_ClientAuthOptionalNoCA(t *testing.T) {
 	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
-			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"cert": "/cert.pem", "key": "/key.pem",
 			"clientAuth": map[string]any{"mode": "optional"},
 		},
 	})))
 	if w.Code != 400 {
-		t.Errorf("optional without caFile should be 400, got %d", w.Code)
+		t.Errorf("optional without ca should be 400, got %d", w.Code)
 	}
 }
 
@@ -473,8 +473,8 @@ func TestListenerValidation_ClientAuthRequireWithCA(t *testing.T) {
 	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
-			"certPath": "/cert.pem", "keyPath": "/key.pem",
-			"clientAuth": map[string]any{"mode": "require", "caFile": "/ca.pem"},
+			"cert": "/cert.pem", "key": "/key.pem",
+			"clientAuth": map[string]any{"mode": "require", "ca": "/ca.pem"},
 		},
 	})))
 	if w.Code != 201 {
@@ -499,7 +499,7 @@ func TestListenerValidation_ClientAuthNoneMode(t *testing.T) {
 	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
-			"certPath": "/cert.pem", "keyPath": "/key.pem",
+			"cert": "/cert.pem", "key": "/key.pem",
 			"clientAuth": map[string]any{"mode": "none"},
 		},
 	})))

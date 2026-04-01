@@ -303,17 +303,17 @@ type TLSOptions struct {
 	// Mode selects the connection security model. Default: none (plaintext).
 	Mode TLSMode `json:"mode"`
 
-	// CertFile is the path to the client certificate PEM file.
+	// Cert is the PEM-encoded client certificate, or a {{secret:...}} reference.
 	// Required when Mode is mtls.
-	CertFile string `json:"certFile,omitempty"`
+	Cert string `json:"cert,omitempty"`
 
-	// KeyFile is the path to the client private key PEM file.
+	// Key is the PEM-encoded client private key, or a {{secret:...}} reference.
 	// Required when Mode is mtls.
-	KeyFile string `json:"keyFile,omitempty"`
+	Key string `json:"key,omitempty"`
 
-	// CAFile is the path to the CA certificate PEM file. When empty,
-	// the system CA bundle (/etc/ssl/certs/ca-certificates.crt) is used.
-	CAFile string `json:"caFile,omitempty"`
+	// CA is the PEM-encoded CA certificate, or a {{secret:...}} reference.
+	// When empty, the system CA bundle is used.
+	CA string `json:"ca,omitempty"`
 
 	// SNI overrides the Server Name Indication sent during TLS handshake.
 	// When empty, the destination host is used.

@@ -169,8 +169,8 @@ func validateListener(l model.Listener) error {
 		switch ca.Mode {
 		case "", "none":
 		case "optional", "require":
-			if ca.CAFile == "" {
-				return fmt.Errorf("clientAuth.caFile is required when mode is %q", ca.Mode)
+			if ca.CA == "" {
+				return fmt.Errorf("clientAuth.ca is required when mode is %q", ca.Mode)
 			}
 		default:
 			return fmt.Errorf("unknown clientAuth.mode %q: must be \"none\", \"optional\", or \"require\"", ca.Mode)

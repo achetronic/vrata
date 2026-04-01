@@ -80,6 +80,14 @@ func (s *Store) ListDestinations(ctx context.Context) ([]model.Destination, erro
 func (s *Store) GetDestination(ctx context.Context, id string) (model.Destination, error) {
 	return s.local.GetDestination(ctx, id)
 }
+// ListSecrets returns summary metadata for all secrets from the local store.
+func (s *Store) ListSecrets(ctx context.Context) ([]model.SecretSummary, error) {
+	return s.local.ListSecrets(ctx)
+}
+// GetSecret returns a secret by ID from the local store.
+func (s *Store) GetSecret(ctx context.Context, id string) (model.Secret, error) {
+	return s.local.GetSecret(ctx, id)
+}
 // ListSnapshots returns summary metadata for all snapshots from the local store.
 func (s *Store) ListSnapshots(ctx context.Context) ([]model.SnapshotSummary, error) {
 	return s.local.ListSnapshots(ctx)
@@ -138,6 +146,14 @@ func (s *Store) SaveDestination(ctx context.Context, v model.Destination) error 
 // DeleteDestination removes a destination via the Raft log.
 func (s *Store) DeleteDestination(ctx context.Context, id string) error {
 	return s.apply(rft.CmdDeleteDestination, id, nil)
+}
+// SaveSecret creates or replaces a secret via the Raft log.
+func (s *Store) SaveSecret(ctx context.Context, v model.Secret) error {
+	return s.apply(rft.CmdSaveSecret, v.ID, v)
+}
+// DeleteSecret removes a secret via the Raft log.
+func (s *Store) DeleteSecret(ctx context.Context, id string) error {
+	return s.apply(rft.CmdDeleteSecret, id, nil)
 }
 // SaveSnapshot creates or replaces a versioned snapshot via the Raft log.
 func (s *Store) SaveSnapshot(ctx context.Context, v model.VersionedSnapshot) error {

@@ -193,11 +193,11 @@ func (m *ListenerMetrics) ResolvedSizeBuckets() []float64 {
 
 // ListenerTLS holds TLS termination parameters for a Listener.
 type ListenerTLS struct {
-	// CertPath is the path to the PEM-encoded TLS certificate file.
-	CertPath string `json:"certPath,omitempty" yaml:"certPath,omitempty"`
+	// Cert is the PEM-encoded TLS certificate, or a {{secret:...}} reference.
+	Cert string `json:"cert,omitempty" yaml:"cert,omitempty"`
 
-	// KeyPath is the path to the PEM-encoded private key file.
-	KeyPath string `json:"keyPath,omitempty" yaml:"keyPath,omitempty"`
+	// Key is the PEM-encoded private key, or a {{secret:...}} reference.
+	Key string `json:"key,omitempty" yaml:"key,omitempty"`
 
 	// MinVersion is the minimum TLS protocol version to accept.
 	// Accepted values: "TLSv1_0", "TLSv1_1", "TLSv1_2", "TLSv1_3".
@@ -221,9 +221,9 @@ type ListenerClientAuth struct {
 	//   "require"  — reject the TLS handshake if absent
 	Mode string `json:"mode" yaml:"mode"`
 
-	// CAFile is the path to a PEM-encoded CA bundle used to verify
-	// client certificates. Required when Mode is "optional" or "require".
-	CAFile string `json:"caFile,omitempty" yaml:"caFile,omitempty"`
+	// CA is the PEM-encoded CA bundle used to verify client certificates,
+	// or a {{secret:...}} reference. Required when Mode is "optional" or "require".
+	CA string `json:"ca,omitempty" yaml:"ca,omitempty"`
 }
 
 // ProxyErrorDetail controls how much information Vrata includes in

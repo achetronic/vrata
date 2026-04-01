@@ -4,13 +4,16 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/resolve"
 	"github.com/google/uuid"
 )
 
@@ -65,11 +68,17 @@ func (d *Dependencies) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resolvedSnap, err := resolveSecrets(ctx, d, snap)
+	if err != nil {
+		respond.Error(w, http.StatusBadRequest, "resolving secrets: "+err.Error(), d.Logger)
+		return
+	}
+
 	vs := model.VersionedSnapshot{
 		ID:        uuid.NewString(),
 		Name:      req.Name,
 		CreatedAt: time.Now().UTC(),
-		Snapshot:  *snap,
+		Snapshot:  *resolvedSnap,
 	}
 
 	if err := d.Store.SaveSnapshot(ctx, vs); err != nil {
@@ -178,4 +187,25 @@ func (d *Dependencies) ActivateSnapshot(w http.ResponseWriter, r *http.Request) 
 type SnapshotCreateRequest struct {
 	// Name is a human-readable label for the snapshot (e.g. "v1.0", "pre-deploy").
 	Name string `json:"name" example:"v1.0"`
+}
+
+// resolveSecrets serializes the snapshot to JSON, resolves all
+// {{secret:...}} patterns, and deserializes back. Returns the
+// original snapshot unchanged if no patterns are found.
+func resolveSecrets(ctx context.Context, d *Dependencies, snap *model.Snapshot) (*model.Snapshot, error) {
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return nil, fmt.Errorf("encoding snapshot: %w", err)
+	}
+
+	resolved, err := resolve.Secrets(ctx, d.Store, data)
+	if err != nil {
+		return nil, err
+	}
+
+	var out model.Snapshot
+	if err := json.Unmarshal(resolved, &out); err != nil {
+		return nil, fmt.Errorf("decoding resolved snapshot: %w", err)
+	}
+	return &out, nil
 }
