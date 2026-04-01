@@ -222,10 +222,10 @@ definitions:
       http2:
         description: HTTP2 enables HTTP/2 to the upstream. Required for gRPC destinations.
         type: boolean
-      maxRequestsPerConnection:
+      maxConnsPerHost:
         description: |-
-          MaxRequestsPerConnection drains a connection after this many requests.
-          0 means unlimited.
+          MaxConnsPerHost limits the maximum number of simultaneous TCP connections
+          Vrata maintains to this destination. 0 means unlimited.
         type: integer
       outlierDetection:
         allOf:
@@ -761,6 +761,42 @@ definitions:
           Default: 3.'
         type: integer
     type: object
+  model.InlineAuthzConfig:
+    properties:
+      defaultAction:
+        description: |-
+          DefaultAction is applied when no rule matches.
+          Must be "allow" or "deny". Default: "deny".
+        type: string
+      denyBody:
+        description: |-
+          DenyBody is the response body returned on deny.
+          Default: {"error":"access denied"}.
+        type: string
+      denyStatus:
+        description: |-
+          DenyStatus is the HTTP status code returned on deny.
+          Default: 403.
+        type: integer
+      rules:
+        description: Rules is an ordered list of authorization rules.
+        items:
+          $ref: '#/definitions/model.InlineAuthzRule'
+        type: array
+    type: object
+  model.InlineAuthzRule:
+    properties:
+      action:
+        description: |-
+          Action is what to do when the expression matches.
+          Must be "allow" or "deny".
+        type: string
+      cel:
+        description: |-
+          CEL is the expression to evaluate against the request.
+          Must return bool.
+        type: string
+    type: object
   model.JWTClaimHeader:
     properties:
       expr:
@@ -875,6 +911,13 @@ definitions:
       port:
         description: Port is the TCP port the listener binds to.
         type: integer
+      proxyErrors:
+        allOf:
+        - $ref: '#/definitions/model.ProxyErrors'
+        description: |-
+          ProxyErrors configures how Vrata formats its own error responses
+          (infrastructure failures, no matching route, etc.). When nil,
+          "standard" detail level is used.
       serverName:
         description: |-
           ServerName sets the "Server" response header.
@@ -892,6 +935,21 @@ definitions:
         description: |-
           TLS holds optional TLS termination configuration.
           When nil, the listener operates in plaintext mode.
+    type: object
+  model.ListenerClientAuth:
+    properties:
+      ca:
+        description: |-
+          CA is the PEM-encoded CA bundle used to verify client certificates,
+          or a {{secret:...}} reference. Required when Mode is "optional" or "require".
+        type: string
+      mode:
+        description: |-
+          Mode controls whether client certificates are requested:
+            "none"     — do not request (default, same as nil ClientAuth)
+            "optional" — request but do not reject if absent
+            "require"  — reject the TLS handshake if absent
+        type: string
     type: object
   model.ListenerMetrics:
     properties:
@@ -916,11 +974,18 @@ definitions:
     type: object
   model.ListenerTLS:
     properties:
-      certPath:
-        description: CertPath is the path to the PEM-encoded TLS certificate file.
+      cert:
+        description: Cert is the PEM-encoded TLS certificate, or a {{secret:...}}
+          reference.
         type: string
-      keyPath:
-        description: KeyPath is the path to the PEM-encoded private key file.
+      clientAuth:
+        allOf:
+        - $ref: '#/definitions/model.ListenerClientAuth'
+        description: |-
+          ClientAuth configures mutual TLS (mTLS) client certificate
+          verification. When nil, no client certificate is requested.
+      key:
+        description: Key is the PEM-encoded private key, or a {{secret:...}} reference.
         type: string
       maxVersion:
         description: |-
@@ -1119,6 +1184,12 @@ definitions:
       id:
         description: ID is the unique identifier of the middleware.
         type: string
+      inlineAuthz:
+        allOf:
+        - $ref: '#/definitions/model.InlineAuthzConfig'
+        description: |-
+          InlineAuthz holds the inline authorization configuration.
+          Set when Type == "inlineAuthz".
       jwt:
         allOf:
         - $ref: '#/definitions/model.JWTConfig'
@@ -1185,6 +1256,7 @@ definitions:
     - rateLimit
     - headers
     - accessLog
+    - inlineAuthz
     type: string
     x-enum-varnames:
     - MiddlewareTypeCORS
@@ -1194,6 +1266,7 @@ definitions:
     - MiddlewareTypeRateLimit
     - MiddlewareTypeHeaders
     - MiddlewareTypeAccessLog
+    - MiddlewareTypeInlineAuthz
   model.MutationRules:
     properties:
       allowHeaders:
@@ -1229,36 +1302,6 @@ definitions:
           Default: 64.
         type: integer
     type: object
-  model.OnErrorRule:
-    properties:
-      directResponse:
-        allOf:
-        - $ref: '#/definitions/model.RouteDirectResponse'
-        description: |-
-          DirectResponse returns a fixed HTTP response.
-          Mutually exclusive with Forward and Redirect.
-      forward:
-        allOf:
-        - $ref: '#/definitions/model.ForwardAction'
-        description: |-
-          Forward proxies the original request to fallback destinations.
-          Vrata injects X-Vrata-Error-* headers with the error context.
-          Mutually exclusive with Redirect and DirectResponse.
-      "on":
-        description: |-
-          On lists the error types that trigger this rule. Evaluated as OR:
-          if the actual error matches any entry, the rule fires.
-          Supports individual types and wildcards ("infrastructure", "all").
-        items:
-          $ref: '#/definitions/model.ProxyErrorType'
-        type: array
-      redirect:
-        allOf:
-        - $ref: '#/definitions/model.RouteRedirect'
-        description: |-
-          Redirect returns an HTTP redirect to the client.
-          Mutually exclusive with Forward and DirectResponse.
-    type: object
   model.OutlierDetectionOptions:
     properties:
       baseEjectionTime:
@@ -1290,30 +1333,25 @@ definitions:
     x-enum-varnames:
     - PhaseModeSend
     - PhaseModeSkip
-  model.ProxyErrorType:
+  model.ProxyErrorDetail:
     enum:
-    - connection_refused
-    - connection_reset
-    - dns_failure
-    - timeout
-    - tls_handshake_failure
-    - circuit_open
-    - no_destination
-    - no_endpoint
-    - infrastructure
-    - all
+    - minimal
+    - standard
+    - full
     type: string
     x-enum-varnames:
-    - ProxyErrConnectionRefused
-    - ProxyErrConnectionReset
-    - ProxyErrDNSFailure
-    - ProxyErrTimeout
-    - ProxyErrTLSHandshakeFailure
-    - ProxyErrCircuitOpen
-    - ProxyErrNoDestination
-    - ProxyErrNoEndpoint
-    - ProxyErrInfrastructure
-    - ProxyErrAll
+    - ProxyErrorDetailMinimal
+    - ProxyErrorDetailStandard
+    - ProxyErrorDetailFull
+  model.ProxyErrors:
+    properties:
+      detail:
+        allOf:
+        - $ref: '#/definitions/model.ProxyErrorDetail'
+        description: |-
+          Detail controls how much information is included in error responses.
+          Accepted values: "minimal", "standard", "full". Default: "standard".
+    type: object
   model.QueryParamMatcher:
     properties:
       name:
@@ -1437,7 +1475,7 @@ definitions:
           MiddlewareIDs lists the IDs of Middleware entities active on this route.
           The builder activates them
           only for this route (other routes where the middleware is not listed
-          are not active)..
+          are not active).
         items:
           type: string
         type: array
@@ -1453,15 +1491,6 @@ definitions:
       name:
         description: Name is a human-readable label for the route.
         type: string
-      onError:
-        description: |-
-          OnError defines fallback actions when the forward action fails.
-          Rules are evaluated in order; the first rule whose On list matches
-          the error type is executed. If no rule matches, Vrata returns a
-          default JSON error response. Only meaningful when Forward is set.
-        items:
-          $ref: '#/definitions/model.OnErrorRule'
-        type: array
       redirect:
         allOf:
         - $ref: '#/definitions/model.RouteRedirect'
@@ -1656,6 +1685,29 @@ definitions:
           fully sent. Accepts Go duration strings (e.g. "30s", "1m").
         type: string
     type: object
+  model.Secret:
+    properties:
+      id:
+        description: ID is the unique identifier of this secret.
+        type: string
+      name:
+        description: Name is a human-readable label (e.g. "prod-tls-cert", "jwt-signing-key").
+        type: string
+      value:
+        description: |-
+          Value is the secret content (PEM certificate, private key, token, etc.).
+          Must NEVER be logged.
+        type: string
+    type: object
+  model.SecretSummary:
+    properties:
+      id:
+        description: ID is the unique identifier of this secret.
+        type: string
+      name:
+        description: Name is a human-readable label.
+        type: string
+    type: object
   model.Snapshot:
     properties:
       destinations:
@@ -1720,19 +1772,19 @@ definitions:
     - TLSModeMTLS
   model.TLSOptions:
     properties:
-      caFile:
+      ca:
         description: |-
-          CAFile is the path to the CA certificate PEM file. When empty,
-          the system CA bundle (/etc/ssl/certs/ca-certificates.crt) is used.
+          CA is the PEM-encoded CA certificate, or a {{secret:...}} reference.
+          When empty, the system CA bundle is used.
         type: string
-      certFile:
+      cert:
         description: |-
-          CertFile is the path to the client certificate PEM file.
+          Cert is the PEM-encoded client certificate, or a {{secret:...}} reference.
           Required when Mode is mtls.
         type: string
-      keyFile:
+      key:
         description: |-
-          KeyFile is the path to the client private key PEM file.
+          Key is the PEM-encoded client private key, or a {{secret:...}} reference.
           Required when Mode is mtls.
         type: string
       maxVersion:
@@ -2501,6 +2553,138 @@ paths:
       summary: Update a route
       tags:
       - routes
+  /secrets:
+    get:
+      description: Returns ID and Name for all secrets. Values are omitted.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.SecretSummary'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: List secrets
+      tags:
+      - secrets
+    post:
+      consumes:
+      - application/json
+      description: Creates a new secret entity. One secret = one value.
+      parameters:
+      - description: Secret definition
+        in: body
+        name: secret
+        required: true
+        schema:
+          $ref: '#/definitions/model.Secret'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.SecretSummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Create a secret
+      tags:
+      - secrets
+  /secrets/{secretId}:
+    delete:
+      description: Removes the secret. Entities referencing it will fail at next snapshot
+        build.
+      parameters:
+      - description: Secret ID
+        in: path
+        name: secretId
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Delete a secret
+      tags:
+      - secrets
+    get:
+      description: Returns the secret with its value. Requires authentication.
+      parameters:
+      - description: Secret ID
+        in: path
+        name: secretId
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Secret'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Get a secret
+      tags:
+      - secrets
+    put:
+      consumes:
+      - application/json
+      description: Replaces the secret with the given ID.
+      parameters:
+      - description: Secret ID
+        in: path
+        name: secretId
+        required: true
+        type: string
+      - description: Secret definition
+        in: body
+        name: secret
+        required: true
+        schema:
+          $ref: '#/definitions/model.Secret'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.SecretSummary'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/respond.ErrorBody'
+      summary: Update a secret
+      tags:
+      - secrets
   /snapshots:
     get:
       description: Returns summary metadata (id, name, createdAt, active) for all
