@@ -45,6 +45,9 @@ const (
 	// ResourceDestination refers to a Destination resource.
 	ResourceDestination ResourceType = "destination"
 
+	// ResourceSecret refers to a Secret resource.
+	ResourceSecret ResourceType = "secret"
+
 	// ResourceSnapshot refers to a VersionedSnapshot resource.
 	ResourceSnapshot ResourceType = "snapshot"
 )
@@ -145,6 +148,23 @@ type Store interface {
 	// DeleteDestination removes the destination with the given ID.
 	// Returns model.ErrNotFound if the destination does not exist.
 	DeleteDestination(ctx context.Context, id string) error
+
+	// --- Secrets ---
+
+	// ListSecrets returns summary metadata for all secrets (ID + Name only).
+	// The returned slice is never nil.
+	ListSecrets(ctx context.Context) ([]model.SecretSummary, error)
+
+	// GetSecret returns the secret with the given ID, including its Value.
+	// Returns model.ErrNotFound if no such secret exists.
+	GetSecret(ctx context.Context, id string) (model.Secret, error)
+
+	// SaveSecret creates or replaces the secret identified by s.ID.
+	SaveSecret(ctx context.Context, s model.Secret) error
+
+	// DeleteSecret removes the secret with the given ID.
+	// Returns model.ErrNotFound if the secret does not exist.
+	DeleteSecret(ctx context.Context, id string) error
 
 	// --- Subscriptions ---
 

@@ -14,11 +14,11 @@ Add `clientAuth` inside the listener's `tls` block:
   "name": "mtls-listener",
   "port": 8443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key",
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key",
     "clientAuth": {
       "mode": "require",
-      "caFile": "/certs/trusted-clients-ca.pem"
+      "ca": "/certs/trusted-clients-ca.pem"
     }
   }
 }
@@ -32,7 +32,7 @@ Add `clientAuth` inside the listener's `tls` block:
 | `optional` | Request a certificate but don't reject if the client doesn't send one. Useful for mixed traffic where some clients have certs and some don't. |
 | `require` | Reject the TLS handshake if the client doesn't present a valid certificate signed by the trusted CA. |
 
-`caFile` is required when mode is `optional` or `require`. It points to a PEM file with one or more CA certificates used to verify client certs.
+`ca` is required when mode is `optional` or `require`. It points to a PEM file with one or more CA certificates used to verify client certs.
 
 ## Client certificate data in CEL
 
@@ -76,11 +76,11 @@ X-Forwarded-Client-Cert: spiffe://cluster.local/ns/default/sa/agent-a;https://ex
   "name": "internal",
   "port": 8443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key",
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key",
     "clientAuth": {
       "mode": "require",
-      "caFile": "/certs/ca.pem"
+      "ca": "/certs/ca.pem"
     }
   }
 }
@@ -95,11 +95,11 @@ Clients without a valid certificate can't connect at all.
   "name": "mixed",
   "port": 443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key",
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key",
     "clientAuth": {
       "mode": "optional",
-      "caFile": "/certs/ca.pem"
+      "ca": "/certs/ca.pem"
     }
   }
 }
@@ -128,5 +128,5 @@ In a Kubernetes cluster with SPIFFE (e.g. SPIRE), each pod gets a certificate wi
 The API rejects invalid configurations at creation time:
 
 - `mode` must be `none`, `optional`, or `require`
-- `caFile` is required when mode is `optional` or `require`
+- `ca` is required when mode is `optional` or `require`
 - Unknown mode values return 400

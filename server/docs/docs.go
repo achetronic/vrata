@@ -1085,6 +1085,204 @@ const docTemplate = `{
                 }
             }
         },
+        "/secrets": {
+            "get": {
+                "description": "Returns ID and Name for all secrets. Values are omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "List secrets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.SecretSummary"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Creates a new secret entity. One secret = one value.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Create a secret",
+                "parameters": [
+                    {
+                        "description": "Secret definition",
+                        "name": "secret",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Secret"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.SecretSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
+        "/secrets/{secretId}": {
+            "get": {
+                "description": "Returns the secret with its value. Requires authentication.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Get a secret",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Secret ID",
+                        "name": "secretId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Secret"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "description": "Replaces the secret with the given ID.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Update a secret",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Secret ID",
+                        "name": "secretId",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Secret definition",
+                        "name": "secret",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.Secret"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.SecretSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Removes the secret. Entities referencing it will fail at next snapshot build.",
+                "tags": [
+                    "secrets"
+                ],
+                "summary": "Delete a secret",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Secret ID",
+                        "name": "secretId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/respond.ErrorBody"
+                        }
+                    }
+                }
+            }
+        },
         "/snapshots": {
             "get": {
                 "description": "Returns summary metadata (id, name, createdAt, active) for all versioned snapshots.",
@@ -1620,8 +1818,8 @@ const docTemplate = `{
                     "description": "HTTP2 enables HTTP/2 to the upstream. Required for gRPC destinations.",
                     "type": "boolean"
                 },
-                "maxRequestsPerConnection": {
-                    "description": "MaxRequestsPerConnection drains a connection after this many requests.\n0 means unlimited.",
+                "maxConnsPerHost": {
+                    "description": "MaxConnsPerHost limits the maximum number of simultaneous TCP connections\nVrata maintains to this destination. 0 means unlimited.",
                     "type": "integer"
                 },
                 "outlierDetection": {
@@ -2267,6 +2465,43 @@ const docTemplate = `{
                 }
             }
         },
+        "model.InlineAuthzConfig": {
+            "type": "object",
+            "properties": {
+                "defaultAction": {
+                    "description": "DefaultAction is applied when no rule matches.\nMust be \"allow\" or \"deny\". Default: \"deny\".",
+                    "type": "string"
+                },
+                "denyBody": {
+                    "description": "DenyBody is the response body returned on deny.\nDefault: {\"error\":\"access denied\"}.",
+                    "type": "string"
+                },
+                "denyStatus": {
+                    "description": "DenyStatus is the HTTP status code returned on deny.\nDefault: 403.",
+                    "type": "integer"
+                },
+                "rules": {
+                    "description": "Rules is an ordered list of authorization rules.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.InlineAuthzRule"
+                    }
+                }
+            }
+        },
+        "model.InlineAuthzRule": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is what to do when the expression matches.\nMust be \"allow\" or \"deny\".",
+                    "type": "string"
+                },
+                "cel": {
+                    "description": "CEL is the expression to evaluate against the request.\nMust return bool.",
+                    "type": "string"
+                }
+            }
+        },
         "model.JWTClaimHeader": {
             "type": "object",
             "properties": {
@@ -2374,6 +2609,14 @@ const docTemplate = `{
                     "description": "Port is the TCP port the listener binds to.",
                     "type": "integer"
                 },
+                "proxyErrors": {
+                    "description": "ProxyErrors configures how Vrata formats its own error responses\n(infrastructure failures, no matching route, etc.). When nil,\n\"standard\" detail level is used.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ProxyErrors"
+                        }
+                    ]
+                },
                 "serverName": {
                     "description": "ServerName sets the \"Server\" response header.\nWhen empty, no Server header is added.",
                     "type": "string"
@@ -2393,6 +2636,19 @@ const docTemplate = `{
                             "$ref": "#/definitions/model.ListenerTLS"
                         }
                     ]
+                }
+            }
+        },
+        "model.ListenerClientAuth": {
+            "type": "object",
+            "properties": {
+                "ca": {
+                    "description": "CA is the PEM-encoded CA bundle used to verify client certificates,\nor a {{secret:...}} reference. Required when Mode is \"optional\" or \"require\".",
+                    "type": "string"
+                },
+                "mode": {
+                    "description": "Mode controls whether client certificates are requested:\n  \"none\"     — do not request (default, same as nil ClientAuth)\n  \"optional\" — request but do not reject if absent\n  \"require\"  — reject the TLS handshake if absent",
+                    "type": "string"
                 }
             }
         },
@@ -2424,12 +2680,20 @@ const docTemplate = `{
         "model.ListenerTLS": {
             "type": "object",
             "properties": {
-                "certPath": {
-                    "description": "CertPath is the path to the PEM-encoded TLS certificate file.",
+                "cert": {
+                    "description": "Cert is the PEM-encoded TLS certificate, or a {{secret:...}} reference.",
                     "type": "string"
                 },
-                "keyPath": {
-                    "description": "KeyPath is the path to the PEM-encoded private key file.",
+                "clientAuth": {
+                    "description": "ClientAuth configures mutual TLS (mTLS) client certificate\nverification. When nil, no client certificate is requested.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ListenerClientAuth"
+                        }
+                    ]
+                },
+                "key": {
+                    "description": "Key is the PEM-encoded private key, or a {{secret:...}} reference.",
                     "type": "string"
                 },
                 "maxVersion": {
@@ -2623,6 +2887,14 @@ const docTemplate = `{
                     "description": "ID is the unique identifier of the middleware.",
                     "type": "string"
                 },
+                "inlineAuthz": {
+                    "description": "InlineAuthz holds the inline authorization configuration.\nSet when Type == \"inlineAuthz\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.InlineAuthzConfig"
+                        }
+                    ]
+                },
                 "jwt": {
                     "description": "JWT holds the JWT authentication configuration. Set when Type == \"jwt\".",
                     "allOf": [
@@ -2701,7 +2973,8 @@ const docTemplate = `{
                 "extProc",
                 "rateLimit",
                 "headers",
-                "accessLog"
+                "accessLog",
+                "inlineAuthz"
             ],
             "x-enum-varnames": [
                 "MiddlewareTypeCORS",
@@ -2710,7 +2983,8 @@ const docTemplate = `{
                 "MiddlewareTypeExtProc",
                 "MiddlewareTypeRateLimit",
                 "MiddlewareTypeHeaders",
-                "MiddlewareTypeAccessLog"
+                "MiddlewareTypeAccessLog",
+                "MiddlewareTypeInlineAuthz"
             ]
         },
         "model.MutationRules": {
@@ -2746,42 +3020,6 @@ const docTemplate = `{
                 "workers": {
                     "description": "Workers is the number of background workers that drain the queue.\nDefault: 64.",
                     "type": "integer"
-                }
-            }
-        },
-        "model.OnErrorRule": {
-            "type": "object",
-            "properties": {
-                "directResponse": {
-                    "description": "DirectResponse returns a fixed HTTP response.\nMutually exclusive with Forward and Redirect.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.RouteDirectResponse"
-                        }
-                    ]
-                },
-                "forward": {
-                    "description": "Forward proxies the original request to fallback destinations.\nVrata injects X-Vrata-Error-* headers with the error context.\nMutually exclusive with Redirect and DirectResponse.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.ForwardAction"
-                        }
-                    ]
-                },
-                "on": {
-                    "description": "On lists the error types that trigger this rule. Evaluated as OR:\nif the actual error matches any entry, the rule fires.\nSupports individual types and wildcards (\"infrastructure\", \"all\").",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.ProxyErrorType"
-                    }
-                },
-                "redirect": {
-                    "description": "Redirect returns an HTTP redirect to the client.\nMutually exclusive with Forward and DirectResponse.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.RouteRedirect"
-                        }
-                    ]
                 }
             }
         },
@@ -2821,32 +3059,31 @@ const docTemplate = `{
                 "PhaseModeSkip"
             ]
         },
-        "model.ProxyErrorType": {
+        "model.ProxyErrorDetail": {
             "type": "string",
             "enum": [
-                "connection_refused",
-                "connection_reset",
-                "dns_failure",
-                "timeout",
-                "tls_handshake_failure",
-                "circuit_open",
-                "no_destination",
-                "no_endpoint",
-                "infrastructure",
-                "all"
+                "minimal",
+                "standard",
+                "full"
             ],
             "x-enum-varnames": [
-                "ProxyErrConnectionRefused",
-                "ProxyErrConnectionReset",
-                "ProxyErrDNSFailure",
-                "ProxyErrTimeout",
-                "ProxyErrTLSHandshakeFailure",
-                "ProxyErrCircuitOpen",
-                "ProxyErrNoDestination",
-                "ProxyErrNoEndpoint",
-                "ProxyErrInfrastructure",
-                "ProxyErrAll"
+                "ProxyErrorDetailMinimal",
+                "ProxyErrorDetailStandard",
+                "ProxyErrorDetailFull"
             ]
+        },
+        "model.ProxyErrors": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "description": "Detail controls how much information is included in error responses.\nAccepted values: \"minimal\", \"standard\", \"full\". Default: \"standard\".",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ProxyErrorDetail"
+                        }
+                    ]
+                }
+            }
         },
         "model.QueryParamMatcher": {
             "type": "object",
@@ -2991,7 +3228,7 @@ const docTemplate = `{
                     ]
                 },
                 "middlewareIds": {
-                    "description": "MiddlewareIDs lists the IDs of Middleware entities active on this route.\nThe builder activates them\nonly for this route (other routes where the middleware is not listed\nare not active)..",
+                    "description": "MiddlewareIDs lists the IDs of Middleware entities active on this route.\nThe builder activates them\nonly for this route (other routes where the middleware is not listed\nare not active).",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -3007,13 +3244,6 @@ const docTemplate = `{
                 "name": {
                     "description": "Name is a human-readable label for the route.",
                     "type": "string"
-                },
-                "onError": {
-                    "description": "OnError defines fallback actions when the forward action fails.\nRules are evaluated in order; the first rule whose On list matches\nthe error type is executed. If no rule matches, Vrata returns a\ndefault JSON error response. Only meaningful when Forward is set.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/model.OnErrorRule"
-                    }
                 },
                 "redirect": {
                     "description": "Redirect returns an HTTP redirect to the client\ninstead of forwarding to an upstream.\nMutually exclusive with Forward and DirectResponse.",
@@ -3221,6 +3451,36 @@ const docTemplate = `{
                 }
             }
         },
+        "model.Secret": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "ID is the unique identifier of this secret.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is a human-readable label (e.g. \"prod-tls-cert\", \"jwt-signing-key\").",
+                    "type": "string"
+                },
+                "value": {
+                    "description": "Value is the secret content (PEM certificate, private key, token, etc.).\nMust NEVER be logged.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.SecretSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "ID is the unique identifier of this secret.",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Name is a human-readable label.",
+                    "type": "string"
+                }
+            }
+        },
         "model.Snapshot": {
             "type": "object",
             "properties": {
@@ -3311,16 +3571,16 @@ const docTemplate = `{
         "model.TLSOptions": {
             "type": "object",
             "properties": {
-                "caFile": {
-                    "description": "CAFile is the path to the CA certificate PEM file. When empty,\nthe system CA bundle (/etc/ssl/certs/ca-certificates.crt) is used.",
+                "ca": {
+                    "description": "CA is the PEM-encoded CA certificate, or a {{secret:...}} reference.\nWhen empty, the system CA bundle is used.",
                     "type": "string"
                 },
-                "certFile": {
-                    "description": "CertFile is the path to the client certificate PEM file.\nRequired when Mode is mtls.",
+                "cert": {
+                    "description": "Cert is the PEM-encoded client certificate, or a {{secret:...}} reference.\nRequired when Mode is mtls.",
                     "type": "string"
                 },
-                "keyFile": {
-                    "description": "KeyFile is the path to the client private key PEM file.\nRequired when Mode is mtls.",
+                "key": {
+                    "description": "Key is the PEM-encoded client private key, or a {{secret:...}} reference.\nRequired when Mode is mtls.",
                     "type": "string"
                 },
                 "maxVersion": {

@@ -29,8 +29,8 @@ gRPC requires HTTP/2. With TLS, Go negotiates HTTP/2 via ALPN automatically:
   "port": 443,
   "http2": true,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key"
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key"
   }
 }
 ```
@@ -57,8 +57,8 @@ Without TLS, Vrata supports h2c — HTTP/2 over plaintext using the Upgrade mech
   "port": 443,
   "http2": true,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key"
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key"
   }
 }
 ```

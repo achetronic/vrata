@@ -25,6 +25,7 @@ type Store struct {
 	filters      map[string]model.Middleware
 	listeners    map[string]model.Listener
 	destinations map[string]model.Destination
+	secrets      map[string]model.Secret
 	snapshots    map[string]model.VersionedSnapshot
 	activeSnap   string
 
@@ -40,6 +41,7 @@ func New() *Store {
 		filters:      make(map[string]model.Middleware),
 		listeners:    make(map[string]model.Listener),
 		destinations: make(map[string]model.Destination),
+		secrets:      make(map[string]model.Secret),
 		snapshots:    make(map[string]model.VersionedSnapshot),
 	}
 }
@@ -296,6 +298,61 @@ func (s *Store) DeleteDestination(_ context.Context, id string) error {
 	}
 	delete(s.destinations, id)
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceDestination, ID: id})
+	return nil
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Secret operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListSecrets returns summary metadata (ID + Name) for all secrets.
+func (s *Store) ListSecrets(_ context.Context) ([]model.SecretSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]model.SecretSummary, 0, len(s.secrets))
+	for _, sec := range s.secrets {
+		out = append(out, model.SecretSummary{ID: sec.ID, Name: sec.Name})
+	}
+	return out, nil
+}
+
+// GetSecret returns the secret with the given ID, including its Value.
+func (s *Store) GetSecret(_ context.Context, id string) (model.Secret, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	sec, ok := s.secrets[id]
+	if !ok {
+		return model.Secret{}, fmt.Errorf("secret %q: %w", id, model.ErrNotFound)
+	}
+	return sec, nil
+}
+
+// SaveSecret creates or replaces the secret identified by s.ID.
+func (s *Store) SaveSecret(_ context.Context, sec model.Secret) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	evt := store.EventUpdated
+	if _, ok := s.secrets[sec.ID]; !ok {
+		evt = store.EventCreated
+	}
+	s.secrets[sec.ID] = sec
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceSecret, ID: sec.ID})
+	return nil
+}
+
+// DeleteSecret removes the secret with the given ID.
+func (s *Store) DeleteSecret(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.secrets[id]; !ok {
+		return fmt.Errorf("secret %q: %w", id, model.ErrNotFound)
+	}
+	delete(s.secrets, id)
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceSecret, ID: id})
 	return nil
 }
 

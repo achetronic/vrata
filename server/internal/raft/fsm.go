@@ -41,6 +41,10 @@ const (
 	CmdSaveDestination CommandType = "SaveDestination"
 	// CmdDeleteDestination removes a destination by ID.
 	CmdDeleteDestination CommandType = "DeleteDestination"
+	// CmdSaveSecret creates or replaces a secret.
+	CmdSaveSecret CommandType = "SaveSecret"
+	// CmdDeleteSecret removes a secret by ID.
+	CmdDeleteSecret CommandType = "DeleteSecret"
 	// CmdSaveSnapshot creates or replaces a versioned snapshot.
 	CmdSaveSnapshot CommandType = "SaveSnapshot"
 	// CmdDeleteSnapshot removes a versioned snapshot by ID.

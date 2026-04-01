@@ -23,6 +23,7 @@ const (
 	bucketMiddlewares  = "middlewares"
 	bucketListeners    = "listeners"
 	bucketDestinations = "destinations"
+	bucketSecrets      = "secrets"
 	bucketSnapshots    = "snapshots"
 	bucketMeta         = "meta"
 
@@ -47,7 +48,7 @@ func New(path string) (*Store, error) {
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
-		for _, name := range []string{bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners, bucketDestinations, bucketSnapshots, bucketMeta} {
+		for _, name := range []string{bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners, bucketDestinations, bucketSecrets, bucketSnapshots, bucketMeta} {
 			if _, err := tx.CreateBucketIfNotExists([]byte(name)); err != nil {
 				return fmt.Errorf("creating bucket %q: %w", name, err)
 			}
@@ -503,6 +504,89 @@ func (s *Store) DeleteDestination(_ context.Context, id string) error {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Secret operations
+// ────────────────────────────────────────────────────────────────────────────
+
+// ListSecrets returns summary metadata (ID + Name) for all secrets.
+func (s *Store) ListSecrets(_ context.Context) ([]model.SecretSummary, error) {
+	var summaries []model.SecretSummary
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketSecrets))
+		return b.ForEach(func(k, v []byte) error {
+			var sec model.Secret
+			if err := json.Unmarshal(v, &sec); err != nil {
+				return fmt.Errorf("decoding secret %q: %w", string(k), err)
+			}
+			summaries = append(summaries, model.SecretSummary{ID: sec.ID, Name: sec.Name})
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	if summaries == nil {
+		summaries = []model.SecretSummary{}
+	}
+	return summaries, nil
+}
+
+// GetSecret returns the secret with the given ID, including its Value.
+func (s *Store) GetSecret(_ context.Context, id string) (model.Secret, error) {
+	var sec model.Secret
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketSecrets))
+		data := b.Get([]byte(id))
+		if data == nil {
+			return fmt.Errorf("secret %q: %w", id, model.ErrNotFound)
+		}
+		return json.Unmarshal(data, &sec)
+	})
+	return sec, err
+}
+
+// SaveSecret creates or replaces the secret identified by s.ID.
+func (s *Store) SaveSecret(_ context.Context, sec model.Secret) error {
+	isNew := false
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketSecrets))
+		isNew = b.Get([]byte(sec.ID)) == nil
+		data, err := json.Marshal(sec)
+		if err != nil {
+			return fmt.Errorf("encoding secret: %w", err)
+		}
+		return b.Put([]byte(sec.ID), data)
+	})
+	if err != nil {
+		return err
+	}
+	evt := store.EventUpdated
+	if isNew {
+		evt = store.EventCreated
+	}
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceSecret, ID: sec.ID})
+	return nil
+}
+
+// DeleteSecret removes the secret with the given ID.
+func (s *Store) DeleteSecret(_ context.Context, id string) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucketSecrets))
+		if b.Get([]byte(id)) == nil {
+			return fmt.Errorf("secret %q: %w", id, model.ErrNotFound)
+		}
+		if err := b.Delete([]byte(id)); err != nil {
+			return fmt.Errorf("deleting secret %q: %w", id, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceSecret, ID: id})
+	return nil
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Snapshot operations
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -740,6 +824,14 @@ func (s *Store) ApplyCommand(cmdType string, id string, payload json.RawMessage)
 		return s.SaveDestination(ctx, v)
 	case "DeleteDestination":
 		return s.DeleteDestination(ctx, id)
+	case "SaveSecret":
+		var v model.Secret
+		if err := json.Unmarshal(payload, &v); err != nil {
+			return fmt.Errorf("ApplyCommand SaveSecret: %w", err)
+		}
+		return s.SaveSecret(ctx, v)
+	case "DeleteSecret":
+		return s.DeleteSecret(ctx, id)
 	case "SaveSnapshot":
 		var v model.VersionedSnapshot
 		if err := json.Unmarshal(payload, &v); err != nil {
@@ -763,7 +855,7 @@ func (s *Store) Dump() ([]byte, error) {
 	err := s.db.View(func(tx *bolt.Tx) error {
 		for _, name := range []string{
 			bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners,
-			bucketDestinations, bucketSnapshots, bucketMeta,
+			bucketDestinations, bucketSecrets, bucketSnapshots, bucketMeta,
 		} {
 			b := tx.Bucket([]byte(name))
 			if b == nil {

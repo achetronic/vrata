@@ -62,6 +62,13 @@ func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApp
 	// Destination endpoints
 	mux.HandleFunc("GET /api/v1/destinations", deps.ListDestinations)
 
+	// Secret endpoints
+	mux.HandleFunc("GET /api/v1/secrets", deps.ListSecrets)
+	mux.HandleFunc("POST /api/v1/secrets", deps.CreateSecret)
+	mux.HandleFunc("GET /api/v1/secrets/{secretId}", deps.GetSecret)
+	mux.HandleFunc("PUT /api/v1/secrets/{secretId}", deps.UpdateSecret)
+	mux.HandleFunc("DELETE /api/v1/secrets/{secretId}", deps.DeleteSecret)
+
 	// Sync — snapshot streaming to proxies and Raft write-forwarding between nodes
 	mux.HandleFunc("GET /api/v1/sync/snapshot", deps.SyncSnapshot)
 	mux.HandleFunc("POST /api/v1/sync/raft", deps.RaftApply)

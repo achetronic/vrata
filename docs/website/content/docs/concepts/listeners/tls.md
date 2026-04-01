@@ -12,8 +12,8 @@ A listener can terminate TLS so clients connect over HTTPS. Vrata handles the ce
   "name": "secure",
   "port": 443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key",
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key",
     "minVersion": "TLSv1_2",
     "maxVersion": "TLSv1_3"
   }
@@ -24,8 +24,8 @@ A listener can terminate TLS so clients connect over HTTPS. Vrata handles the ce
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `certPath` | string | required | Path to PEM-encoded TLS certificate (can include the full chain) |
-| `keyPath` | string | required | Path to PEM-encoded private key |
+| `cert` | string | required | PEM-encoded TLS certificate, file path, or `{{secret:...}}` reference |
+| `key` | string | required | PEM-encoded private key, file path, or `{{secret:...}}` reference |
 | `minVersion` | string | `TLSv1_2` | Minimum TLS protocol version |
 | `maxVersion` | string | — | Maximum TLS protocol version (empty = no upper bound) |
 
@@ -40,8 +40,8 @@ Supported version values: `TLSv1_0`, `TLSv1_1`, `TLSv1_2`, `TLSv1_3`.
   "name": "public",
   "port": 443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key"
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key"
   }
 }
 ```
@@ -55,8 +55,8 @@ Accepts HTTPS with TLS 1.2+ (the default). Most common setup.
   "name": "strict",
   "port": 443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key",
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key",
     "minVersion": "TLSv1_3",
     "maxVersion": "TLSv1_3"
   }
@@ -72,8 +72,8 @@ Rejects clients that don't support TLS 1.3. Use for internal services where you 
   "name": "h2",
   "port": 443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key"
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key"
   },
   "http2": true
 }
@@ -103,8 +103,8 @@ Then configure the listener with the mounted paths:
   "name": "public",
   "port": 443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key"
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key"
   }
 }
 ```
@@ -116,8 +116,8 @@ Then configure the listener with the mounted paths:
   "name": "legacy",
   "port": 443,
   "tls": {
-    "certPath": "/certs/tls.crt",
-    "keyPath": "/certs/tls.key",
+    "cert": "/certs/tls.crt",
+    "key": "/certs/tls.key",
     "minVersion": "TLSv1_0"
   }
 }

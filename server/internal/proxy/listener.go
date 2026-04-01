@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -119,10 +120,28 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 	}
 
 	// TLS.
-	if l.TLS != nil && l.TLS.CertPath != "" && l.TLS.KeyPath != "" {
-		cert, err := tls.LoadX509KeyPair(l.TLS.CertPath, l.TLS.KeyPath)
+	if l.TLS != nil && l.TLS.Cert != "" && l.TLS.Key != "" {
+		certPEM, err := resolvePEM(l.TLS.Cert)
 		if err != nil {
-			lm.logger.Error("proxy: failed to load TLS cert",
+			lm.logger.Error("proxy: failed to resolve TLS cert",
+				slog.String("id", l.ID),
+				slog.String("error", err.Error()),
+			)
+			cancel()
+			return
+		}
+		keyPEM, err := resolvePEM(l.TLS.Key)
+		if err != nil {
+			lm.logger.Error("proxy: failed to resolve TLS key",
+				slog.String("id", l.ID),
+				slog.String("error", err.Error()),
+			)
+			cancel()
+			return
+		}
+		cert, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			lm.logger.Error("proxy: failed to parse TLS cert",
 				slog.String("id", l.ID),
 				slog.String("error", err.Error()),
 			)
@@ -154,10 +173,10 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 				cancel()
 				return
 			}
-			if ca.CAFile != "" {
-				caData, err := os.ReadFile(ca.CAFile)
+			if ca.CA != "" {
+				caData, err := resolvePEM(ca.CA)
 				if err != nil {
-					lm.logger.Error("proxy: failed to load client CA file",
+					lm.logger.Error("proxy: failed to resolve client CA",
 						slog.String("id", l.ID),
 						slog.String("error", err.Error()),
 					)
@@ -166,7 +185,7 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 				}
 				pool := x509.NewCertPool()
 				if !pool.AppendCertsFromPEM(caData) {
-					lm.logger.Error("proxy: no valid certificates in client CA file",
+					lm.logger.Error("proxy: no valid certificates in client CA",
 						slog.String("id", l.ID),
 					)
 					cancel()
@@ -329,8 +348,8 @@ func sameTLS(a, b *model.ListenerTLS) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	if a.CertPath != b.CertPath ||
-		a.KeyPath != b.KeyPath ||
+	if a.Cert != b.Cert ||
+		a.Key != b.Key ||
 		a.MinVersion != b.MinVersion ||
 		a.MaxVersion != b.MaxVersion {
 		return false
@@ -346,7 +365,7 @@ func sameClientAuth(a, b *model.ListenerClientAuth) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return a.Mode == b.Mode && a.CAFile == b.CAFile
+	return a.Mode == b.Mode && a.CA == b.CA
 }
 
 // sameMetrics compares two metrics configs for equality.
@@ -376,4 +395,17 @@ func parseDurationOrDefault[T any](cfg *T, accessor func(*T) string, fallback ti
 		return fallback
 	}
 	return d
+}
+
+// resolvePEM returns PEM content from a value that is either inline PEM or a
+// file path. Values starting with "-----BEGIN" are treated as inline PEM.
+func resolvePEM(value string) ([]byte, error) {
+	if strings.HasPrefix(strings.TrimSpace(value), "-----BEGIN") {
+		return []byte(value), nil
+	}
+	data, err := os.ReadFile(value)
+	if err != nil {
+		return nil, fmt.Errorf("reading PEM from %q: %w", value, err)
+	}
+	return data, nil
 }

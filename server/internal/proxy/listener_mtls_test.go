@@ -16,7 +16,7 @@ func TestSameClientAuth_BothNil(t *testing.T) {
 }
 
 func TestSameClientAuth_OneNil(t *testing.T) {
-	a := &model.ListenerClientAuth{Mode: "require", CAFile: "/ca.pem"}
+	a := &model.ListenerClientAuth{Mode: "require", CA: "/ca.pem"}
 	if sameClientAuth(a, nil) {
 		t.Error("a non-nil vs nil should differ")
 	}
@@ -26,44 +26,44 @@ func TestSameClientAuth_OneNil(t *testing.T) {
 }
 
 func TestSameClientAuth_Equal(t *testing.T) {
-	a := &model.ListenerClientAuth{Mode: "require", CAFile: "/ca.pem"}
-	b := &model.ListenerClientAuth{Mode: "require", CAFile: "/ca.pem"}
+	a := &model.ListenerClientAuth{Mode: "require", CA: "/ca.pem"}
+	b := &model.ListenerClientAuth{Mode: "require", CA: "/ca.pem"}
 	if !sameClientAuth(a, b) {
 		t.Error("identical configs should be same")
 	}
 }
 
 func TestSameClientAuth_DifferentMode(t *testing.T) {
-	a := &model.ListenerClientAuth{Mode: "require", CAFile: "/ca.pem"}
-	b := &model.ListenerClientAuth{Mode: "optional", CAFile: "/ca.pem"}
+	a := &model.ListenerClientAuth{Mode: "require", CA: "/ca.pem"}
+	b := &model.ListenerClientAuth{Mode: "optional", CA: "/ca.pem"}
 	if sameClientAuth(a, b) {
 		t.Error("different modes should differ")
 	}
 }
 
 func TestSameClientAuth_DifferentCA(t *testing.T) {
-	a := &model.ListenerClientAuth{Mode: "require", CAFile: "/ca1.pem"}
-	b := &model.ListenerClientAuth{Mode: "require", CAFile: "/ca2.pem"}
+	a := &model.ListenerClientAuth{Mode: "require", CA: "/ca1.pem"}
+	b := &model.ListenerClientAuth{Mode: "require", CA: "/ca2.pem"}
 	if sameClientAuth(a, b) {
 		t.Error("different CA files should differ")
 	}
 }
 
 func TestSameTLS_WithClientAuth(t *testing.T) {
-	base := model.ListenerTLS{CertPath: "/cert.pem", KeyPath: "/key.pem"}
+	base := model.ListenerTLS{Cert: "/cert.pem", Key: "/key.pem"}
 
 	a := base
-	a.ClientAuth = &model.ListenerClientAuth{Mode: "require", CAFile: "/ca.pem"}
+	a.ClientAuth = &model.ListenerClientAuth{Mode: "require", CA: "/ca.pem"}
 
 	b := base
-	b.ClientAuth = &model.ListenerClientAuth{Mode: "require", CAFile: "/ca.pem"}
+	b.ClientAuth = &model.ListenerClientAuth{Mode: "require", CA: "/ca.pem"}
 
 	if !sameTLS(&a, &b) {
 		t.Error("same TLS + same clientAuth should be same")
 	}
 
 	c := base
-	c.ClientAuth = &model.ListenerClientAuth{Mode: "optional", CAFile: "/ca.pem"}
+	c.ClientAuth = &model.ListenerClientAuth{Mode: "optional", CA: "/ca.pem"}
 
 	if sameTLS(&a, &c) {
 		t.Error("same TLS + different clientAuth should differ")
