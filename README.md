@@ -51,6 +51,8 @@ Two independent balancing levels — the first picks which service (3 algorithms
 - **External processor** — your gRPC or HTTP service receives each request/response phase and can mutate headers, replace bodies, or reject. Supports buffered, partial-buffered, and streamed body modes.
 - **External authorization** — delegate auth decisions to an external service (HTTP or gRPC).
 - **Header manipulation** — add, remove, or replace request/response headers with variable interpolation.
+- **Request mirroring** — shadow traffic to a secondary destination for testing or debugging. Configurable percentage.
+- **Access log** — per-request structured logging with method, path, status, duration, and original path preservation.
 
 </details>
 
@@ -59,9 +61,15 @@ Two independent balancing levels — the first picks which service (3 algorithms
 <br/>
 
 - **JWT validation** — RSA, ECDSA, Ed25519. Remote JWKS or inline keys. CEL-based claim assertions. Claim-to-header injection.
+- **Inline authorization** — ordered CEL rules with first-match-wins semantics. Allow/deny based on path, headers, method, body content, or client certificate identity — no external service needed.
 - **Rate limiting** — token bucket per client IP with trusted proxy support.
 - **CORS** — origin matching (exact, regex, wildcard), preflight, credentials.
 - **CEL conditions on any middleware** — `skipWhen` / `onlyWhen` control exactly when a middleware runs.
+- **mTLS on listeners** — optional or required client certificates. Client cert metadata (`request.tls.peerCertificate.*`) available in CEL. Automatic XFCC header injection.
+- **CEL body access** — `request.body.raw` and `request.body.json` for request body inspection in route matching, conditions, and authorization rules. Lazy buffering, zero overhead when unused.
+- **Secrets** — first-class entities for sensitive values (TLS certs, keys, tokens). Referenced via `{{secret:value/env/file}}` and resolved at snapshot time. The proxy never sees unresolved references.
+- **At-rest encryption** — AES-256-GCM for secrets and snapshots in bbolt. Optional, key via config.
+- **Control plane TLS + mTLS + API keys** — secure the CP↔proxy/controller channel with TLS, optional mutual TLS, and bearer token authentication.
 
 </details>
 

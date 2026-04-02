@@ -118,6 +118,10 @@ controlPlane:
       #       key: "${PROXY_API_KEY}"
       #     - name: "controller"
       #       key: "${CONTROLLER_API_KEY}"
+      # At-rest encryption for secrets and snapshots (optional).
+      # Generate a key with: openssl rand -base64 32
+      # encryption:
+      #   key: "${ENCRYPTION_KEY}"
     log:
       format: console
       level: info
