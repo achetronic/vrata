@@ -472,7 +472,7 @@ type HeaderValue struct {
 	Value string `json:"value" yaml:"value"`
 
 	// Append controls whether the header is appended (true) or replaced
-	// (false) if it already exists. Default: true.
+	// (false) if it already exists. Default: false (replace).
 	Append bool `json:"append,omitempty" yaml:"append,omitempty"`
 }
 

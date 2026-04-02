@@ -95,6 +95,7 @@ func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApp
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		// Swagger doc response — write error is not actionable.
 		_, _ = w.Write([]byte(doc))
 	})
 

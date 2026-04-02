@@ -701,7 +701,7 @@ definitions:
       append:
         description: |-
           Append controls whether the header is appended (true) or replaced
-          (false) if it already exists. Default: true.
+          (false) if it already exists. Default: false (replace).
         type: boolean
       key:
         description: Key is the header name.

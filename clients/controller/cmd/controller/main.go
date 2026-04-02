@@ -131,10 +131,12 @@ func run() error {
 	}
 	vrataClient := vrata.NewClient(cfg.ControlPlaneURL, vrataOpts...)
 	rec := reconciler.NewReconciler(vrataClient, logger)
+	// Parse errors fall through to zero value, caught by the default below.
 	debounce, _ := time.ParseDuration(cfg.Snapshot.Debounce)
 	if debounce == 0 {
 		debounce = 5 * time.Second
 	}
+	// Parse errors fall through to zero value, caught by the default below.
 	batchIdleTimeout, _ := time.ParseDuration(cfg.Snapshot.BatchIdleTimeout)
 	if batchIdleTimeout == 0 {
 		batchIdleTimeout = 10 * time.Second
@@ -166,9 +168,11 @@ func run() error {
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 			if healthy.Load() {
 				w.WriteHeader(200)
+				// Health probe response — write error is not actionable.
 				_, _ = w.Write([]byte("ok"))
 			} else {
 				w.WriteHeader(503)
+				// Health probe response — write error is not actionable.
 				_, _ = w.Write([]byte("not ready"))
 			}
 		})
@@ -177,7 +181,8 @@ func run() error {
 			<-ctx.Done()
 			shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer shutCancel()
-			srv.Shutdown(shutCtx)
+			// Best-effort shutdown — error is not actionable.
+			_ = srv.Shutdown(shutCtx)
 		}()
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Error("health server failed", slog.String("error", err.Error()))
@@ -240,7 +245,7 @@ func run() error {
 
 			// --- Phase 0: GatewayClass claim ---
 
-			claimGatewayClass(ctx, informerCache, statusWriter, cfg.GatewayClass(), logger)
+			claimGatewayClass(ctx, informerCache, statusWriter, logger)
 
 			// --- Phase 1: populate the work queue from the informer cache,
 			// and build the full desired groups set for GC ---
@@ -413,7 +418,10 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("creating k8s clientset for leader election: %w", err)
 		}
+		// Hostname error is non-fatal — empty string is acceptable for leader identity.
 		hostname, _ := os.Hostname()
+		// Parse errors produce zero durations; leaderelection panics on zero,
+		// but applyDefaults guarantees valid strings.
 		leaseDuration, _ := time.ParseDuration(cfg.LeaderElection.LeaseDuration)
 		renewDeadline, _ := time.ParseDuration(cfg.LeaderElection.RenewDeadline)
 		retryPeriod, _ := time.ParseDuration(cfg.LeaderElection.RetryPeriod)
@@ -459,12 +467,9 @@ func run() error {
 	return nil
 }
 
-// claimGatewayClass finds and claims the GatewayClass matching our controller name,
-// setting its Accepted condition.
-func claimGatewayClass(ctx context.Context, c cache.Cache, sw *status.Writer, className string, logger *slog.Logger) {
-	if className == "" {
-		return
-	}
+// claimGatewayClass finds and claims GatewayClasses matching our controller name,
+// setting their Accepted condition. Only runs when a gatewayClassName is configured.
+func claimGatewayClass(ctx context.Context, c cache.Cache, sw *status.Writer, logger *slog.Logger) {
 	var gcList gwapiv1.GatewayClassList
 	if err := c.List(ctx, &gcList); err != nil {
 		logger.Error("listing GatewayClasses", slog.String("error", err.Error()))
@@ -524,6 +529,7 @@ func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconci
 					allValid = false
 					continue
 				}
+				bat.Signal(ctx)
 			}
 
 			listenerInput := findListenerInput(input, l.Name)
@@ -980,12 +986,12 @@ func grpcRouteToInput(gr *gwapiv1.GRPCRoute) mapper.GRPCRouteInput {
 				if f.RequestHeaderModifier != nil {
 					for _, h := range f.RequestHeaderModifier.Add {
 						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
-							Name: string(h.Name), Value: h.Value,
+							Name: string(h.Name), Value: h.Value, Append: true,
 						})
 					}
 					for _, h := range f.RequestHeaderModifier.Set {
 						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
-							Name: string(h.Name), Value: h.Value,
+							Name: string(h.Name), Value: h.Value, Append: false,
 						})
 					}
 					for _, name := range f.RequestHeaderModifier.Remove {
@@ -996,12 +1002,12 @@ func grpcRouteToInput(gr *gwapiv1.GRPCRoute) mapper.GRPCRouteInput {
 				if f.ResponseHeaderModifier != nil {
 					for _, h := range f.ResponseHeaderModifier.Add {
 						fi.ResponseHeadersToAdd = append(fi.ResponseHeadersToAdd, mapper.HeaderValue{
-							Name: string(h.Name), Value: h.Value,
+							Name: string(h.Name), Value: h.Value, Append: true,
 						})
 					}
 					for _, h := range f.ResponseHeaderModifier.Set {
 						fi.ResponseHeadersToAdd = append(fi.ResponseHeadersToAdd, mapper.HeaderValue{
-							Name: string(h.Name), Value: h.Value,
+							Name: string(h.Name), Value: h.Value, Append: false,
 						})
 					}
 					for _, name := range f.ResponseHeaderModifier.Remove {
@@ -1055,6 +1061,16 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 					hi.Type = string(*hm.Type)
 				}
 				mi.Headers = append(mi.Headers, hi)
+			}
+			for _, qp := range match.QueryParams {
+				qi := mapper.QueryParamMatchInput{
+					Name:  string(qp.Name),
+					Value: qp.Value,
+				}
+				if qp.Type != nil {
+					qi.Type = string(*qp.Type)
+				}
+				mi.QueryParams = append(mi.QueryParams, qi)
 			}
 			ri.Matches = append(ri.Matches, mi)
 		}
@@ -1124,12 +1140,12 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 				if f.RequestHeaderModifier != nil {
 					for _, h := range f.RequestHeaderModifier.Add {
 						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
-							Name: string(h.Name), Value: h.Value,
+							Name: string(h.Name), Value: h.Value, Append: true,
 						})
 					}
 					for _, h := range f.RequestHeaderModifier.Set {
 						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
-							Name: string(h.Name), Value: h.Value,
+							Name: string(h.Name), Value: h.Value, Append: false,
 						})
 					}
 					for _, name := range f.RequestHeaderModifier.Remove {
@@ -1140,12 +1156,12 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 				if f.ResponseHeaderModifier != nil {
 					for _, h := range f.ResponseHeaderModifier.Add {
 						fi.ResponseHeadersToAdd = append(fi.ResponseHeadersToAdd, mapper.HeaderValue{
-							Name: string(h.Name), Value: h.Value,
+							Name: string(h.Name), Value: h.Value, Append: true,
 						})
 					}
 					for _, h := range f.ResponseHeaderModifier.Set {
 						fi.ResponseHeadersToAdd = append(fi.ResponseHeadersToAdd, mapper.HeaderValue{
-							Name: string(h.Name), Value: h.Value,
+							Name: string(h.Name), Value: h.Value, Append: false,
 						})
 					}
 					for _, name := range f.ResponseHeaderModifier.Remove {

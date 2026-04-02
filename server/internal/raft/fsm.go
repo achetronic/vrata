@@ -122,7 +122,8 @@ type fsmSnapshot struct {
 // Persist writes the snapshot data to the given sink.
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	if _, err := sink.Write(s.data); err != nil {
-		sink.Cancel()
+		// Best-effort cancel — we are already returning the write error.
+		_ = sink.Cancel()
 		return fmt.Errorf("writing snapshot: %w", err)
 	}
 	return sink.Close()

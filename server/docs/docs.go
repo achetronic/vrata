@@ -2394,7 +2394,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "append": {
-                    "description": "Append controls whether the header is appended (true) or replaced\n(false) if it already exists. Default: true.",
+                    "description": "Append controls whether the header is appended (true) or replaced\n(false) if it already exists. Default: false (replace).",
                     "type": "boolean"
                 },
                 "key": {

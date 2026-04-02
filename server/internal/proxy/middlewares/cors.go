@@ -4,6 +4,7 @@
 package middlewares
 
 import (
+	"log/slog"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -28,6 +29,8 @@ func CORSMiddleware(cfg *model.CORSConfig) Middleware {
 		if o.Regex {
 			if re, err := regexp.Compile(o.Value); err == nil {
 				matchers = append(matchers, originMatcher{regex: re})
+			} else {
+				slog.Error("cors: invalid origin regex, skipping", slog.String("pattern", o.Value), slog.String("error", err.Error()))
 			}
 		} else {
 			matchers = append(matchers, originMatcher{exact: o.Value})

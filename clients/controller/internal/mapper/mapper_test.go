@@ -828,3 +828,72 @@ func TestMapHTTPRoute_BothHeaderModifiers(t *testing.T) {
 		t.Errorf("route should reference both middlewares, got %d", len(result.Routes[0].MiddlewareIDs))
 	}
 }
+
+func TestMapHTTPRoute_QueryParamMatch(t *testing.T) {
+	input := HTTPRouteInput{
+		Name: "qp", Namespace: "default",
+		Rules: []RuleInput{
+			{
+				Matches: []MatchInput{
+					{
+						PathType: "PathPrefix", PathValue: "/",
+						QueryParams: []QueryParamMatchInput{
+							{Name: "version", Value: "v2", Type: "Exact"},
+							{Name: "id", Value: "[0-9]+", Type: "RegularExpression"},
+						},
+					},
+				},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "svc", ServiceNamespace: "default", Port: 80},
+				},
+			},
+		},
+	}
+	result := MapHTTPRoute(input)
+	qps, ok := result.Routes[0].Match["queryParams"].([]map[string]any)
+	if !ok || len(qps) != 2 {
+		t.Fatalf("expected 2 queryParams, got %v", result.Routes[0].Match["queryParams"])
+	}
+	if qps[0]["name"] != "version" || qps[0]["value"] != "v2" {
+		t.Errorf("first qp: %v", qps[0])
+	}
+	if qps[1]["regex"] != true {
+		t.Error("second qp should have regex=true")
+	}
+}
+
+func TestMapHTTPRoute_HeaderSetVsAdd(t *testing.T) {
+	input := HTTPRouteInput{
+		Name: "set-add", Namespace: "default",
+		Rules: []RuleInput{
+			{
+				Matches:     []MatchInput{{PathType: "PathPrefix", PathValue: "/"}},
+				BackendRefs: []BackendRefInput{{ServiceName: "svc", ServiceNamespace: "default", Port: 80}},
+				Filters: []FilterInput{
+					{
+						Type: "RequestHeaderModifier",
+						HeadersToAdd: []HeaderValue{
+							{Name: "X-Add", Value: "appended", Append: true},
+							{Name: "X-Set", Value: "replaced", Append: false},
+						},
+					},
+				},
+			},
+		},
+	}
+	result := MapHTTPRoute(input)
+	if len(result.Middlewares) != 1 {
+		t.Fatalf("expected 1 middleware, got %d", len(result.Middlewares))
+	}
+	hdrs := result.Middlewares[0].Headers["requestHeadersToAdd"]
+	add, ok := hdrs.([]map[string]any)
+	if !ok || len(add) != 2 {
+		t.Fatalf("expected 2 header entries, got %v", hdrs)
+	}
+	if add[0]["append"] != true {
+		t.Errorf("first header should have append=true, got %v", add[0])
+	}
+	if add[1]["append"] != false {
+		t.Errorf("second header should have append=false, got %v", add[1])
+	}
+}

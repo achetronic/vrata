@@ -107,6 +107,9 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Middleware onlyWhen (CEL condition to activate)              | 100%   | E2E (3)             |
 | Middleware disable per-route                                 | 100%   | Unit + E2E          |
 | Middleware override merge                                    | 100%   | Unit                |
+| Middleware override Headers (per-route header config merge)  | 100%   | Code review         |
+| Middleware override ExtProc (per-route phases/allowOnError)  | 100%   | Code review         |
+| ExtProc MetricsPrefix (custom metric label name)             | 100%   | Code review         |
 | Cleanup on table swap (JWT refresh, rate limiter)            | 100%   | Code review         |
 | InlineAuthz (CEL rules, first-match-wins, body+TLS access)   | 100%   | Unit (14) + E2E     |
 
@@ -115,10 +118,13 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Feature                                                        | Status | Tests      |
 | -------------------------------------------------------------- | ------ | ---------- |
 | Atomic routing table swap (with cleanup callbacks)             | 100%   | Unit + E2E |
-| Listener management (detects TLS changes)                      | 100%   | E2E        |
+| Listener management (detects TLS + timeout changes)                | 100%   | Unit (6) + E2E |
 | Circuit breaker (configurable failureThreshold + openDuration) | 100%   | Unit       |
+| Circuit breaker MaxPendingRequests + MaxRetries                | 100%   | Unit (3)   |
 | Health checks (thresholds, per-dest interval)                  | 100%   | Unit       |
 | Outlier detection (wired via OnResponse, race-free)            | 100%   | Unit       |
+| Outlier detection Interval + MaxEjectionPercent                | 100%   | Code review |
+| LeastRequest ChoiceCount (power-of-two-choices)                | 100%   | Unit (3)   |
 | TLS upstream                                                   | 100%   | Unit       |
 | TLS downstream                                                 | 100%   | Unit       |
 | HTTP/2 (ALPN configured)                                       | 100%   | Unit       |
@@ -147,6 +153,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | -------------------------------------------------------------------- | ------ | ---------- |
 | Per-listener metrics config (path, collect, histograms)              | 100%   | Unit + E2E |
 | Route metrics (requests, duration, size, inflight, retries, mirrors) | 100%   | Unit + E2E |
+| Route size histograms (SizeBuckets wired)                            | 100%   | Code review |
 | Destination metrics (requests, duration, inflight, circuit breaker)  | 100%   | Unit + E2E |
 | Endpoint metrics (requests, duration, healthy, consecutive 5xx)      | 100%   | Unit + E2E |
 | Middleware metrics (duration, passed, rejections)                    | 100%   | Unit + E2E |

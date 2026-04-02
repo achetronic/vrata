@@ -22,30 +22,28 @@ controlPlaneUrl: "${CONTROLPLANE_URL:-http://localhost:8080}"
 
 # Which Kubernetes resources to watch.
 watch:
-  namespaces: []          # Empty = all namespaces
-  httpRoutes: true        # Standard Gateway API HTTPRoutes
-  superHttpRoutes: false  # SuperHTTPRoute (no maxItems limits)
-  gateways: true          # Gateway resources → Vrata Listeners
+  namespaces: []              # Empty = all namespaces
+  httpRoutes: true            # Standard Gateway API HTTPRoutes
+  grpcRoutes: true            # Standard Gateway API GRPCRoutes
+  superHttpRoutes: false      # SuperHTTPRoute (no maxItems limits)
+  gateways: true              # Gateway resources → Vrata Listeners
+  gatewayClassName: "vrata"   # Only reconcile Gateways with this class
 
 # Snapshot batching.
 snapshot:
-  debounce: "5s"          # Wait after last change before snapshot
-  maxBatch: 100           # Force snapshot after this many changes
-  batchIdleTimeout: "10s" # Wait after last batch member arrives (vrata.io/batch)
-  # What to do when a batch with vrata.io/batch-size times out before all
-  # members arrive. Only applies when both annotations are present.
-  #   "apply"  — create the snapshot with whatever arrived (default)
-  #   "reject" — discard the incomplete batch, don't create a snapshot
-  batchIncompletePolicy: "apply"
+  debounce: "5s"              # Wait after last change before snapshot
+  maxBatch: 100               # Force snapshot after this many changes
+  batchIdleTimeout: "10s"     # Wait after last batch member arrives (vrata.io/batch)
+  batchIncompletePolicy: "apply"  # apply | reject
 
 # Overlap detection.
 duplicates:
-  mode: "warn"            # off | warn | reject
+  mode: "warn"                # off | warn | reject
 
 # Logging.
 log:
-  format: "console"       # console | json
-  level: "info"           # debug | info | warn | error
+  format: "console"           # console | json
+  level: "info"               # debug | info | warn | error
 
 # Leader election for multiple replicas.
 leaderElection:
@@ -71,12 +69,20 @@ metrics:
 | `apiKey` | — | Bearer token sent to the CP on every request |
 | `watch.namespaces` | `[]` (all) | Restrict to specific namespaces |
 | `watch.httpRoutes` | `true` | Watch HTTPRoute resources |
+| `watch.grpcRoutes` | `true` | Watch GRPCRoute resources |
 | `watch.superHttpRoutes` | `false` | Watch SuperHTTPRoute resources |
 | `watch.gateways` | `true` | Watch Gateway resources |
+| `watch.gatewayClassName` | `vrata` | Only reconcile Gateways with this `spec.gatewayClassName` |
 | `snapshot.debounce` | `5s` | Debounce before creating snapshot |
 | `snapshot.maxBatch` | `100` | Max changes before forced snapshot |
 | `snapshot.batchIdleTimeout` | `10s` | Idle wait for `vrata.io/batch` groups. See [Batch Deployments]({{< relref "batch-deployments" >}}) |
 | `snapshot.batchIncompletePolicy` | `apply` | `apply`: snapshot with partial set. `reject`: discard incomplete batch. See [Batch Deployments]({{< relref "batch-deployments" >}}) |
 | `duplicates.mode` | `warn` | `off`: disabled, `warn`: log only, `reject`: skip route |
 | `leaderElection.enabled` | `false` | Enable lease-based leader election |
-| `metrics.enabled` | `false` | Enable Prometheus metrics on `:9090` |
+| `leaderElection.leaseName` | `vrata-controller-leader` | Name of the Lease resource |
+| `leaderElection.leaseNamespace` | `default` | Namespace where the Lease is created |
+| `leaderElection.leaseDuration` | `15s` | How long the leader holds the lease |
+| `leaderElection.renewDeadline` | `10s` | How long the leader waits before renewing |
+| `leaderElection.retryPeriod` | `2s` | How often non-leaders retry acquiring the lease |
+| `metrics.enabled` | `false` | Enable Prometheus metrics |
+| `metrics.address` | `:9090` | Address the metrics server listens on |

@@ -255,6 +255,8 @@ func (cr *compiledRoute) match(req *http.Request) (bool, *http.Request) {
 	// CEL expression (evaluated last — most expensive check).
 	if cr.celProgram != nil {
 		if cr.needsBody {
+			// Fail-open: body buffering errors are logged by BufferBody; CEL
+			// evaluates with an empty body rather than rejecting the request.
 			req, _ = celeval.BufferBody(req, cr.celBodyMaxSize)
 		}
 		if !cr.celProgram.Eval(req) {

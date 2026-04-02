@@ -26,13 +26,15 @@ type MetricsCollector struct {
 	registry *prometheus.Registry
 
 	// Route-level metrics.
-	routeRequests      *prometheus.CounterVec
-	routeDuration      *prometheus.HistogramVec
-	routeRequestBytes  *prometheus.CounterVec
-	routeResponseBytes *prometheus.CounterVec
-	routeInflight      *prometheus.GaugeVec
-	routeRetries       *prometheus.CounterVec
-	routeMirrors       *prometheus.CounterVec
+	routeRequests         *prometheus.CounterVec
+	routeDuration         *prometheus.HistogramVec
+	routeRequestBytes     *prometheus.CounterVec
+	routeResponseBytes    *prometheus.CounterVec
+	routeRequestSizeHist  *prometheus.HistogramVec
+	routeResponseSizeHist *prometheus.HistogramVec
+	routeInflight         *prometheus.GaugeVec
+	routeRetries          *prometheus.CounterVec
+	routeMirrors          *prometheus.CounterVec
 
 	// Destination-level metrics.
 	destRequests *prometheus.CounterVec
@@ -99,6 +101,17 @@ func NewMetricsCollector(cfg *model.ListenerMetrics) *MetricsCollector {
 			Name: "vrata_route_response_bytes_total",
 			Help: "Total response bytes per route.",
 		}, []string{"route", "group"})
+		sizeBuckets := cfg.ResolvedSizeBuckets()
+		mc.routeRequestSizeHist = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "vrata_route_request_size_bytes",
+			Help:    "Request size distribution per route.",
+			Buckets: sizeBuckets,
+		}, []string{"route", "group"})
+		mc.routeResponseSizeHist = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "vrata_route_response_size_bytes",
+			Help:    "Response size distribution per route.",
+			Buckets: sizeBuckets,
+		}, []string{"route", "group"})
 		mc.routeInflight = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "vrata_route_inflight_requests",
 			Help: "Currently in-flight requests per route.",
@@ -113,7 +126,8 @@ func NewMetricsCollector(cfg *model.ListenerMetrics) *MetricsCollector {
 		}, []string{"route", "destination"})
 
 		reg.MustRegister(mc.routeRequests, mc.routeDuration, mc.routeRequestBytes,
-			mc.routeResponseBytes, mc.routeInflight, mc.routeRetries, mc.routeMirrors)
+			mc.routeResponseBytes, mc.routeRequestSizeHist, mc.routeResponseSizeHist,
+			mc.routeInflight, mc.routeRetries, mc.routeMirrors)
 	}
 
 	if cfg.CollectDestination() {
@@ -291,6 +305,12 @@ func (mc *MetricsCollector) RecordRoute(route, group, method string, statusCode 
 	mc.routeDuration.WithLabelValues(route, group, method).Observe(duration.Seconds())
 	mc.routeRequestBytes.WithLabelValues(route, group).Add(float64(reqBytes))
 	mc.routeResponseBytes.WithLabelValues(route, group).Add(float64(respBytes))
+	if mc.routeRequestSizeHist != nil {
+		mc.routeRequestSizeHist.WithLabelValues(route, group).Observe(float64(reqBytes))
+	}
+	if mc.routeResponseSizeHist != nil {
+		mc.routeResponseSizeHist.WithLabelValues(route, group).Observe(float64(respBytes))
+	}
 }
 
 // RouteInflightInc increments the in-flight gauge for a route.

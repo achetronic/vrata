@@ -189,6 +189,8 @@ func wrapWithConditions(m middlewares.Middleware, ov *model.MiddlewareOverride, 
 		inner := m(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if needsBody {
+				// Fail-open: body buffering errors are logged by BufferBody; CEL
+				// evaluates with an empty body rather than rejecting the request.
 				r, _ = celeval.BufferBody(r, celBodyMaxSize)
 			}
 			for _, prg := range skipProgs {
@@ -786,6 +788,11 @@ func mirrorRequest(original *http.Request, mirror *model.RouteMirror, pools map[
 	}
 	ep := pool.Endpoints[0]
 	go func() {
+		// Mirror requests use a timeout to prevent goroutine leaks when
+		// the mirror backend is unresponsive.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		clone = clone.WithContext(ctx)
 		proxy := pool.ReverseProxyFor(ep)
 		proxy.ServeHTTP(httptest.NewRecorder(), clone)
 	}()
@@ -852,6 +859,12 @@ func formatGRPCTimeout(d time.Duration) string {
 	return fmt.Sprintf("%dm", d.Milliseconds())
 }
 
+// regexCache stores compiled regexp patterns for path rewrite rules.
+// This is a package-level sync.Map because patterns come from the immutable
+// routing table and are compiled once per pattern. The cache is effectively
+// append-only and cleared implicitly when the process restarts. Moving it
+// to a RoutingTable field would require threading the table through every
+// handler call chain for no behavioral benefit.
 var regexCache sync.Map
 
 func cachedCompile(pattern string) (*regexp.Regexp, error) {

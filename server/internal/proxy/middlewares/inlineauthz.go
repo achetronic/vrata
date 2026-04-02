@@ -69,6 +69,8 @@ func InlineAuthzMiddleware(cfg *model.InlineAuthzConfig, celBodyMaxSize int) Mid
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Buffer body once if any rule needs it.
 			if needsBody {
+				// Fail-open: body buffering errors are logged by BufferBody; CEL
+				// evaluates with an empty body rather than rejecting the request.
 				r, _ = celeval.BufferBody(r, celBodyMaxSize)
 			}
 

@@ -31,14 +31,22 @@ type RuleInput struct {
 
 // MatchInput holds a single match within a rule.
 type MatchInput struct {
-	PathType  string // "PathPrefix", "Exact", "RegularExpression"
-	PathValue string
-	Method    string
-	Headers   []HeaderMatchInput
+	PathType    string // "PathPrefix", "Exact", "RegularExpression"
+	PathValue   string
+	Method      string
+	Headers     []HeaderMatchInput
+	QueryParams []QueryParamMatchInput
 }
 
 // HeaderMatchInput holds a single header match.
 type HeaderMatchInput struct {
+	Name  string
+	Value string
+	Type  string // "Exact" or "RegularExpression"
+}
+
+// QueryParamMatchInput holds a single query parameter match.
+type QueryParamMatchInput struct {
 	Name  string
 	Value string
 	Type  string // "Exact" or "RegularExpression"
@@ -81,8 +89,9 @@ type FilterInput struct {
 
 // HeaderValue is a key-value pair for header manipulation.
 type HeaderValue struct {
-	Name  string
-	Value string
+	Name   string
+	Value  string
+	Append bool
 }
 
 // GatewayInput holds the fields extracted from a Gateway resource.
@@ -445,6 +454,17 @@ func mapMatch(m MatchInput) map[string]any {
 		}
 		match["headers"] = headers
 	}
+	if len(m.QueryParams) > 0 {
+		var qps []map[string]any
+		for _, qp := range m.QueryParams {
+			qm := map[string]any{"name": qp.Name, "value": qp.Value}
+			if qp.Type == "RegularExpression" {
+				qm["regex"] = true
+			}
+			qps = append(qps, qm)
+		}
+		match["queryParams"] = qps
+	}
 	return match
 }
 
@@ -496,7 +516,7 @@ func mapHeaderModifierFilter(name string, f *FilterInput) vrata.Middleware {
 	if len(f.HeadersToAdd) > 0 {
 		var add []map[string]any
 		for _, h := range f.HeadersToAdd {
-			add = append(add, map[string]any{"key": h.Name, "value": h.Value})
+			add = append(add, map[string]any{"key": h.Name, "value": h.Value, "append": h.Append})
 		}
 		headers["requestHeadersToAdd"] = add
 	}
@@ -516,7 +536,7 @@ func mapResponseHeaderModifierFilter(name string, f *FilterInput) vrata.Middlewa
 	if len(f.ResponseHeadersToAdd) > 0 {
 		var add []map[string]any
 		for _, h := range f.ResponseHeadersToAdd {
-			add = append(add, map[string]any{"key": h.Name, "value": h.Value})
+			add = append(add, map[string]any{"key": h.Name, "value": h.Value, "append": h.Append})
 		}
 		headers["responseHeadersToAdd"] = add
 	}

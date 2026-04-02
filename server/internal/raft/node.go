@@ -62,7 +62,8 @@ func NewNode(ctx context.Context, cfg *config.RaftConfig, dataDir string, store 
 
 	stableStore, err := raftboltdb.NewBoltStore(filepath.Join(dataDir, "raft-stable.db"))
 	if err != nil {
-		logStore.Close()
+		// Best-effort cleanup — we are already returning an error.
+		_ = logStore.Close()
 		return nil, fmt.Errorf("opening raft stable store: %w", err)
 	}
 
@@ -269,7 +270,8 @@ func (n *Node) resolveByDNS(ctx context.Context, hostname string) ([]raft.Server
 	if localAddr == "" {
 		localAddr = n.cfg.BindAddress
 	}
-	localHost, _, _ := net.SplitHostPort(localAddr)
+	localHost, _, _ := net.SplitHostPort(localAddr) //nolint: host is always valid from raft config
+	// DNS failure is non-fatal — localIPs will be empty and the filter skips no peers.
 	localIPs, _ := net.LookupHost(localHost)
 
 	resolver := net.DefaultResolver

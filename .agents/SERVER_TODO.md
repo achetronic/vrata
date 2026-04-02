@@ -4,14 +4,39 @@
 
 ### Housekeeping
 
-- [ ] **`SizeBuckets` not wired** — `ListenerMetrics.Histograms.SizeBuckets` defined in model, `ResolvedSizeBuckets()` helper exists, but `proxy/metrics.go` never uses them. Request/response sizes are counters, not histograms. Either wire as histograms or remove from model.
-- [ ] **Access log `${response.header.NAME}` interpolation** — documented in `AccessLogEntry` docstring as supported but `middlewares/accesslog.go:interpolateFields()` only handles `${request.header.NAME}`. Response header interpolation missing.
-- [ ] **`regexCache` global state** — `proxy/handler.go:855` has `var regexCache sync.Map`. Convention forbids package-level mutable state. Should be moved to a `RoutingTable` field or passed via Dependencies.
-- [ ] **`mirrorRequest` goroutine leak** — `proxy/handler.go:788-791` fires a goroutine with no cleanup, no timeout, no stop function. Hung mirror upstream leaks the goroutine indefinitely.
-- [ ] **Silent error swallowing (proxy)** — `BufferBody` errors discarded at `handler.go:192` and `router.go:258` without comment. `srv.ServeTLS/Serve` return errors discarded at `listener.go:273-275`. `srv.Shutdown` error discarded at `listener.go:269`.
-- [ ] **File naming violations (proxy)** — `extauthz.go` → `ext_authz.go`, `extproc.go` → `ext_proc.go`, `accesslog.go` → `access_log.go`, `inlineauthz.go` → `inline_authz.go`, `headermatch.go` → `header_match.go`. Model: `inlineauthz.go` → `inline_authz.go`, `accesslog.go` → `access_log.go`.
-- [ ] **Handler naming violations** — all 37 handlers in `api/handlers/` use `VerbResource` instead of `HandleVerbResource` (e.g. `ListRoutes` → `HandleListRoutes`). This is a large breaking rename affecting API router, tests, and swagger annotations.
-- [ ] **Timeout naming convention migration** — `SERVER_DECISIONS.md` documents semantic timeout names as "Decided — not yet implemented". The model already uses the semantic names, but the decision entry status is misleading. Either mark as implemented or document the remaining migration gap.
+- [x] ~~**`SizeBuckets` not wired**~~ — Now wired as `routeRequestSizeHist` and `routeResponseSizeHist` histogram metrics using `ResolvedSizeBuckets()`.
+- [x] ~~**Access log `${response.header.NAME}` interpolation**~~ — Now implemented in `interpolateFields()` with response header loop.
+- [x] ~~**`mirrorRequest` goroutine leak**~~ — Now uses `context.WithTimeout(30s)` to prevent indefinite hangs.
+- [x] ~~**Silent error swallowing (proxy)**~~ — All error discards now have explicit `_ =` assignment with justification comments.
+- [x] ~~**CORS invalid regex silent drop**~~ — Now logs `slog.Error` with pattern and error message.
+- [x] ~~**HeaderValue.Append default doc**~~ — Fixed doc: default is `false` (replace), matching Go zero value.
+- [ ] **`regexCache` global state** — `proxy/handler.go` has `var regexCache sync.Map`. Documented with justification comment. Low priority.
+- [ ] **File naming violations (proxy)** — `extauthz.go` → `ext_authz.go`, etc. Large rename. Low priority.
+- [ ] **Handler naming violations** — `VerbResource` → `HandleVerbResource` across 37 handlers. Breaking rename.
+
+### Audit 9 findings (server internal model→consumer)
+
+- [ ] **`ErrDuplicateRoute` and `ErrDuplicateGroup` dead code** — defined in `model/errors.go` but never referenced. Either use them or remove.
+- [ ] **API validation gaps** — destinations, groups, listeners (most fields), 7/8 middleware types have zero field validation. E.g. `jwt` without `issuer`, `extAuthz` without `destinationId`.
+- [ ] **`sameMetrics()` shallow comparison** — only compares `ResolvedPath()`. Changes to `Collect` toggles or `Histograms` buckets don't trigger listener restart.
+- [ ] **Bolt store always emits `EventCreated`** — for 5/7 entity types (routes, groups, middlewares, listeners, destinations) regardless of create vs update. Semantically incorrect but functionally harmless.
+- [ ] **`RouteRewrite.Path` replaces full path, not prefix** — doc says "replaces the matched path prefix" but implementation does `r.URL.Path = rw.Path`. A request to `/api/v1/users` with rewrite `/internal` becomes `/internal`, not `/internal/users`.
+- [ ] **PathRegex group + PathPrefix route composition** — produces exact-suffix match instead of prefix match. Requests beyond the prefix won't match.
+
+### Audit 11 findings (middleware config field trace)
+
+- [ ] **ExtAuthz gRPC: `OnCheck.InjectHeaders` not wired** — gRPC mode never injects headers. HTTP-only feature silently ignored in gRPC mode.
+- [ ] **ExtAuthz gRPC: `OnAllow.CopyToUpstream` not wired** — gRPC mode copies ALL response headers to upstream blindly instead of filtering.
+- [ ] **ExtAuthz gRPC: `OnDeny.CopyToClient` not wired** — gRPC mode copies ALL response headers on deny instead of filtering.
+
+### Audit 12 findings (config cross-reference)
+
+- [ ] **No reference `server/config.yaml`** — unlike the controller, the server has no reference config file in the repo.
+- [ ] **`proxy.celBodyMaxSize`** — exists in Go struct + code but missing from Helm values.yaml and server.md config tables.
+- [ ] **`sessionStore.*`** — documented in Go + website but missing from Helm values.yaml.
+- [ ] **File naming violations (proxy)** — `extauthz.go` → `ext_authz.go`, etc. Large rename. Low priority.
+- [ ] **Handler naming violations** — `VerbResource` → `HandleVerbResource` across 37 handlers. Breaking rename.
+- [x] ~~**Timeout naming convention migration**~~ — Decision status updated to Implemented.
 
 ### Proxy: not-wired features
 

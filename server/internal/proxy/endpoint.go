@@ -88,7 +88,9 @@ func NewEndpoint(ep model.Endpoint, d model.Destination) (*Endpoint, error) {
 			transport.ForceAttemptHTTP2 = true
 			transport.TLSClientConfig.NextProtos = append(transport.TLSClientConfig.NextProtos, "h2")
 		} else {
-			http2.ConfigureTransport(transport)
+			// Best-effort h2c configuration — if it fails, the transport
+			// falls back to HTTP/1.1 which is acceptable.
+			_ = http2.ConfigureTransport(transport)
 		}
 	}
 

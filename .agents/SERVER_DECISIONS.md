@@ -824,7 +824,7 @@ add CLI flags for settings that belong in the config file.
 ## Timeout naming convention: semantic names mapped to Go fields
 
 **Date**: 2026-03-19
-**Status**: Decided — not yet implemented
+**Status**: Implemented
 
 All configurable timeouts use semantic names that describe what the user is
 waiting for, not Go struct field names. The mapping is authoritative — every

@@ -266,13 +266,16 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 			<-ctx.Done()
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer shutdownCancel()
-			srv.Shutdown(shutdownCtx)
+			// Best-effort shutdown — error is not actionable at this point.
+			_ = srv.Shutdown(shutdownCtx)
 		}()
 
+		// Serve blocks until the server is shut down. The returned error is
+		// http.ErrServerClosed on graceful shutdown, which is expected.
 		if srv.TLSConfig != nil {
-			srv.ServeTLS(ln, "", "")
+			_ = srv.ServeTLS(ln, "", "")
 		} else {
-			srv.Serve(ln)
+			_ = srv.Serve(ln)
 		}
 	}()
 }

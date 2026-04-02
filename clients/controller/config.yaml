@@ -28,12 +28,20 @@ watch:
   # Watch standard Gateway API HTTPRoute resources.
   httpRoutes: true
 
+  # Watch standard Gateway API GRPCRoute resources.
+  grpcRoutes: true
+
   # Watch SuperHTTPRoute resources (HTTPRoute without maxItems limits).
   # Requires the SuperHTTPRoute CRD to be installed.
   superHttpRoutes: false
 
   # Watch Gateway resources to sync Listeners.
   gateways: true
+
+  # Only reconcile Gateways with this gatewayClassName.
+  # The controller claims GatewayClasses matching its controllerName
+  # (vrata.io/controller) regardless of this setting.
+  gatewayClassName: "${GATEWAY_CLASS_NAME:-vrata}"
 
 # Snapshot batching — changes are accumulated and a snapshot is created
 # when the debounce timer expires or the max batch size is reached.

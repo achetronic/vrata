@@ -48,14 +48,14 @@ func AccessLogMiddlewareWithStop(cfg *model.AccessLogConfig) (Middleware, func()
 			originalPath := r.URL.Path
 
 			if cfg.OnRequest != nil {
-				entry := interpolateFields(cfg.OnRequest.Fields, r, originalPath, 0, 0, requestID, start, 0)
+				entry := interpolateFields(cfg.OnRequest.Fields, r, nil, originalPath, 0, 0, requestID, start, 0)
 				lw.writeLine(entry, useJSON)
 			}
 
 			m := httpsnoop.CaptureMetrics(next, w, r)
 
 			if cfg.OnResponse != nil {
-				entry := interpolateFields(cfg.OnResponse.Fields, r, originalPath, m.Code, m.Written, requestID, start, m.Duration)
+				entry := interpolateFields(cfg.OnResponse.Fields, r, w.Header(), originalPath, m.Code, m.Written, requestID, start, m.Duration)
 				lw.writeLine(entry, useJSON)
 			}
 		})
@@ -128,6 +128,7 @@ func (lw *logWriter) close() {
 func interpolateFields(
 	fields map[string]string,
 	r *http.Request,
+	respHeaders http.Header,
 	originalPath string,
 	statusCode int,
 	bytesWritten int64,
@@ -173,6 +174,27 @@ func interpolateFields(
 
 		val = strings.ReplaceAll(val, "${response.status}", fmt.Sprintf("%d", statusCode))
 		val = strings.ReplaceAll(val, "${response.bytes}", fmt.Sprintf("%d", bytesWritten))
+
+		// Response header interpolation: ${response.header.NAME}
+		if respHeaders != nil {
+			pos = 0
+			for {
+				idx := strings.Index(val[pos:], "${response.header.")
+				if idx == -1 {
+					break
+				}
+				s := pos + idx
+				end := strings.Index(val[s:], "}")
+				if end == -1 {
+					break
+				}
+				end += s
+				headerName := val[s+len("${response.header."):end]
+				headerValue := respHeaders.Get(headerName)
+				val = val[:s] + headerValue + val[end+1:]
+				pos = s + len(headerValue)
+			}
+		}
 
 		val = strings.ReplaceAll(val, "${duration.ms}", fmt.Sprintf("%d", duration.Milliseconds()))
 		val = strings.ReplaceAll(val, "${duration.us}", fmt.Sprintf("%d", duration.Microseconds()))

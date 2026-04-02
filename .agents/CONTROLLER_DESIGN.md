@@ -115,24 +115,35 @@ steady-state (individual changes trickling in).
 clients/controller/
 ├── cmd/
 │   └── controller/
-│       └── main.go              # flags, scheme registration, informers, start
+│       └── main.go              # flags, scheme registration, informers, watch loop
 ├── internal/
 │   ├── mapper/
 │   │   └── mapper.go            # Gateway API types → Vrata API types (pure, no I/O)
 │   ├── reconciler/
-│   │   ├── gateway.go           # Gateway → Listener reconciliation
-│   │   ├── httproute.go         # HTTPRoute → Route + Group + Destination reconciliation
-│   │   └── refcount.go          # Destination reference counting
+│   │   └── reconciler.go        # Apply/delete with dependency ordering + refcount
 │   ├── vrata/
 │   │   └── client.go            # Typed HTTP client for the Vrata REST API
 │   ├── batcher/
 │   │   └── batcher.go           # Change accumulation + debounce + snapshot trigger
-│   └── status/
-│       └── writer.go            # Write conditions back to HTTPRoute status
-├── Makefile                     # Fetch CRDs + patch SuperHTTPRoute + codegen
-└── config/
-    └── crd/
-        └── superhttproute.yaml  # Generated SuperHTTPRoute CRD
+│   ├── workqueue/
+│   │   └── workqueue.go         # FIFO work queue with batch group support
+│   ├── dedup/
+│   │   └── detector.go          # Semantic overlap detection (path, headers, methods)
+│   ├── refgrant/
+│   │   └── checker.go           # ReferenceGrant cross-namespace checker
+│   ├── status/
+│   │   └── writer.go            # Write conditions to HTTPRoute/GRPCRoute/Gateway/GatewayClass
+│   ├── metrics/
+│   │   └── metrics.go           # 8 Prometheus metrics
+│   └── config/
+│       └── config.go            # Controller config loader
+├── apis/v1/
+│   └── types.go                 # SuperHTTPRoute CRD types
+├── scripts/
+│   ├── crdclean/main.go         # Strip maxItems + CEL from CRD YAML
+│   └── helmwrap/main.go         # Wrap CRD with Helm conditionals
+└── test/e2e/
+    └── controller_test.go       # End-to-end tests
 ```
 
 ## CRD Generation Pipeline (Makefile)

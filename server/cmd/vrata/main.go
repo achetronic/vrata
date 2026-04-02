@@ -244,6 +244,7 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		listenerMgr.Shutdown()
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
+		// Best-effort shutdown on signal — error is not actionable.
 		_ = httpSrv.Shutdown(shutdownCtx)
 		return nil
 	case err := <-errCh:
