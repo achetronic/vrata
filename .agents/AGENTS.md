@@ -54,12 +54,12 @@ clients/controller/
 ├── internal/
 │   ├── config/                 # Controller config loader
 │   ├── vrata/                  # Typed HTTP client for Vrata REST API
-│   ├── mapper/                 # HTTPRoute/Gateway → Vrata entities (pure, no I/O)
+│   ├── mapper/                 # HTTPRoute/GRPCRoute/Gateway → Vrata entities (pure, no I/O)
 │   ├── reconciler/             # Apply/delete with dependency ordering + refcount
 │   ├── batcher/                # Debounce + max batch → snapshot create+activate
 │   ├── dedup/                  # Semantic overlap detection (path, headers, methods)
-│   ├── status/                 # HTTPRoute status condition writer
-│   ├── refgrant/               # ReferenceGrant cross-namespace checker
+│   ├── status/                 # HTTPRoute/GRPCRoute/Gateway/GatewayClass status condition writer
+│   ├── refgrant/               # ReferenceGrant cross-namespace checker (HTTPRoute + GRPCRoute)
 │   └── metrics/                # 8 Prometheus metrics
 ├── apis/v1/                    # SuperHTTPRoute CRD types
 ├── scripts/                    # crdclean + helmwrap for CRD generation pipeline
@@ -89,7 +89,7 @@ Documented in `CONVENTIONS.md`. Key rules:
 ## Pending work
 
 - `SERVER_TODO.md` — API auth, multi-value matchers, proxy fleets
-- `CONTROLLER_TODO.md` — TLS gap, regex overlap detection, agentic networking support
+- `CONTROLLER_TODO.md` — TLS gap, regex overlap detection, allowedRoutes enforcement
 
 ## Build
 

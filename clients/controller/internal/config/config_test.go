@@ -33,11 +33,17 @@ func TestLoadDefaults(t *testing.T) {
 	if !cfg.WatchHTTPRoutes() {
 		t.Error("expected httpRoutes enabled by default")
 	}
+	if !cfg.WatchGRPCRoutes() {
+		t.Error("expected grpcRoutes enabled by default")
+	}
 	if cfg.WatchSuperHTTPRoutes() {
 		t.Error("expected superHttpRoutes disabled by default")
 	}
 	if !cfg.WatchGateways() {
 		t.Error("expected gateways enabled by default")
+	}
+	if cfg.GatewayClass() != "vrata" {
+		t.Errorf("expected default gatewayClassName vrata, got %q", cfg.GatewayClass())
 	}
 	if cfg.DuplicatesMode() != DuplicateModeWarn {
 		t.Error("expected warn duplicates enabled by default")
@@ -189,5 +195,26 @@ tls:
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("expected error when key is set without cert")
+	}
+}
+
+func TestLoadGRPCRouteConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	os.WriteFile(path, []byte(`
+watch:
+  grpcRoutes: false
+  gatewayClassName: "my-gateway"
+`), 0644)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.WatchGRPCRoutes() {
+		t.Error("expected grpcRoutes disabled")
+	}
+	if cfg.GatewayClass() != "my-gateway" {
+		t.Errorf("expected gatewayClassName my-gateway, got %q", cfg.GatewayClass())
 	}
 }

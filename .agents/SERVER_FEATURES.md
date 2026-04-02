@@ -122,6 +122,9 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | TLS upstream                                                   | 100%   | Unit       |
 | TLS downstream                                                 | 100%   | Unit       |
 | HTTP/2 (ALPN configured)                                       | 100%   | Unit       |
+| h2c downstream (cleartext HTTP/2 via h2c.NewHandler)           | 100%   | Code review |
+| h2c upstream (cleartext HTTP/2 via http2.ConfigureTransport)   | 100%   | Code review |
+| Streaming flush (FlushInterval -1 on reverse proxy)            | 100%   | Code review |
 | mTLS client auth (none/optional/require + CA verification)     | 100%   | Unit (6)   |
 | XFCC header injection (strip + inject from client cert URIs)   | 100%   | Unit (8)   |
 

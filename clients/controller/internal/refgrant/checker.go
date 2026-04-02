@@ -61,7 +61,7 @@ func matchesGrant(grant gwapiv1beta1.ReferenceGrant, sourceNamespace string) boo
 	fromMatch := false
 	for _, from := range grant.Spec.From {
 		if from.Group == "gateway.networking.k8s.io" &&
-			from.Kind == "HTTPRoute" &&
+			(from.Kind == "HTTPRoute" || from.Kind == "GRPCRoute") &&
 			string(from.Namespace) == sourceNamespace {
 			fromMatch = true
 			break

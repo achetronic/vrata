@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/achetronic/vrata/internal/model"
 )
 
@@ -82,9 +84,11 @@ func NewEndpoint(ep model.Endpoint, d model.Destination) (*Endpoint, error) {
 	}
 
 	if d.Options != nil && d.Options.HTTP2 {
-		transport.ForceAttemptHTTP2 = true
 		if transport.TLSClientConfig != nil {
+			transport.ForceAttemptHTTP2 = true
 			transport.TLSClientConfig.NextProtos = append(transport.TLSClientConfig.NextProtos, "h2")
+		} else {
+			http2.ConfigureTransport(transport)
 		}
 	}
 

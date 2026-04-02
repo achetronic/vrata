@@ -57,6 +57,10 @@ type WatchConfig struct {
 	// Default: true.
 	HTTPRoutes *bool `yaml:"httpRoutes,omitempty"`
 
+	// GRPCRoutes enables watching standard Gateway API GRPCRoute resources.
+	// Default: true.
+	GRPCRoutes *bool `yaml:"grpcRoutes,omitempty"`
+
 	// SuperHTTPRoutes enables watching SuperHTTPRoute resources (HTTPRoute
 	// without maxItems limits). Default: false.
 	SuperHTTPRoutes *bool `yaml:"superHttpRoutes,omitempty"`
@@ -64,6 +68,11 @@ type WatchConfig struct {
 	// Gateways enables watching Gateway resources to sync Listeners.
 	// Default: true.
 	Gateways *bool `yaml:"gateways,omitempty"`
+
+	// GatewayClassName restricts the controller to only reconcile Gateways
+	// whose spec.gatewayClassName matches this value. When empty, the
+	// controller reconciles all Gateways. Default: "vrata".
+	GatewayClassName string `yaml:"gatewayClassName,omitempty"`
 }
 
 // SnapshotConfig controls snapshot batching.
@@ -192,12 +201,25 @@ func (c *Config) WatchSuperHTTPRoutes() bool {
 	return *c.Watch.SuperHTTPRoutes
 }
 
+// WatchGRPCRoutes returns whether GRPCRoute watching is enabled.
+func (c *Config) WatchGRPCRoutes() bool {
+	if c.Watch.GRPCRoutes == nil {
+		return true
+	}
+	return *c.Watch.GRPCRoutes
+}
+
 // WatchGateways returns whether Gateway watching is enabled.
 func (c *Config) WatchGateways() bool {
 	if c.Watch.Gateways == nil {
 		return true
 	}
 	return *c.Watch.Gateways
+}
+
+// GatewayClass returns the configured gatewayClassName filter.
+func (c *Config) GatewayClass() string {
+	return c.Watch.GatewayClassName
 }
 
 // DuplicatesMode returns the configured duplicate detection mode.
@@ -270,6 +292,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Metrics.Address == "" {
 		cfg.Metrics.Address = ":9090"
+	}
+	if cfg.Watch.GatewayClassName == "" {
+		cfg.Watch.GatewayClassName = "vrata"
 	}
 }
 

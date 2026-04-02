@@ -191,3 +191,61 @@ reconcile an HTTPRoute when one of its backendRefs is denied — skip the whole 
 Do not enforce ReferenceGrants on same-namespace references.
 
 ---
+
+## GRPCRoute support: service/method → path conversion
+
+**Date**: 2026-03-31
+**Status**: Implemented
+
+GRPCRoutes are mapped to Vrata Routes with `grpc: true` and HTTP path matching
+derived from the gRPC service and method names:
+
+- `Service: "pkg.Svc", Method: "Get"` → `match.path: "/pkg.Svc/Get"`
+- `Service: "pkg.Svc"` (no method) → `match.pathPrefix: "/pkg.Svc/"`
+- Empty (no service/method) → `match.pathPrefix: "/"`
+- RegularExpression → `match.pathRegex`
+
+All gRPC routes enforce `match.methods: ["POST"]` since gRPC only uses POST.
+
+The controller reuses the same reconciler (`ApplyHTTPRoute`) for GRPCRoutes since
+the output (`MappedEntities`) is structurally identical — the only difference is
+the `grpc: true` flag and the path derivation. Destinations are shared between
+HTTPRoutes and GRPCRoutes.
+
+**Reasoning**: gRPC uses `/{package.Service}/{Method}` as the HTTP/2 path. Converting
+service/method matching to path matching at the controller level means the proxy
+needs no GRPCRoute-specific logic beyond the existing `grpc: true` content-type gate.
+
+**Do not**: add GRPCRoute-specific types to the Vrata model. The proxy's `MatchRule.GRPC`
+bool + path matching covers all cases. Do not create separate destination entities for
+gRPC services — they share the same k8s Services as HTTP backends.
+
+---
+
+## GatewayClass filtering and Gateway status
+
+**Date**: 2026-03-31
+**Status**: Implemented
+
+The controller watches `GatewayClass` resources and claims those with
+`spec.controllerName: "vrata.io/controller"` by writing `Accepted: True`.
+Only Gateways referencing a matching `gatewayClassName` (default: `"vrata"`,
+configurable via `watch.gatewayClassName`) are reconciled.
+
+The controller writes status conditions on Gateways:
+- `Accepted` + `Programmed` at the Gateway level
+- `Accepted` + `Programmed` per listener
+- Unsupported protocols (`TCP`, `UDP`) produce `Accepted: False` with
+  reason `UnsupportedProtocol`
+
+Listeners are now updated (not just created). Port, protocol, or TLS changes
+trigger a Vrata `UpdateListener` call.
+
+**Reasoning**: the Gateway API spec requires controllers to claim a GatewayClass
+and only reconcile Gateways belonging to their class. Status conditions are
+required for interoperability with `kubectl` and conformance tests.
+
+**Do not**: process Gateways without checking `gatewayClassName`. Do not skip
+writing Gateway or listener status conditions.
+
+---

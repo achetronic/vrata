@@ -1,8 +1,8 @@
 // Copyright 2026 The Vrata Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Controller synchronises Gateway API resources (HTTPRoute, Gateway) from
-// Kubernetes to Vrata via its REST API. Changes are batched and published
+// Controller synchronises Gateway API resources (HTTPRoute, GRPCRoute, Gateway)
+// from Kubernetes to Vrata via its REST API. Changes are batched and published
 // as versioned snapshots.
 //
 // Usage:
@@ -222,8 +222,10 @@ func run() error {
 	logger.Info("controller started",
 		slog.String("vrata", cfg.ControlPlaneURL),
 		slog.Bool("httpRoutes", cfg.WatchHTTPRoutes()),
+		slog.Bool("grpcRoutes", cfg.WatchGRPCRoutes()),
 		slog.Bool("superHttpRoutes", cfg.WatchSuperHTTPRoutes()),
 		slog.Bool("gateways", cfg.WatchGateways()),
+		slog.String("gatewayClassName", cfg.GatewayClass()),
 	)
 
 	// Build the reconcile loop as a function — called directly or via leader election.
@@ -235,6 +237,10 @@ func run() error {
 			if detector != nil {
 				detector.Reset()
 			}
+
+			// --- Phase 0: GatewayClass claim ---
+
+			claimGatewayClass(ctx, informerCache, statusWriter, cfg.GatewayClass(), logger)
 
 			// --- Phase 1: populate the work queue from the informer cache,
 			// and build the full desired groups set for GC ---
@@ -251,6 +257,19 @@ func run() error {
 						ref := workqueue.RouteRef{Namespace: hr.Namespace, Name: hr.Name}
 						wq.Observe(ref, hr.Annotations, knownSingles)
 						desiredGroups[fmt.Sprintf("k8s:%s/%s", hr.Namespace, hr.Name)] = true
+					}
+				}
+			}
+			if cfg.WatchGRPCRoutes() {
+				var routes gwapiv1.GRPCRouteList
+				if err := informerCache.List(ctx, &routes); err != nil {
+					logger.Error("listing GRPCRoutes for work queue", slog.String("error", err.Error()))
+				} else {
+					for i := range routes.Items {
+						gr := &routes.Items[i]
+						ref := workqueue.RouteRef{Namespace: gr.Namespace, Name: gr.Name, GRPC: true}
+						wq.Observe(ref, gr.Annotations, knownSingles)
+						desiredGroups[fmt.Sprintf("k8s:%s/%s", gr.Namespace, gr.Name)] = true
 					}
 				}
 			}
@@ -276,7 +295,6 @@ func run() error {
 			if head != nil {
 				switch head.Kind {
 				case workqueue.KindSingle:
-					// Process single route immediately.
 					ref := head.Single
 					changes, gName, err := reconcileSingleRoute(ctx, informerCache, rec, bat, statusWriter, detector, dupMode, refGrantChecker, m, logger, ref)
 					if err != nil {
@@ -345,7 +363,7 @@ func run() error {
 			// --- Phase 3: Gateways (always processed, not queue-gated) ---
 
 			if cfg.WatchGateways() {
-				if err := syncAllGateways(ctx, informerCache, rec, bat, logger); err != nil {
+				if err := syncAllGateways(ctx, informerCache, rec, bat, statusWriter, cfg.GatewayClass(), logger); err != nil {
 					logger.Error("Gateway sync failed", slog.String("error", err.Error()))
 					if m != nil {
 						m.ReconcileErrors.WithLabelValues("gateway").Inc()
@@ -441,9 +459,31 @@ func run() error {
 	return nil
 }
 
-// syncAllGateways lists all Gateways, reconciles their Listeners, and removes
-// orphaned listeners that no longer correspond to any Gateway in Kubernetes.
-func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, logger *slog.Logger) error {
+// claimGatewayClass finds and claims the GatewayClass matching our controller name,
+// setting its Accepted condition.
+func claimGatewayClass(ctx context.Context, c cache.Cache, sw *status.Writer, className string, logger *slog.Logger) {
+	if className == "" {
+		return
+	}
+	var gcList gwapiv1.GatewayClassList
+	if err := c.List(ctx, &gcList); err != nil {
+		logger.Error("listing GatewayClasses", slog.String("error", err.Error()))
+		return
+	}
+	for i := range gcList.Items {
+		gc := &gcList.Items[i]
+		if gc.Spec.ControllerName != status.ControllerName {
+			continue
+		}
+		if err := sw.SetGatewayClassAccepted(ctx, gc, true, string(gwapiv1.GatewayClassReasonAccepted), "Accepted by Vrata controller"); err != nil {
+			logger.Error("setting GatewayClass status", slog.String("name", gc.Name), slog.String("error", err.Error()))
+		}
+	}
+}
+
+// syncAllGateways lists all Gateways matching our gatewayClassName, reconciles
+// their Listeners, writes Gateway status, and removes orphaned listeners.
+func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, sw *status.Writer, className string, logger *slog.Logger) error {
 	var gateways gwapiv1.GatewayList
 	if err := c.List(ctx, &gateways); err != nil {
 		return fmt.Errorf("listing Gateways: %w", err)
@@ -452,23 +492,95 @@ func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconci
 	vrataClient := rec.Client()
 	desiredNames := make(map[string]bool)
 
-	for _, gw := range gateways.Items {
-		input := gatewayToInput(&gw)
+	for i := range gateways.Items {
+		gw := &gateways.Items[i]
+
+		if className != "" && string(gw.Spec.GatewayClassName) != className {
+			continue
+		}
+
+		input := gatewayToInput(gw)
 		listeners := mapper.MapGateway(input)
+		allValid := true
 
 		for _, l := range listeners {
 			desiredNames[l.Name] = true
 			existing, err := findListenerByName(ctx, vrataClient, l.Name)
 			if err != nil {
 				logger.Error("checking listener", slog.String("name", l.Name), slog.String("error", err.Error()))
+				allValid = false
 				continue
 			}
 			if existing == nil {
 				if _, err := vrataClient.CreateListener(ctx, l); err != nil {
 					logger.Error("creating listener", slog.String("name", l.Name), slog.String("error", err.Error()))
+					allValid = false
 					continue
 				}
 				bat.Signal(ctx)
+			} else {
+				if err := vrataClient.UpdateListener(ctx, existing.ID, l); err != nil {
+					logger.Error("updating listener", slog.String("name", l.Name), slog.String("error", err.Error()))
+					allValid = false
+					continue
+				}
+			}
+
+			listenerInput := findListenerInput(input, l.Name)
+			if listenerInput != nil {
+				var listenerConds []metav1.Condition
+				now := metav1.Now()
+				if mapper.GatewayListenerProtocolSupported(listenerInput.Protocol) {
+					listenerConds = append(listenerConds,
+						metav1.Condition{
+							Type:               string(gwapiv1.ListenerConditionAccepted),
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: gw.Generation,
+							LastTransitionTime: now,
+							Reason:             string(gwapiv1.ListenerReasonAccepted),
+							Message:            "Listener accepted",
+						},
+						metav1.Condition{
+							Type:               string(gwapiv1.ListenerConditionProgrammed),
+							Status:             metav1.ConditionTrue,
+							ObservedGeneration: gw.Generation,
+							LastTransitionTime: now,
+							Reason:             string(gwapiv1.ListenerReasonProgrammed),
+							Message:            "Listener programmed in Vrata",
+						},
+					)
+				} else {
+					listenerConds = append(listenerConds,
+						metav1.Condition{
+							Type:               string(gwapiv1.ListenerConditionAccepted),
+							Status:             metav1.ConditionFalse,
+							ObservedGeneration: gw.Generation,
+							LastTransitionTime: now,
+							Reason:             string(gwapiv1.ListenerReasonUnsupportedProtocol),
+							Message:            fmt.Sprintf("protocol %q is not supported", listenerInput.Protocol),
+						},
+					)
+					allValid = false
+				}
+				if err := sw.SetListenerConditions(ctx, gw, listenerInput.Name, listenerConds); err != nil {
+					logger.Error("setting listener status", slog.String("name", listenerInput.Name), slog.String("error", err.Error()))
+				}
+			}
+		}
+
+		if allValid {
+			if err := sw.SetGatewayAccepted(ctx, gw, true, string(gwapiv1.GatewayReasonAccepted), "Accepted by Vrata controller"); err != nil {
+				logger.Error("setting Gateway Accepted status", slog.String("name", gw.Name), slog.String("error", err.Error()))
+			}
+			if err := sw.SetGatewayProgrammed(ctx, gw, true, string(gwapiv1.GatewayReasonProgrammed), "All listeners programmed"); err != nil {
+				logger.Error("setting Gateway Programmed status", slog.String("name", gw.Name), slog.String("error", err.Error()))
+			}
+		} else {
+			if err := sw.SetGatewayAccepted(ctx, gw, true, string(gwapiv1.GatewayReasonListenersNotValid), "Some listeners could not be programmed"); err != nil {
+				logger.Error("setting Gateway Accepted status", slog.String("name", gw.Name), slog.String("error", err.Error()))
+			}
+			if err := sw.SetGatewayProgrammed(ctx, gw, false, string(gwapiv1.GatewayReasonInvalid), "Some listeners failed"); err != nil {
+				logger.Error("setting Gateway Programmed status", slog.String("name", gw.Name), slog.String("error", err.Error()))
 			}
 		}
 	}
@@ -496,13 +608,34 @@ func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconci
 	return nil
 }
 
-// reconcileSingleRoute looks up one HTTPRoute or SuperHTTPRoute from the cache
-// and applies it to Vrata. Returns the number of changes, the group name for GC,
-// and any error.
+// findListenerInput returns the GatewayListenerInput matching the given Vrata
+// listener name. Returns nil if not found.
+func findListenerInput(input mapper.GatewayInput, vrataName string) *mapper.GatewayListenerInput {
+	for i, l := range input.Listeners {
+		expected := fmt.Sprintf("k8s:%s/%s/%s", input.Namespace, input.Name, l.Name)
+		if expected == vrataName {
+			return &input.Listeners[i]
+		}
+	}
+	return nil
+}
+
+// reconcileSingleRoute looks up one HTTPRoute, GRPCRoute, or SuperHTTPRoute
+// from the cache and applies it to Vrata. Returns the number of changes,
+// the group name for GC, and any error.
 func reconcileSingleRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, sw *status.Writer, detector *dedup.Detector, dupMode config.DuplicateMode, rgc *refgrant.Checker, m *kcmetrics.Metrics, logger *slog.Logger, ref *workqueue.RouteRef) (int, string, error) {
+	groupName := fmt.Sprintf("k8s:%s/%s", ref.Namespace, ref.Name)
+
+	if ref.GRPC {
+		return reconcileGRPCRoute(ctx, c, rec, bat, sw, detector, dupMode, rgc, m, logger, ref, groupName)
+	}
+	return reconcileHTTPRoute(ctx, c, rec, bat, sw, detector, dupMode, rgc, m, logger, ref, groupName)
+}
+
+// reconcileHTTPRoute handles reconciliation of an HTTPRoute or SuperHTTPRoute.
+func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, sw *status.Writer, detector *dedup.Detector, dupMode config.DuplicateMode, rgc *refgrant.Checker, m *kcmetrics.Metrics, logger *slog.Logger, ref *workqueue.RouteRef, groupName string) (int, string, error) {
 	var input mapper.HTTPRouteInput
 	var hr *gwapiv1.HTTPRoute
-	groupName := fmt.Sprintf("k8s:%s/%s", ref.Namespace, ref.Name)
 
 	if ref.Super {
 		var shr vrataapiv1.SuperHTTPRoute
@@ -602,6 +735,74 @@ func reconcileSingleRoute(ctx context.Context, c cache.Cache, rec *reconciler.Re
 	return changes, groupName, nil
 }
 
+// reconcileGRPCRoute handles reconciliation of a GRPCRoute.
+func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, sw *status.Writer, detector *dedup.Detector, dupMode config.DuplicateMode, rgc *refgrant.Checker, m *kcmetrics.Metrics, logger *slog.Logger, ref *workqueue.RouteRef, groupName string) (int, string, error) {
+	var fetched gwapiv1.GRPCRoute
+	if err := c.Get(ctx, runtimeclient.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, &fetched); err != nil {
+		return 0, groupName, fmt.Errorf("getting GRPCRoute %s/%s: %w", ref.Namespace, ref.Name, err)
+	}
+	gr := &fetched
+	input := grpcRouteToInput(gr)
+
+	if rgc != nil {
+		denied := false
+		for _, rule := range input.Rules {
+			for _, br := range rule.BackendRefs {
+				if br.ServiceNamespace != gr.Namespace {
+					allowed, err := rgc.AllowedBackendRef(ctx, gr.Namespace, br.ServiceNamespace, br.ServiceName)
+					if err != nil {
+						logger.Error("checking ReferenceGrant",
+							slog.String("namespace", gr.Namespace),
+							slog.String("name", gr.Name),
+							slog.String("error", err.Error()),
+						)
+					}
+					if !allowed {
+						denied = true
+						if m != nil {
+							m.RefGrantDenied.Inc()
+						}
+						if sw != nil {
+							sw.SetGRPCRouteResolvedRefs(ctx, gr, false, fmt.Sprintf(
+								"cross-namespace backendRef %s/%s denied: no matching ReferenceGrant",
+								br.ServiceNamespace, br.ServiceName,
+							))
+						}
+						break
+					}
+				}
+			}
+			if denied {
+				break
+			}
+		}
+		if denied {
+			return 0, groupName, nil
+		}
+	}
+
+	mapped := mapper.MapGRPCRoute(input)
+	changes, err := rec.ApplyHTTPRoute(ctx, mapped)
+	if err != nil {
+		if sw != nil {
+			sw.SetGRPCRouteAccepted(ctx, gr, false, "SyncFailed", err.Error())
+		}
+		return 0, groupName, fmt.Errorf("applying grpc route %s/%s: %w", ref.Namespace, ref.Name, err)
+	}
+	if changes > 0 {
+		for j := 0; j < changes; j++ {
+			bat.Signal(ctx)
+		}
+		if sw != nil {
+			sw.SetGRPCRouteAccepted(ctx, gr, true, "Synced", "Successfully synced to Vrata")
+		}
+		if m != nil {
+			m.ReconcileTotal.WithLabelValues("grpcroute", "success").Inc()
+		}
+	}
+	return changes, groupName, nil
+}
+
 // formatOverlapMessage builds a human-readable message listing all overlaps.
 func formatOverlapMessage(ols []dedup.Overlap) string {
 	var parts []string
@@ -650,7 +851,8 @@ func parseGroupName(groupName string) (string, string, bool) {
 }
 
 // gcOrphanedGroups deletes k8s: groups (and their routes, middlewares, destinations)
-// from Vrata that no longer correspond to any HTTPRoute or SuperHTTPRoute in Kubernetes.
+// from Vrata that no longer correspond to any HTTPRoute, GRPCRoute, or
+// SuperHTTPRoute in Kubernetes.
 func gcOrphanedGroups(ctx context.Context, rec *reconciler.Reconciler, bat *batcher.Batcher, desiredGroups map[string]bool, logger *slog.Logger) {
 	ownedGroups, err := rec.OwnedGroupNames(ctx)
 	if err != nil {
@@ -708,6 +910,112 @@ func gatewayToInput(gw *gwapiv1.Gateway) mapper.GatewayInput {
 // gatewayHTTPRouteToInput converts a Gateway API HTTPRoute to the mapper's input type.
 func gatewayHTTPRouteToInput(hr *gwapiv1.HTTPRoute) mapper.HTTPRouteInput {
 	return httpRouteSpecToInput(hr.Namespace, hr.Name, &hr.Spec)
+}
+
+// grpcRouteToInput converts a Gateway API GRPCRoute to the mapper's input type.
+func grpcRouteToInput(gr *gwapiv1.GRPCRoute) mapper.GRPCRouteInput {
+	input := mapper.GRPCRouteInput{
+		Name:      gr.Name,
+		Namespace: gr.Namespace,
+	}
+
+	for _, h := range gr.Spec.Hostnames {
+		input.Hostnames = append(input.Hostnames, string(h))
+	}
+
+	for _, rule := range gr.Spec.Rules {
+		ri := mapper.GRPCRuleInput{}
+
+		for _, match := range rule.Matches {
+			mi := mapper.GRPCMatchInput{}
+			if match.Method != nil {
+				if match.Method.Service != nil {
+					mi.ServiceName = *match.Method.Service
+				}
+				if match.Method.Method != nil {
+					mi.MethodName = *match.Method.Method
+				}
+				if match.Method.Type != nil {
+					mi.MatchType = string(*match.Method.Type)
+				}
+			}
+			for _, hm := range match.Headers {
+				hi := mapper.HeaderMatchInput{
+					Name:  string(hm.Name),
+					Value: hm.Value,
+				}
+				if hm.Type != nil {
+					hi.Type = string(*hm.Type)
+				}
+				mi.Headers = append(mi.Headers, hi)
+			}
+			ri.Matches = append(ri.Matches, mi)
+		}
+
+		for _, br := range rule.BackendRefs {
+			ns := gr.Namespace
+			if br.Namespace != nil {
+				ns = string(*br.Namespace)
+			}
+			port := uint32(0)
+			if br.Port != nil {
+				port = uint32(*br.Port)
+			}
+			weight := uint32(1)
+			if br.Weight != nil {
+				weight = uint32(*br.Weight)
+			}
+			ri.BackendRefs = append(ri.BackendRefs, mapper.BackendRefInput{
+				ServiceName:      string(br.Name),
+				ServiceNamespace: ns,
+				Port:             port,
+				Weight:           weight,
+			})
+		}
+
+		for _, f := range rule.Filters {
+			fi := mapper.FilterInput{Type: string(f.Type)}
+			switch f.Type {
+			case gwapiv1.GRPCRouteFilterRequestHeaderModifier:
+				if f.RequestHeaderModifier != nil {
+					for _, h := range f.RequestHeaderModifier.Add {
+						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
+							Name: string(h.Name), Value: h.Value,
+						})
+					}
+					for _, h := range f.RequestHeaderModifier.Set {
+						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
+							Name: string(h.Name), Value: h.Value,
+						})
+					}
+					for _, name := range f.RequestHeaderModifier.Remove {
+						fi.HeadersToRemove = append(fi.HeadersToRemove, name)
+					}
+				}
+			case gwapiv1.GRPCRouteFilterResponseHeaderModifier:
+				if f.ResponseHeaderModifier != nil {
+					for _, h := range f.ResponseHeaderModifier.Add {
+						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
+							Name: string(h.Name), Value: h.Value,
+						})
+					}
+					for _, h := range f.ResponseHeaderModifier.Set {
+						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
+							Name: string(h.Name), Value: h.Value,
+						})
+					}
+					for _, name := range f.ResponseHeaderModifier.Remove {
+						fi.HeadersToRemove = append(fi.HeadersToRemove, name)
+					}
+				}
+			}
+			ri.Filters = append(ri.Filters, fi)
+		}
+
+		input.Rules = append(input.Rules, ri)
+	}
+
+	return input
 }
 
 // httpRouteSpecToInput converts a Gateway API HTTPRouteSpec into a mapper.HTTPRouteInput.

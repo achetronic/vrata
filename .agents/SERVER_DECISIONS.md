@@ -1275,3 +1275,58 @@ protecting everything sensitive.
 
 **Do not**: add key rotation logic. Do not encrypt non-sensitive buckets.
 Do not make encryption mandatory — dev mode must work without a key.
+
+---
+
+## h2c support: cleartext HTTP/2 for gRPC without TLS
+
+**Date**: 2026-03-31
+**Status**: Implemented
+
+### Downstream (client → proxy)
+
+When `listener.http2 == true` and no TLS is configured, the listener wraps
+its handler with `h2c.NewHandler` from `golang.org/x/net/http2/h2c`. This
+enables HTTP/2 over cleartext TCP (RFC 7540 §3.2 + §3.4), which is required
+for gRPC clients connecting without TLS.
+
+When TLS is configured, Go's `net/http` enables HTTP/2 automatically via
+ALPN negotiation — `h2c.NewHandler` is not needed and not applied.
+
+### Upstream (proxy → backend)
+
+When `destination.options.http2 == true`, the transport is configured for
+HTTP/2. The behavior depends on whether TLS is configured on the destination:
+
+- **With TLS**: `transport.ForceAttemptHTTP2 = true` + ALPN `"h2"` proto.
+  Standard HTTP/2 over TLS.
+- **Without TLS**: `http2.ConfigureTransport(transport)` from `golang.org/x/net/http2`.
+  This registers the `h2` protocol on the transport so cleartext HTTP/2
+  connections work to upstream gRPC services.
+
+### Streaming flush
+
+`httputil.ReverseProxy.FlushInterval` is set to `-1` on all reverse proxies.
+This forces immediate flush after every upstream `Write`, which is required for:
+
+- gRPC streaming (server-stream, client-stream, bidi-stream)
+- gRPC trailer propagation (`grpc-status`, `grpc-message`)
+- SSE (Server-Sent Events)
+- Any chunked response where the client needs data as it arrives
+
+Without immediate flush, `httputil.ReverseProxy` buffers response data and
+delivers it in chunks, adding latency and breaking protocols that depend on
+frame-level delivery.
+
+**Reasoning**: gRPC is a first-class protocol in Vrata. It must work both
+with and without TLS, both downstream and upstream. The h2c mechanism is
+the standard way to support HTTP/2 without TLS in Go. Immediate flushing
+is unconditional because the cost is negligible (one extra syscall per write)
+and the breakage from buffering is severe for streaming protocols.
+
+**Do not**: conditionally enable flush only for gRPC — streaming HTTP
+responses also benefit. Do not apply `h2c.NewHandler` when TLS is
+configured — Go handles HTTP/2 over TLS automatically and h2c would
+interfere. Do not use a custom `http2.Transport` directly — always
+configure the standard `http.Transport` via `http2.ConfigureTransport`
+so that HTTP/1.1 fallback remains available.

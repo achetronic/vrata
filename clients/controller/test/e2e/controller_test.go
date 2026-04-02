@@ -1548,3 +1548,182 @@ func TestE2E_Controller_OverlapDetection_SameMethodOverlaps(t *testing.T) {
 		t.Error("expected overlap: same hostname + path + method GET from different namespaces")
 	}
 }
+
+func TestE2E_Controller_SyncGRPCRoute(t *testing.T) {
+	ctx := context.Background()
+	kc := k8sClient(t)
+	vrataCleanOwned(t)
+	defer vrataCleanOwned(t)
+
+	exactMatch := gwapiv1.GRPCMethodMatchExact
+	port := gwapiv1.PortNumber(50051)
+	gr := &gwapiv1.GRPCRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "e2e-grpc-test",
+			Namespace: "default",
+		},
+		Spec: gwapiv1.GRPCRouteSpec{
+			Hostnames: []gwapiv1.Hostname{"grpc.example.com"},
+			Rules: []gwapiv1.GRPCRouteRule{
+				{
+					Matches: []gwapiv1.GRPCRouteMatch{
+						{
+							Method: &gwapiv1.GRPCMethodMatch{
+								Type:    &exactMatch,
+								Service: strPtr("mypackage.OrderService"),
+								Method:  strPtr("GetOrder"),
+							},
+						},
+					},
+					BackendRefs: []gwapiv1.GRPCBackendRef{
+						{BackendRef: gwapiv1.BackendRef{
+							BackendObjectReference: gwapiv1.BackendObjectReference{
+								Name: "grpc-backend",
+								Port: &port,
+							},
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	if err := kc.Create(ctx, gr); err != nil {
+		t.Fatalf("creating GRPCRoute: %v", err)
+	}
+	defer kc.Delete(ctx, gr)
+
+	vrataClient := vrata.NewClient("http://localhost:8080")
+	rec := reconciler.NewReconciler(vrataClient, testLogger())
+	rec.Init(ctx)
+
+	input := mapper.GRPCRouteInput{
+		Name:      gr.Name,
+		Namespace: gr.Namespace,
+		Hostnames: []string{"grpc.example.com"},
+		Rules: []mapper.GRPCRuleInput{
+			{
+				Matches: []mapper.GRPCMatchInput{
+					{ServiceName: "mypackage.OrderService", MethodName: "GetOrder", MatchType: "Exact"},
+				},
+				BackendRefs: []mapper.BackendRefInput{
+					{ServiceName: "grpc-backend", ServiceNamespace: "default", Port: 50051, Weight: 1},
+				},
+			},
+		},
+	}
+	mapped := mapper.MapGRPCRoute(input)
+	changes, err := rec.ApplyHTTPRoute(ctx, mapped)
+	if err != nil {
+		t.Fatalf("apply GRPCRoute: %v", err)
+	}
+	if changes == 0 {
+		t.Error("expected changes from apply")
+	}
+
+	routes, err := vrataClient.ListRoutes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, r := range routes {
+		if r.Name == "k8s:default/e2e-grpc-test/rule-0/match-0" {
+			found = true
+			if r.Match["grpc"] != true {
+				t.Error("expected grpc flag on route match")
+			}
+			if r.Match["path"] != "/mypackage.OrderService/GetOrder" {
+				t.Errorf("expected gRPC path, got %v", r.Match["path"])
+			}
+		}
+	}
+	if !found {
+		t.Error("gRPC route not found in Vrata after sync")
+	}
+}
+
+func TestE2E_Controller_DeleteGRPCRoute(t *testing.T) {
+	ctx := context.Background()
+	vrataCleanOwned(t)
+	defer vrataCleanOwned(t)
+
+	vrataClient := vrata.NewClient("http://localhost:8080")
+	rec := reconciler.NewReconciler(vrataClient, testLogger())
+	rec.Init(ctx)
+
+	input := mapper.GRPCRouteInput{
+		Name: "e2e-grpc-delete", Namespace: "default",
+		Hostnames: []string{"grpc.example.com"},
+		Rules: []mapper.GRPCRuleInput{
+			{
+				Matches: []mapper.GRPCMatchInput{
+					{ServiceName: "pkg.Svc", MethodName: "Do", MatchType: "Exact"},
+				},
+				BackendRefs: []mapper.BackendRefInput{
+					{ServiceName: "grpc-svc", ServiceNamespace: "default", Port: 50051, Weight: 1},
+				},
+			},
+		},
+	}
+	mapped := mapper.MapGRPCRoute(input)
+	if _, err := rec.ApplyHTTPRoute(ctx, mapped); err != nil {
+		t.Fatal(err)
+	}
+
+	changes, err := rec.DeleteHTTPRoute(ctx, "default", "e2e-grpc-delete")
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if changes == 0 {
+		t.Error("expected changes from delete")
+	}
+
+	routes, _ := vrataClient.ListRoutes(ctx)
+	for _, r := range routes {
+		if strings.HasPrefix(r.Name, "k8s:default/e2e-grpc-delete/") {
+			t.Error("route still exists after delete")
+		}
+	}
+}
+
+func TestE2E_Controller_GRPCRouteServiceOnlyMatch(t *testing.T) {
+	ctx := context.Background()
+	vrataCleanOwned(t)
+	defer vrataCleanOwned(t)
+
+	vrataClient := vrata.NewClient("http://localhost:8080")
+	rec := reconciler.NewReconciler(vrataClient, testLogger())
+	rec.Init(ctx)
+
+	input := mapper.GRPCRouteInput{
+		Name: "e2e-grpc-svc-only", Namespace: "default",
+		Rules: []mapper.GRPCRuleInput{
+			{
+				Matches: []mapper.GRPCMatchInput{
+					{ServiceName: "mypackage.MyService", MatchType: "Exact"},
+				},
+				BackendRefs: []mapper.BackendRefInput{
+					{ServiceName: "grpc-svc", ServiceNamespace: "default", Port: 50051, Weight: 1},
+				},
+			},
+		},
+	}
+	mapped := mapper.MapGRPCRoute(input)
+	if _, err := rec.ApplyHTTPRoute(ctx, mapped); err != nil {
+		t.Fatal(err)
+	}
+
+	routes, _ := vrataClient.ListRoutes(ctx)
+	for _, r := range routes {
+		if r.Name == "k8s:default/e2e-grpc-svc-only/rule-0/match-0" {
+			if r.Match["pathPrefix"] != "/mypackage.MyService/" {
+				t.Errorf("expected service prefix path, got %v", r.Match)
+			}
+			if r.Match["grpc"] != true {
+				t.Error("expected grpc flag")
+			}
+			return
+		}
+	}
+	t.Error("route not found")
+}

@@ -1,8 +1,8 @@
 // Copyright 2026 The Vrata Authors
 // SPDX-License-Identifier: Apache-2.0
 
-// Package status writes Gateway API status conditions back to HTTPRoute
-// resources so operators can see the sync state via kubectl.
+// Package status writes Gateway API status conditions back to HTTPRoute,
+// GRPCRoute, and Gateway resources so operators can see the sync state via kubectl.
 package status
 
 import (
@@ -15,7 +15,10 @@ import (
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// Writer updates HTTPRoute status conditions.
+// ControllerName is the Gateway API controller name used for status entries.
+const ControllerName gwapiv1.GatewayController = "vrata.io/controller"
+
+// Writer updates Gateway API status conditions.
 type Writer struct {
 	client runtimeclient.Client
 }
@@ -24,6 +27,8 @@ type Writer struct {
 func NewWriter(client runtimeclient.Client) *Writer {
 	return &Writer{client: client}
 }
+
+// ─── HTTPRoute ──────────────────────────────────────────────────────────────
 
 // SetAccepted marks the HTTPRoute as accepted (successfully synced to Vrata).
 func (w *Writer) SetAccepted(ctx context.Context, hr *gwapiv1.HTTPRoute, accepted bool, reason, message string) error {
@@ -42,7 +47,7 @@ func (w *Writer) SetAccepted(ctx context.Context, hr *gwapiv1.HTTPRoute, accepte
 		Message:            message,
 	}
 
-	setCondition(&hr.Status.Parents, cond)
+	setRouteCondition(&hr.Status.Parents, hr.Spec.ParentRefs, cond)
 
 	if err := w.client.Status().Update(ctx, hr); err != nil {
 		return fmt.Errorf("updating HTTPRoute %s/%s status: %w", hr.Namespace, hr.Name, err)
@@ -69,7 +74,7 @@ func (w *Writer) SetResolvedRefs(ctx context.Context, hr *gwapiv1.HTTPRoute, res
 		Message:            message,
 	}
 
-	setCondition(&hr.Status.Parents, cond)
+	setRouteCondition(&hr.Status.Parents, hr.Spec.ParentRefs, cond)
 
 	if err := w.client.Status().Update(ctx, hr); err != nil {
 		return fmt.Errorf("updating HTTPRoute %s/%s status: %w", hr.Namespace, hr.Name, err)
@@ -77,42 +82,212 @@ func (w *Writer) SetResolvedRefs(ctx context.Context, hr *gwapiv1.HTTPRoute, res
 	return nil
 }
 
-// setCondition ensures a RouteParentStatus exists and sets the condition.
-func setCondition(parents *[]gwapiv1.RouteParentStatus, cond metav1.Condition) {
+// ─── GRPCRoute ──────────────────────────────────────────────────────────────
+
+// SetGRPCRouteAccepted marks the GRPCRoute as accepted.
+func (w *Writer) SetGRPCRouteAccepted(ctx context.Context, gr *gwapiv1.GRPCRoute, accepted bool, reason, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	if !accepted {
+		status = metav1.ConditionFalse
+	}
+
+	cond := metav1.Condition{
+		Type:               string(gwapiv1.RouteConditionAccepted),
+		Status:             status,
+		ObservedGeneration: gr.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	}
+
+	setRouteCondition(&gr.Status.Parents, gr.Spec.ParentRefs, cond)
+
+	if err := w.client.Status().Update(ctx, gr); err != nil {
+		return fmt.Errorf("updating GRPCRoute %s/%s status: %w", gr.Namespace, gr.Name, err)
+	}
+	return nil
+}
+
+// SetGRPCRouteResolvedRefs marks whether all backendRefs in the GRPCRoute could be resolved.
+func (w *Writer) SetGRPCRouteResolvedRefs(ctx context.Context, gr *gwapiv1.GRPCRoute, resolved bool, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	reason := string(gwapiv1.RouteReasonResolvedRefs)
+	if !resolved {
+		status = metav1.ConditionFalse
+		reason = string(gwapiv1.RouteReasonBackendNotFound)
+	}
+
+	cond := metav1.Condition{
+		Type:               string(gwapiv1.RouteConditionResolvedRefs),
+		Status:             status,
+		ObservedGeneration: gr.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	}
+
+	setRouteCondition(&gr.Status.Parents, gr.Spec.ParentRefs, cond)
+
+	if err := w.client.Status().Update(ctx, gr); err != nil {
+		return fmt.Errorf("updating GRPCRoute %s/%s status: %w", gr.Namespace, gr.Name, err)
+	}
+	return nil
+}
+
+// ─── Gateway ────────────────────────────────────────────────────────────────
+
+// SetGatewayAccepted sets the Accepted condition on a Gateway.
+func (w *Writer) SetGatewayAccepted(ctx context.Context, gw *gwapiv1.Gateway, accepted bool, reason, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	if !accepted {
+		status = metav1.ConditionFalse
+	}
+
+	setGatewayCondition(&gw.Status.Conditions, metav1.Condition{
+		Type:               string(gwapiv1.GatewayConditionAccepted),
+		Status:             status,
+		ObservedGeneration: gw.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	})
+
+	if err := w.client.Status().Update(ctx, gw); err != nil {
+		return fmt.Errorf("updating Gateway %s/%s status: %w", gw.Namespace, gw.Name, err)
+	}
+	return nil
+}
+
+// SetGatewayProgrammed sets the Programmed condition on a Gateway.
+func (w *Writer) SetGatewayProgrammed(ctx context.Context, gw *gwapiv1.Gateway, programmed bool, reason, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	if !programmed {
+		status = metav1.ConditionFalse
+	}
+
+	setGatewayCondition(&gw.Status.Conditions, metav1.Condition{
+		Type:               string(gwapiv1.GatewayConditionProgrammed),
+		Status:             status,
+		ObservedGeneration: gw.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	})
+
+	if err := w.client.Status().Update(ctx, gw); err != nil {
+		return fmt.Errorf("updating Gateway %s/%s status: %w", gw.Namespace, gw.Name, err)
+	}
+	return nil
+}
+
+// SetListenerConditions sets conditions on a specific listener within a Gateway.
+func (w *Writer) SetListenerConditions(ctx context.Context, gw *gwapiv1.Gateway, listenerName string, conditions []metav1.Condition) error {
+	found := false
+	for i, ls := range gw.Status.Listeners {
+		if string(ls.Name) == listenerName {
+			for _, cond := range conditions {
+				setConditionInSlice(&gw.Status.Listeners[i].Conditions, cond)
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		gw.Status.Listeners = append(gw.Status.Listeners, gwapiv1.ListenerStatus{
+			Name:       gwapiv1.SectionName(listenerName),
+			Conditions: conditions,
+		})
+	}
+
+	if err := w.client.Status().Update(ctx, gw); err != nil {
+		return fmt.Errorf("updating Gateway %s/%s listener %s status: %w", gw.Namespace, gw.Name, listenerName, err)
+	}
+	return nil
+}
+
+// ─── GatewayClass ───────────────────────────────────────────────────────────
+
+// SetGatewayClassAccepted sets the Accepted condition on a GatewayClass.
+func (w *Writer) SetGatewayClassAccepted(ctx context.Context, gc *gwapiv1.GatewayClass, accepted bool, reason, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	if !accepted {
+		status = metav1.ConditionFalse
+	}
+
+	setGatewayCondition(&gc.Status.Conditions, metav1.Condition{
+		Type:               string(gwapiv1.GatewayClassConditionStatusAccepted),
+		Status:             status,
+		ObservedGeneration: gc.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	})
+
+	if err := w.client.Status().Update(ctx, gc); err != nil {
+		return fmt.Errorf("updating GatewayClass %s status: %w", gc.Name, err)
+	}
+	return nil
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+// setRouteCondition ensures a RouteParentStatus exists for our controller
+// and sets the condition. If the route has parentRefs, the first one is used
+// for the ParentRef field (correct per Gateway API spec).
+func setRouteCondition(parents *[]gwapiv1.RouteParentStatus, parentRefs []gwapiv1.ParentReference, cond metav1.Condition) {
+	parentRef := gwapiv1.ParentReference{
+		Name: "controller",
+	}
+	if len(parentRefs) > 0 {
+		parentRef = parentRefs[0]
+	}
+
 	if len(*parents) == 0 {
 		*parents = []gwapiv1.RouteParentStatus{{
-			ParentRef: gwapiv1.ParentReference{
-				Name: "controller",
-			},
-			ControllerName: "vrata.io/controller",
+			ParentRef:      parentRef,
+			ControllerName: ControllerName,
 			Conditions:     []metav1.Condition{cond},
 		}}
 		return
 	}
 
-	// Update existing parent status.
 	for i := range *parents {
-		if (*parents)[i].ControllerName == "vrata.io/controller" {
-			conditions := &(*parents)[i].Conditions
-			for j, c := range *conditions {
-				if c.Type == cond.Type {
-					(*conditions)[j] = cond
-					return
-				}
-			}
-			*conditions = append(*conditions, cond)
+		if (*parents)[i].ControllerName == ControllerName {
+			setConditionInSlice(&(*parents)[i].Conditions, cond)
 			return
 		}
 	}
 
-	// Add new parent status for our controller.
 	*parents = append(*parents, gwapiv1.RouteParentStatus{
-		ParentRef: gwapiv1.ParentReference{
-			Name: "controller",
-		},
-		ControllerName: "vrata.io/controller",
+		ParentRef:      parentRef,
+		ControllerName: ControllerName,
 		Conditions:     []metav1.Condition{cond},
 	})
+}
+
+// setGatewayCondition sets or updates a condition in a flat condition slice.
+func setGatewayCondition(conditions *[]metav1.Condition, cond metav1.Condition) {
+	if *conditions == nil {
+		*conditions = []metav1.Condition{cond}
+		return
+	}
+	setConditionInSlice(conditions, cond)
+}
+
+// setConditionInSlice updates an existing condition by type or appends a new one.
+func setConditionInSlice(conditions *[]metav1.Condition, cond metav1.Condition) {
+	for i, c := range *conditions {
+		if c.Type == cond.Type {
+			(*conditions)[i] = cond
+			return
+		}
+	}
+	*conditions = append(*conditions, cond)
 }
 
 // Timestamp returns a formatted timestamp for snapshot names.

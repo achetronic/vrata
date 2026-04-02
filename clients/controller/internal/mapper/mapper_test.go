@@ -366,3 +366,298 @@ func TestIsOwned(t *testing.T) {
 		t.Error("should not be owned")
 	}
 }
+
+func TestMapGateway_ProtocolHTTPS(t *testing.T) {
+	input := GatewayInput{
+		Name: "gw", Namespace: "ns",
+		Listeners: []GatewayListenerInput{
+			{Name: "https", Port: 443, Protocol: "HTTPS"},
+		},
+	}
+	listeners := MapGateway(input)
+	if listeners[0].TLS == nil {
+		t.Error("HTTPS listener should have TLS set")
+	}
+}
+
+func TestMapGateway_ProtocolGRPCS(t *testing.T) {
+	input := GatewayInput{
+		Name: "gw", Namespace: "ns",
+		Listeners: []GatewayListenerInput{
+			{Name: "grpcs", Port: 443, Protocol: "GRPCS"},
+		},
+	}
+	listeners := MapGateway(input)
+	if listeners[0].TLS == nil {
+		t.Error("GRPCS listener should have TLS set")
+	}
+}
+
+func TestMapGateway_ProtocolHTTP(t *testing.T) {
+	input := GatewayInput{
+		Name: "gw", Namespace: "ns",
+		Listeners: []GatewayListenerInput{
+			{Name: "http", Port: 80, Protocol: "HTTP"},
+		},
+	}
+	listeners := MapGateway(input)
+	if listeners[0].TLS != nil {
+		t.Error("HTTP listener should not have TLS")
+	}
+}
+
+func TestGatewayListenerProtocolSupported(t *testing.T) {
+	tests := []struct {
+		proto string
+		want  bool
+	}{
+		{"HTTP", true},
+		{"HTTPS", true},
+		{"GRPC", true},
+		{"GRPCS", true},
+		{"TCP", false},
+		{"UDP", false},
+		{"TLS", false},
+	}
+	for _, tc := range tests {
+		if got := GatewayListenerProtocolSupported(tc.proto); got != tc.want {
+			t.Errorf("GatewayListenerProtocolSupported(%q) = %v, want %v", tc.proto, got, tc.want)
+		}
+	}
+}
+
+func TestMapGRPCRoute_SimpleForward(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "grpc-svc", Namespace: "default",
+		Hostnames: []string{"grpc.example.com"},
+		Rules: []GRPCRuleInput{
+			{
+				Matches: []GRPCMatchInput{
+					{ServiceName: "mypackage.MyService", MethodName: "GetItem", MatchType: "Exact"},
+				},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "grpc-backend", ServiceNamespace: "default", Port: 50051, Weight: 1},
+				},
+			},
+		},
+	}
+
+	result := MapGRPCRoute(input)
+
+	if result.Group.Name != "k8s:default/grpc-svc" {
+		t.Errorf("group name: got %q", result.Group.Name)
+	}
+	if len(result.Group.Hostnames) != 1 || result.Group.Hostnames[0] != "grpc.example.com" {
+		t.Errorf("group hostnames: %v", result.Group.Hostnames)
+	}
+	if len(result.Routes) != 1 {
+		t.Fatalf("expected 1 route, got %d", len(result.Routes))
+	}
+	r := result.Routes[0]
+	if r.Name != "k8s:default/grpc-svc/rule-0/match-0" {
+		t.Errorf("route name: got %q", r.Name)
+	}
+	if r.Match["grpc"] != true {
+		t.Error("expected grpc flag in match")
+	}
+	if r.Match["path"] != "/mypackage.MyService/GetItem" {
+		t.Errorf("expected exact path /mypackage.MyService/GetItem, got %v", r.Match["path"])
+	}
+	methods, _ := r.Match["methods"].([]string)
+	if len(methods) != 1 || methods[0] != "POST" {
+		t.Errorf("expected methods [POST], got %v", r.Match["methods"])
+	}
+	if r.Forward == nil {
+		t.Fatal("expected forward action")
+	}
+	if len(result.Destinations) != 1 {
+		t.Fatalf("expected 1 destination, got %d", len(result.Destinations))
+	}
+}
+
+func TestMapGRPCRoute_ServiceOnlyMatch(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "grpc-svc", Namespace: "default",
+		Rules: []GRPCRuleInput{
+			{
+				Matches: []GRPCMatchInput{
+					{ServiceName: "mypackage.MyService", MatchType: "Exact"},
+				},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "backend", ServiceNamespace: "default", Port: 50051},
+				},
+			},
+		},
+	}
+	result := MapGRPCRoute(input)
+	r := result.Routes[0]
+	if r.Match["pathPrefix"] != "/mypackage.MyService/" {
+		t.Errorf("expected service prefix path, got %v", r.Match)
+	}
+}
+
+func TestMapGRPCRoute_WildcardMatch(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "grpc-all", Namespace: "default",
+		Rules: []GRPCRuleInput{
+			{
+				Matches: []GRPCMatchInput{
+					{},
+				},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "backend", ServiceNamespace: "default", Port: 50051},
+				},
+			},
+		},
+	}
+	result := MapGRPCRoute(input)
+	r := result.Routes[0]
+	if r.Match["pathPrefix"] != "/" {
+		t.Errorf("expected wildcard pathPrefix /, got %v", r.Match)
+	}
+	if r.Match["grpc"] != true {
+		t.Error("expected grpc flag")
+	}
+}
+
+func TestMapGRPCRoute_RegexMatch(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "grpc-regex", Namespace: "default",
+		Rules: []GRPCRuleInput{
+			{
+				Matches: []GRPCMatchInput{
+					{ServiceName: "mypackage\\..*", MatchType: "RegularExpression"},
+				},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "backend", ServiceNamespace: "default", Port: 50051},
+				},
+			},
+		},
+	}
+	result := MapGRPCRoute(input)
+	r := result.Routes[0]
+	if r.Match["pathRegex"] != "/mypackage\\..*/" {
+		t.Errorf("expected regex path, got %v", r.Match)
+	}
+}
+
+func TestMapGRPCRoute_MultipleMatches(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "multi", Namespace: "default",
+		Rules: []GRPCRuleInput{
+			{
+				Matches: []GRPCMatchInput{
+					{ServiceName: "svc.A", MethodName: "Get", MatchType: "Exact"},
+					{ServiceName: "svc.B", MethodName: "Put", MatchType: "Exact"},
+				},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "backend", ServiceNamespace: "default", Port: 50051},
+				},
+			},
+		},
+	}
+	result := MapGRPCRoute(input)
+	if len(result.Routes) != 2 {
+		t.Fatalf("expected 2 routes, got %d", len(result.Routes))
+	}
+	if result.Routes[0].Match["path"] != "/svc.A/Get" {
+		t.Errorf("route 0 path: %v", result.Routes[0].Match)
+	}
+	if result.Routes[1].Match["path"] != "/svc.B/Put" {
+		t.Errorf("route 1 path: %v", result.Routes[1].Match)
+	}
+}
+
+func TestMapGRPCRoute_HeaderFilter(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "grpc-hdr", Namespace: "default",
+		Rules: []GRPCRuleInput{
+			{
+				Matches: []GRPCMatchInput{{ServiceName: "svc.A", MatchType: "Exact"}},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "backend", ServiceNamespace: "default", Port: 50051},
+				},
+				Filters: []FilterInput{
+					{
+						Type:            "RequestHeaderModifier",
+						HeadersToAdd:    []HeaderValue{{Name: "X-Source", Value: "vrata"}},
+						HeadersToRemove: []string{"X-Internal"},
+					},
+				},
+			},
+		},
+	}
+	result := MapGRPCRoute(input)
+	if len(result.Middlewares) != 1 {
+		t.Fatalf("expected 1 middleware, got %d", len(result.Middlewares))
+	}
+	if result.Middlewares[0].Type != "headers" {
+		t.Errorf("expected headers type, got %q", result.Middlewares[0].Type)
+	}
+}
+
+func TestMapGRPCRoute_NoMatchesDefault(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "grpc-default", Namespace: "default",
+		Rules: []GRPCRuleInput{
+			{
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "backend", ServiceNamespace: "default", Port: 50051},
+				},
+			},
+		},
+	}
+	result := MapGRPCRoute(input)
+	if len(result.Routes) != 1 {
+		t.Fatalf("expected 1 route, got %d", len(result.Routes))
+	}
+	if result.Routes[0].Match["pathPrefix"] != "/" {
+		t.Errorf("expected default pathPrefix /, got %v", result.Routes[0].Match)
+	}
+}
+
+func TestMapGRPCRoute_HeaderMatch(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "grpc-hdr-match", Namespace: "default",
+		Rules: []GRPCRuleInput{
+			{
+				Matches: []GRPCMatchInput{
+					{
+						ServiceName: "svc.A",
+						MatchType:   "Exact",
+						Headers: []HeaderMatchInput{
+							{Name: "x-version", Value: "v2", Type: "Exact"},
+						},
+					},
+				},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "backend", ServiceNamespace: "default", Port: 50051},
+				},
+			},
+		},
+	}
+	result := MapGRPCRoute(input)
+	headers, ok := result.Routes[0].Match["headers"].([]map[string]any)
+	if !ok || len(headers) != 1 {
+		t.Fatalf("expected 1 header match, got %v", result.Routes[0].Match["headers"])
+	}
+	if headers[0]["name"] != "x-version" {
+		t.Errorf("expected header name x-version, got %v", headers[0])
+	}
+}
+
+func TestGRPCMethodPath(t *testing.T) {
+	tests := []struct {
+		svc, method, want string
+	}{
+		{"", "", "/"},
+		{"pkg.Svc", "", "/pkg.Svc/"},
+		{"pkg.Svc", "Get", "/pkg.Svc/Get"},
+	}
+	for _, tc := range tests {
+		got := grpcMethodPath(tc.svc, tc.method)
+		if got != tc.want {
+			t.Errorf("grpcMethodPath(%q, %q) = %q, want %q", tc.svc, tc.method, got, tc.want)
+		}
+	}
+}

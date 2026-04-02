@@ -39,12 +39,15 @@ const (
 	KindBatch
 )
 
-// RouteRef identifies a single HTTPRoute or SuperHTTPRoute by namespace and name.
+// RouteRef identifies a single HTTPRoute, GRPCRoute, or SuperHTTPRoute by
+// namespace and name.
 type RouteRef struct {
 	Namespace string
 	Name      string
 	// Super is true for SuperHTTPRoute resources.
 	Super bool
+	// GRPC is true for GRPCRoute resources.
+	GRPC bool
 }
 
 // Item is one element in the work queue. It is either a single route or a

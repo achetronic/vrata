@@ -42,7 +42,7 @@ func TestMatchesGrant_WrongSourceNamespace(t *testing.T) {
 	}
 }
 
-func TestMatchesGrant_WrongKind(t *testing.T) {
+func TestMatchesGrant_GRPCRouteKind(t *testing.T) {
 	grant := gwapiv1beta1.ReferenceGrant{
 		Spec: gwapiv1beta1.ReferenceGrantSpec{
 			From: []gwapiv1beta1.ReferenceGrantFrom{
@@ -53,8 +53,24 @@ func TestMatchesGrant_WrongKind(t *testing.T) {
 			},
 		},
 	}
+	if !matchesGrant(grant, "frontend") {
+		t.Error("should match GRPCRoute kind")
+	}
+}
+
+func TestMatchesGrant_WrongKind(t *testing.T) {
+	grant := gwapiv1beta1.ReferenceGrant{
+		Spec: gwapiv1beta1.ReferenceGrantSpec{
+			From: []gwapiv1beta1.ReferenceGrantFrom{
+				{Group: "gateway.networking.k8s.io", Kind: "TCPRoute", Namespace: "frontend"},
+			},
+			To: []gwapiv1beta1.ReferenceGrantTo{
+				{Group: "", Kind: "Service"},
+			},
+		},
+	}
 	if matchesGrant(grant, "frontend") {
-		t.Error("should not match GRPCRoute kind")
+		t.Error("should not match TCPRoute kind")
 	}
 }
 

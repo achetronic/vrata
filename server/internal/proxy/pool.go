@@ -107,6 +107,7 @@ func (dp *DestinationPool) ReverseProxyFor(ep *Endpoint) *httputil.ReverseProxy 
 	}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.Transport = ep.Transport
+	proxy.FlushInterval = -1
 	return proxy
 }
 

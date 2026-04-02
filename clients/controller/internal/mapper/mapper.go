@@ -90,8 +90,31 @@ type GatewayInput struct {
 type GatewayListenerInput struct {
 	Name     string
 	Port     uint32
-	Protocol string // "HTTP" or "HTTPS"
+	Protocol string // "HTTP", "HTTPS", "GRPC", "GRPCS"
 	Hostname string
+}
+
+// GRPCRouteInput holds the fields extracted from a Gateway API GRPCRoute.
+type GRPCRouteInput struct {
+	Name      string
+	Namespace string
+	Hostnames []string
+	Rules     []GRPCRuleInput
+}
+
+// GRPCRuleInput holds a single rule from a GRPCRoute.
+type GRPCRuleInput struct {
+	Matches     []GRPCMatchInput
+	BackendRefs []BackendRefInput
+	Filters     []FilterInput
+}
+
+// GRPCMatchInput holds a single match within a GRPCRoute rule.
+type GRPCMatchInput struct {
+	ServiceName string // e.g. "mypackage.MyService"
+	MethodName  string // e.g. "GetItem"
+	MatchType   string // "Exact" or "RegularExpression"
+	Headers     []HeaderMatchInput
 }
 
 // MappedEntities holds all Vrata entities produced from a single HTTPRoute.
@@ -222,9 +245,160 @@ func MapGateway(input GatewayInput) []vrata.Listener {
 			Address: "0.0.0.0",
 			Port:    l.Port,
 		}
+		switch l.Protocol {
+		case "HTTPS", "GRPCS", "TLS":
+			listener.TLS = map[string]any{"enabled": true}
+		}
 		listeners = append(listeners, listener)
 	}
 	return listeners
+}
+
+// GatewayListenerProtocolSupported returns true if the protocol is one the
+// controller can handle.
+func GatewayListenerProtocolSupported(protocol string) bool {
+	switch protocol {
+	case "HTTP", "HTTPS", "GRPC", "GRPCS":
+		return true
+	}
+	return false
+}
+
+// MapGRPCRoute translates a GRPCRoute into Vrata entities.
+// gRPC service/method matches are converted to path-based matchers with the
+// grpc flag set, since gRPC always uses /{service}/{method} URL paths.
+func MapGRPCRoute(input GRPCRouteInput) MappedEntities {
+	prefix := fmt.Sprintf("k8s:%s/%s", input.Namespace, input.Name)
+
+	var routes []vrata.Route
+	var allDests []DestinationKey
+	var allMiddlewares []vrata.Middleware
+
+	for ri, rule := range input.Rules {
+		var destRefs []map[string]any
+		for _, br := range rule.BackendRefs {
+			dk := DestinationKey{Name: br.ServiceName, Namespace: br.ServiceNamespace, Port: br.Port}
+			allDests = append(allDests, dk)
+
+			weight := br.Weight
+			if weight == 0 {
+				weight = 1
+			}
+			destRefs = append(destRefs, map[string]any{
+				"destinationId": dk.DestinationName(),
+				"weight":        weight,
+			})
+		}
+
+		headerFilter := findFilter(rule.Filters, "RequestHeaderModifier")
+		var middlewareIDs []string
+		if headerFilter != nil {
+			mwName := fmt.Sprintf("%s/rule-%d/headers", prefix, ri)
+			mw := mapHeaderModifierFilter(mwName, headerFilter)
+			allMiddlewares = append(allMiddlewares, mw)
+			middlewareIDs = append(middlewareIDs, mwName)
+		}
+
+		matches := rule.Matches
+		if len(matches) == 0 {
+			matches = []GRPCMatchInput{{}}
+		}
+
+		for mi, m := range matches {
+			routeName := fmt.Sprintf("%s/rule-%d/match-%d", prefix, ri, mi)
+			route := vrata.Route{
+				Name:          routeName,
+				Match:         mapGRPCMatch(m),
+				MiddlewareIDs: middlewareIDs,
+			}
+
+			if len(destRefs) > 0 {
+				route.Forward = map[string]any{
+					"destinations": destRefs,
+				}
+			}
+
+			routes = append(routes, route)
+		}
+	}
+
+	allDests = deduplicateDests(allDests)
+
+	routeNames := make([]string, len(routes))
+	for i, r := range routes {
+		routeNames[i] = r.Name
+	}
+
+	group := vrata.RouteGroup{
+		Name:      prefix,
+		RouteIDs:  routeNames,
+		Hostnames: input.Hostnames,
+	}
+
+	return MappedEntities{
+		Group:        group,
+		Routes:       routes,
+		Destinations: allDests,
+		Middlewares:  allMiddlewares,
+	}
+}
+
+// mapGRPCMatch converts a GRPCMatchInput to a Vrata match map.
+// gRPC service/method are mapped to HTTP path matching with the grpc flag set.
+func mapGRPCMatch(m GRPCMatchInput) map[string]any {
+	match := map[string]any{"grpc": true}
+
+	path := grpcMethodPath(m.ServiceName, m.MethodName)
+
+	switch m.MatchType {
+	case "RegularExpression":
+		match["pathRegex"] = path
+	case "Exact":
+		if m.ServiceName == "" && m.MethodName == "" {
+			match["pathPrefix"] = "/"
+		} else if m.MethodName == "" {
+			match["pathPrefix"] = "/" + m.ServiceName + "/"
+		} else {
+			match["path"] = path
+		}
+	default:
+		if m.ServiceName == "" && m.MethodName == "" {
+			match["pathPrefix"] = "/"
+		} else if m.MethodName == "" {
+			match["pathPrefix"] = "/" + m.ServiceName + "/"
+		} else {
+			match["path"] = path
+		}
+	}
+
+	if len(m.Headers) > 0 {
+		var headers []map[string]any
+		for _, h := range m.Headers {
+			hm := map[string]any{"name": h.Name, "value": h.Value}
+			if h.Type == "RegularExpression" {
+				hm["regex"] = true
+			}
+			headers = append(headers, hm)
+		}
+		match["headers"] = headers
+	}
+
+	match["methods"] = []string{"POST"}
+
+	return match
+}
+
+// grpcMethodPath builds the HTTP/2 path for a gRPC service and method.
+// If both are empty, returns "/". If only service is set, returns "/{service}/".
+// Otherwise returns "/{service}/{method}".
+func grpcMethodPath(service, method string) string {
+	if service == "" && method == "" {
+		return "/"
+	}
+	if method == "" {
+		return "/" + service + "/"
+	}
+	return "/" + service + "/" + method
 }
 
 // mapMatch converts a MatchInput to a Vrata match map.

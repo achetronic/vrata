@@ -3,7 +3,7 @@
 ## Overview
 
 The Controller is a Kubernetes controller that watches Gateway API resources
-(`Gateway`, `HTTPRoute`, and future `SuperHTTPRoute`) and synchronises them
+(`GatewayClass`, `Gateway`, `HTTPRoute`, `GRPCRoute`, and future `SuperHTTPRoute`) and synchronises them
 to Vrata via its REST API. It is a separate binary that lives in `clients/controller/`.
 Its only contract with Vrata is the OpenAPI spec — no shared code, no imports.
 
@@ -14,6 +14,7 @@ It never reads from Vrata to write back to Kubernetes.
 
 ```
 Gateway.spec.listeners[]            → Listener (1:1)
+GatewayClass                        → Claimed by controller (status written)
 HTTPRoute                           → RouteGroup (1:1, carries hostnames + parentRef binding)
 HTTPRoute.spec.rules[]              → Route (1:N, one Route per rule)
 HTTPRoute.spec.rules[].matches[]    → Route.match (N matches in a rule = N Routes)
@@ -22,6 +23,11 @@ HTTPRoute.spec.rules[].filters[]    → depends on type:
     RequestRedirect                 → Route.redirect (no forward)
     URLRewrite                      → Route.forward.rewrite
     RequestHeaderModifier           → Middleware type=headers
+GRPCRoute                           → RouteGroup (1:1, carries hostnames, grpc flag)
+GRPCRoute.spec.rules[]              → Route (1:N, one Route per rule)
+GRPCRoute.spec.rules[].matches[]    → Route.match (grpc: true + path from service/method)
+GRPCRoute.spec.rules[].backendRefs[]→ Destination (shared with HTTPRoute destinations)
+GRPCRoute.spec.rules[].filters[]    → RequestHeaderModifier → Middleware type=headers
 ```
 
 ## Ownership

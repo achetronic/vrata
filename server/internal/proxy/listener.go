@@ -14,6 +14,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+
 	"github.com/achetronic/vrata/internal/model"
 )
 
@@ -219,6 +222,15 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 		lm.logger.Info("proxy: metrics enabled",
 			slog.String("id", l.ID),
 			slog.String("path", metricsPath),
+		)
+	}
+
+	// h2c (cleartext HTTP/2) support for gRPC clients without TLS.
+	if l.HTTP2 && srv.TLSConfig == nil {
+		h2s := &http2.Server{}
+		srv.Handler = h2c.NewHandler(srv.Handler, h2s)
+		lm.logger.Info("proxy: h2c enabled",
+			slog.String("id", l.ID),
 		)
 	}
 
