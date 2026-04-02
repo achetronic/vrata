@@ -148,7 +148,11 @@ func buildBalancer(d model.Destination) Balancer {
 		}
 		return NewMaglevBalancer(size)
 	case model.EndpointLBLeastRequest:
-		return NewLeastRequestBalancer()
+		choiceCount := 0
+		if eb.LeastRequest != nil && eb.LeastRequest.ChoiceCount > 0 {
+			choiceCount = int(eb.LeastRequest.ChoiceCount)
+		}
+		return NewLeastRequestBalancer(choiceCount)
 	case model.EndpointLBRandom:
 		return RandomBalancer{}
 	case model.EndpointLBRoundRobin:

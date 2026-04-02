@@ -317,6 +317,9 @@ func sameListener(a, b model.Listener) bool {
 	if !sameTLS(a.TLS, b.TLS) {
 		return false
 	}
+	if !sameTimeouts(a.Timeouts, b.Timeouts) {
+		return false
+	}
 	if a.ProxyErrors.ResolvedDetail() != b.ProxyErrors.ResolvedDetail() {
 		return false
 	}
@@ -360,6 +363,20 @@ func sameMetrics(a, b *model.ListenerMetrics) bool {
 		return false
 	}
 	return a.ResolvedPath() == b.ResolvedPath()
+}
+
+// sameTimeouts compares two listener timeout configs for equality.
+func sameTimeouts(a, b *model.ListenerTimeouts) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.ClientHeader == b.ClientHeader &&
+		a.ClientRequest == b.ClientRequest &&
+		a.ClientResponse == b.ClientResponse &&
+		a.IdleBetweenRequests == b.IdleBetweenRequests
 }
 
 // parseDurationOrDefault extracts a duration string from a timeouts struct

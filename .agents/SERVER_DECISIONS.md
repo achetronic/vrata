@@ -126,8 +126,9 @@ runtime — all config must flow through the `Config` struct loaded at startup.
 
 The persistent store implementation uses `go.etcd.io/bbolt` — an embedded, pure-Go
 key/value database that stores all data in a single file (`vrata.db` by default,
-configurable via `server.storePath` in config.yaml). Two buckets are used: `groups` and `routes`,
-both storing JSON-encoded domain objects keyed by their UUID.
+configurable via `controlPlane.storePath` in config.yaml). Buckets are used for each resource type
+(routes, groups, destinations, listeners, middlewares, secrets, snapshots),
+all storing JSON-encoded domain objects keyed by their UUID.
 
 **Reasoning**: bbolt requires zero external processes, zero infrastructure, and produces
 a single file that can be backed up with a plain `cp`. It supports concurrent reads (multiple
@@ -241,17 +242,15 @@ pointer is the discriminator. Always validate mutual exclusivity at the handler 
 **Status**: Implemented
 
 `model.Listener` carries an optional `TLS *ListenerTLS` field (cert/key paths, min
-protocol version). The struct is fully defined and persisted but the proxy listener manager does
-wire it into Go's tls.Config at listener startup.
+protocol version). The proxy listener manager wires it into Go's `tls.Config` at
+listener startup, including mTLS client authentication via `ClientAuth`.
 
 **Reasoning**: TLS termination belongs in the Listener by nature (it is the network
-entry point that terminates the connection). Modeling it now avoids future API breakage.
-Implementation is deferred because the dev environment does not need TLS and the
-external cert/key distribution mechanism (file mount vs SDS) needs to be decided first.
+entry point that terminates the connection). mTLS client authentication is also
+configured here via the `clientAuth` sub-field. See the mTLS decision entry for details.
 
-**Do not**: Move TLS config to a separate entity. Do not implement TLS wiring in the
-listener code without a concrete reason. Do not remove `TLS` from
-the model — the field must persist in the API and storage even while unimplemented.
+**Do not**: Move TLS config to a separate entity. Do not remove `TLS` from
+the model — the field must persist in the API and storage.
 
 ---
 
@@ -295,7 +294,7 @@ require operators to understand proxy internals just to point a route at an upst
 The three rules above cover all real-world cases deterministically with no ambiguity.
 
 **Do not**: Add a `discoveryType` or `clusterType` field directly on `Destination`.
-The derivation logic lives in `xds/builder.go` (`clusterTypeFor` function) and must
+The derivation logic lives in `proxy/endpoint.go` and must
 not be duplicated elsewhere.
 
 ---
@@ -402,7 +401,7 @@ with user-facing semantic names. internal implementation names are never exposed
 - `mirror.percentage` (0–100 integer) maps internally to a percentage check
   with `HUNDRED` denominator internally.
 
-The translation lives entirely in `xds/builder.go`. Model types never reference
+The translation lives entirely in the proxy handler and model types. Model types never reference
 proxy implementation field names.
 
 **Reasoning**: Vrata is an API-driven proxy. Users think in terms of

@@ -4,6 +4,7 @@
 package mapper
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -659,5 +660,171 @@ func TestGRPCMethodPath(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("grpcMethodPath(%q, %q) = %q, want %q", tc.svc, tc.method, got, tc.want)
 		}
+	}
+}
+
+func TestMapHTTPRoute_ResponseHeaderModifier(t *testing.T) {
+	input := HTTPRouteInput{
+		Name: "resp-hdr", Namespace: "default",
+		Rules: []RuleInput{
+			{
+				Matches: []MatchInput{{PathType: "PathPrefix", PathValue: "/"}},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "svc", ServiceNamespace: "default", Port: 80},
+				},
+				Filters: []FilterInput{
+					{
+						Type:                    "ResponseHeaderModifier",
+						ResponseHeadersToAdd:    []HeaderValue{{Name: "X-Response", Value: "added"}},
+						ResponseHeadersToRemove: []string{"X-Internal-Response"},
+					},
+				},
+			},
+		},
+	}
+	result := MapHTTPRoute(input)
+	if len(result.Middlewares) != 1 {
+		t.Fatalf("expected 1 middleware, got %d", len(result.Middlewares))
+	}
+	mw := result.Middlewares[0]
+	if mw.Type != "headers" {
+		t.Errorf("expected headers type, got %q", mw.Type)
+	}
+	if mw.Headers["responseHeadersToAdd"] == nil {
+		t.Error("expected responseHeadersToAdd")
+	}
+	if mw.Headers["responseHeadersToRemove"] == nil {
+		t.Error("expected responseHeadersToRemove")
+	}
+	if !strings.Contains(mw.Name, "resp-headers") {
+		t.Errorf("expected resp-headers in name, got %q", mw.Name)
+	}
+}
+
+func TestMapHTTPRoute_RedirectReplacePrefixMatch(t *testing.T) {
+	input := HTTPRouteInput{
+		Name: "redir-prefix", Namespace: "default",
+		Rules: []RuleInput{
+			{
+				Matches: []MatchInput{{PathType: "PathPrefix", PathValue: "/old"}},
+				Filters: []FilterInput{
+					{Type: "RequestRedirect", RedirectPathPrefix: "/new", RedirectCode: 301},
+				},
+			},
+		},
+	}
+	result := MapHTTPRoute(input)
+	rd := result.Routes[0].Redirect
+	if rd == nil {
+		t.Fatal("expected redirect")
+	}
+	if rd["prefixPath"] != "/new" {
+		t.Errorf("expected prefixPath /new, got %v", rd["prefixPath"])
+	}
+}
+
+func TestMapHTTPRoute_RedirectPort(t *testing.T) {
+	input := HTTPRouteInput{
+		Name: "redir-port", Namespace: "default",
+		Rules: []RuleInput{
+			{
+				Matches: []MatchInput{{PathType: "PathPrefix", PathValue: "/"}},
+				Filters: []FilterInput{
+					{Type: "RequestRedirect", RedirectPort: 8443, RedirectCode: 301},
+				},
+			},
+		},
+	}
+	result := MapHTTPRoute(input)
+	rd := result.Routes[0].Redirect
+	if rd == nil {
+		t.Fatal("expected redirect")
+	}
+	if rd["port"] != uint32(8443) {
+		t.Errorf("expected port 8443, got %v", rd["port"])
+	}
+}
+
+func TestMapHTTPRoute_RewriteFullPath(t *testing.T) {
+	input := HTTPRouteInput{
+		Name: "rewrite-full", Namespace: "default",
+		Rules: []RuleInput{
+			{
+				Matches:     []MatchInput{{PathType: "PathPrefix", PathValue: "/old"}},
+				BackendRefs: []BackendRefInput{{ServiceName: "svc", ServiceNamespace: "default", Port: 80}},
+				Filters: []FilterInput{
+					{Type: "URLRewrite", RewriteFullPath: "/completely-new"},
+				},
+			},
+		},
+	}
+	result := MapHTTPRoute(input)
+	fwd := result.Routes[0].Forward
+	if fwd == nil {
+		t.Fatal("expected forward")
+	}
+	rw, ok := fwd["rewrite"].(map[string]any)
+	if !ok {
+		t.Fatal("expected rewrite in forward")
+	}
+	if rw["fullPath"] != "/completely-new" {
+		t.Errorf("expected fullPath, got %v", rw)
+	}
+}
+
+func TestMapGRPCRoute_ResponseHeaderModifier(t *testing.T) {
+	input := GRPCRouteInput{
+		Name: "grpc-resp-hdr", Namespace: "default",
+		Rules: []GRPCRuleInput{
+			{
+				Matches: []GRPCMatchInput{{ServiceName: "svc.A", MatchType: "Exact"}},
+				BackendRefs: []BackendRefInput{
+					{ServiceName: "backend", ServiceNamespace: "default", Port: 50051},
+				},
+				Filters: []FilterInput{
+					{
+						Type:                    "ResponseHeaderModifier",
+						ResponseHeadersToAdd:    []HeaderValue{{Name: "X-Resp", Value: "v1"}},
+						ResponseHeadersToRemove: []string{"X-Internal"},
+					},
+				},
+			},
+		},
+	}
+	result := MapGRPCRoute(input)
+	if len(result.Middlewares) != 1 {
+		t.Fatalf("expected 1 middleware, got %d", len(result.Middlewares))
+	}
+	if result.Middlewares[0].Headers["responseHeadersToAdd"] == nil {
+		t.Error("expected responseHeadersToAdd")
+	}
+}
+
+func TestMapHTTPRoute_BothHeaderModifiers(t *testing.T) {
+	input := HTTPRouteInput{
+		Name: "both-hdrs", Namespace: "default",
+		Rules: []RuleInput{
+			{
+				Matches:     []MatchInput{{PathType: "PathPrefix", PathValue: "/"}},
+				BackendRefs: []BackendRefInput{{ServiceName: "svc", ServiceNamespace: "default", Port: 80}},
+				Filters: []FilterInput{
+					{
+						Type:         "RequestHeaderModifier",
+						HeadersToAdd: []HeaderValue{{Name: "X-Req", Value: "v1"}},
+					},
+					{
+						Type:                 "ResponseHeaderModifier",
+						ResponseHeadersToAdd: []HeaderValue{{Name: "X-Resp", Value: "v2"}},
+					},
+				},
+			},
+		},
+	}
+	result := MapHTTPRoute(input)
+	if len(result.Middlewares) != 2 {
+		t.Fatalf("expected 2 middlewares (req + resp), got %d", len(result.Middlewares))
+	}
+	if len(result.Routes[0].MiddlewareIDs) != 2 {
+		t.Errorf("route should reference both middlewares, got %d", len(result.Routes[0].MiddlewareIDs))
 	}
 }

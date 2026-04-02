@@ -91,3 +91,76 @@ func TestRingHashConsistency(t *testing.T) {
 		t.Error("ring hash should return same endpoint for same client")
 	}
 }
+
+func TestLeastRequestBalancer_ChoiceCountZero(t *testing.T) {
+	lb := NewLeastRequestBalancer(0)
+	backends := []model.DestinationRef{
+		{DestinationID: "10.0.0.1:8080"},
+		{DestinationID: "10.0.0.2:8080"},
+	}
+	endpoints := makeEndpoints()
+
+	r := httptest.NewRequest("GET", "/", nil)
+	ep := lb.Pick(r, backends, endpoints)
+	if ep == nil {
+		t.Fatal("should pick an endpoint")
+	}
+	lb.Done(ep.ID)
+}
+
+func TestLeastRequestBalancer_ChoiceCountPick(t *testing.T) {
+	lb := NewLeastRequestBalancer(1)
+	backends := []model.DestinationRef{
+		{DestinationID: "10.0.0.1:8080"},
+		{DestinationID: "10.0.0.2:8080"},
+	}
+	endpoints := makeEndpoints()
+
+	r := httptest.NewRequest("GET", "/", nil)
+	ep := lb.Pick(r, backends, endpoints)
+	if ep == nil {
+		t.Fatal("should pick an endpoint with choiceCount=1")
+	}
+	lb.Done(ep.ID)
+}
+
+func TestLeastRequestBalancer_PicksLowest(t *testing.T) {
+	lb := NewLeastRequestBalancer(0)
+	backends := []model.DestinationRef{
+		{DestinationID: "10.0.0.1:8080"},
+		{DestinationID: "10.0.0.2:8080"},
+	}
+	endpoints := makeEndpoints()
+
+	r := httptest.NewRequest("GET", "/", nil)
+	lb.Pick(r, backends, endpoints)
+	lb.Pick(r, backends, endpoints)
+	lb.Pick(r, backends, endpoints)
+
+	lb.Done("10.0.0.1:8080")
+	lb.Done("10.0.0.1:8080")
+	lb.Done("10.0.0.1:8080")
+
+	ep := lb.Pick(r, backends, endpoints)
+	if ep == nil {
+		t.Fatal("should pick an endpoint")
+	}
+}
+
+func TestSampleDests(t *testing.T) {
+	dests := []model.DestinationRef{
+		{DestinationID: "a"},
+		{DestinationID: "b"},
+		{DestinationID: "c"},
+		{DestinationID: "d"},
+	}
+	sample := sampleDests(dests, 2)
+	if len(sample) != 2 {
+		t.Fatalf("expected 2 samples, got %d", len(sample))
+	}
+
+	all := sampleDests(dests, 10)
+	if len(all) != 4 {
+		t.Fatalf("should return all when n > len, got %d", len(all))
+	}
+}

@@ -2,23 +2,51 @@
 
 ## Pending
 
+### Gateway API gaps
+
 - [ ] **TLS gap** — Gateway references Secrets for TLS, Vrata Listener expects file paths. Need mechanism to mount Secrets as files or extend Vrata to accept inline certs.
-- [ ] **Regex overlap detection** — detect semantic overlaps when one of the paths is a RegularExpression. Currently regex paths are skipped by the dedup detector.
 - [ ] **AllowedRoutes enforcement** — respect `listener.allowedRoutes.namespaces` (Same/All/Selector) and `allowedRoutes.kinds` (HTTPRoute, GRPCRoute) from Gateway spec.
 - [ ] **Gateway addresses** — populate `GatewayStatus.Addresses` from the Vrata listener state or from the Kubernetes Service.
+- [ ] **Listener hostname binding** — `GatewayListenerInput.Hostname` is extracted but never used for route-to-listener binding.
+- [ ] **Protocol → route-kind binding** — a `GRPC` protocol listener should only accept GRPCRoutes. Currently no filtering.
+- [ ] **Gateway TLS certificateRefs** — `spec.listeners[].tls` (certificateRefs, mode, options) completely ignored.
+- [ ] **ParentRefs sectionName** — routes don't bind to specific listener sections. All routes attach to all listeners.
+
+### Mapper gaps
+
+- [ ] **QueryParams** — `HTTPRouteMatch.queryParams` never extracted. Vrata model supports `match.queryParams`.
+- [ ] **Header Set vs Add conflation** — both `RequestHeaderModifier.Set` and `.Add` are appended to the same `HeadersToAdd` list. Gateway API specifies `Set` overwrites while `Add` appends. Same for `ResponseHeaderModifier`.
+- [ ] **BackendRef group/kind validation** — `backendRef.group` and `backendRef.kind` never checked. Non-Service backends silently treated as Service.
+- [ ] **Per-backendRef filters** — `backendRefs[].filters[]` never read (only rule-level filters).
+- [ ] **RequestMirror (HTTPRoute)** — `HTTPRouteFilterRequestMirror` has no `case` in the switch.
+- [ ] **RequestMirror (GRPCRoute)** — `GRPCRouteFilterRequestMirror` has no handling.
+- [ ] **ExtensionRef filter** — `HTTPRouteFilterExtensionRef` and `GRPCRouteFilterExtensionRef` unhandled.
+- [ ] **HTTPRouteRule.timeouts** — `HTTPRouteTimeouts` never read.
+- [ ] **HTTPRouteRule.sessionPersistence** — never read.
+- [ ] **HTTPRouteRule.retry** — `HTTPRouteRetry` never read.
+- [ ] **Redirect/Rewrite path.type** — `HTTPPathModifier.Type` not checked; both `ReplaceFullPath` and `ReplacePrefixMatch` read unconditionally (works by coincidence).
+- [ ] **Regex overlap detection** — detect semantic overlaps when one path is a RegularExpression.
+
+### .agents/ documentation fixes
+
+- [ ] **CONTROLLER_DESIGN.md component tree** — lists nonexistent files (`reconciler/gateway.go`, `reconciler/httproute.go`, `reconciler/refcount.go`, `Makefile`, `config/crd/superhttproute.yaml`). Missing real packages (`workqueue/`, `dedup/`, `metrics/`, `refgrant/`).
 
 ## Done
 
-- [x] **GRPCRoute support** — full reconciliation: GRPCRoute → Vrata Routes with `grpc: true` + path matching from `/{service}/{method}`. Filters, status writing, ReferenceGrant enforcement. See mapper `MapGRPCRoute`.
-- [x] **GatewayClass claim** — controller watches GatewayClass, claims those with `controllerName: vrata.io/controller`, writes `Accepted: True`.
-- [x] **Gateway status writing** — `Accepted` + `Programmed` conditions on Gateway. Per-listener `Accepted` + `Programmed` conditions. Protocol validation.
-- [x] **Gateway listener updates** — `syncAllGateways` now updates existing listeners (not just create). Detects port/protocol/TLS changes.
-- [x] **ParentRef accuracy** — HTTPRoute and GRPCRoute status uses the actual `parentRefs[0]` from the route spec instead of hardcoded `"controller"`.
-- [x] **Protocol mapping** — listener protocol (`HTTP`, `HTTPS`, `GRPC`, `GRPCS`) affects TLS configuration. Unsupported protocols (`TCP`, `UDP`) rejected with status.
-- [x] **GatewayClassName filtering** — controller only reconciles Gateways matching the configured `gatewayClassName` (default: `vrata`).
-- [x] **Batch snapshot coordination** — `vrata.io/batch` and `vrata.io/batch-size` annotations with FIFO work queue, idle timeout, and incomplete batch detection. See `CONTROLLER_DECISIONS.md`.
-- [x] **Garbage collection** — inter-group GC (orphaned HTTPRoutes/GRPCRoutes) and intra-group GC (stale routes/middlewares within an HTTPRoute). See `CONTROLLER_DECISIONS.md`.
-- [x] **ReferenceGrant enforcement** — cross-namespace backendRefs verified via ReferenceGrant before reconciliation. Now supports both `HTTPRoute` and `GRPCRoute` kinds. See `CONTROLLER_DECISIONS.md`.
-- [x] **Metrics wiring** — all 8 controller Prometheus metrics wired into the sync cycle.
-- [x] **Dedup detector reset** — reset at the start of each sync cycle to avoid stale phantom entries.
-- [x] **controller-runtime logr bridge** — `crlog.SetLogger` bridging slog to logr.
+- [x] **ResponseHeaderModifier (HTTPRoute + GRPCRoute)** — parsed and produces `resp-headers` middleware.
+- [x] **Redirect ReplacePrefixMatch** — mapped to `redirect.prefixPath`.
+- [x] **Rewrite ReplaceFullPath** — mapped to `rewrite.fullPath`.
+- [x] **RedirectPort** — populated from `RequestRedirect.Port`.
+- [x] **GRPCRoute support** — full reconciliation with service/method → path conversion.
+- [x] **GatewayClass claim** — watches and claims GatewayClass with `controllerName: vrata.io/controller`.
+- [x] **Gateway status writing** — `Accepted` + `Programmed` conditions on Gateway and per-listener.
+- [x] **Gateway listener updates** — creates and updates listeners.
+- [x] **ParentRef accuracy** — uses actual `parentRefs[0]`.
+- [x] **Protocol mapping** — affects TLS configuration; unsupported protocols rejected.
+- [x] **GatewayClassName filtering** — only reconciles matching Gateways.
+- [x] **Batch snapshot coordination** — FIFO work queue with idle timeout.
+- [x] **Garbage collection** — inter-group + intra-group GC.
+- [x] **ReferenceGrant enforcement** — supports both HTTPRoute and GRPCRoute kinds.
+- [x] **Metrics wiring** — 8 Prometheus metrics.
+- [x] **Dedup detector reset** — reset at start of each sync cycle.
+- [x] **controller-runtime logr bridge** — `crlog.SetLogger`.

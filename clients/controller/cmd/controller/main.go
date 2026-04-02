@@ -995,17 +995,17 @@ func grpcRouteToInput(gr *gwapiv1.GRPCRoute) mapper.GRPCRouteInput {
 			case gwapiv1.GRPCRouteFilterResponseHeaderModifier:
 				if f.ResponseHeaderModifier != nil {
 					for _, h := range f.ResponseHeaderModifier.Add {
-						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
+						fi.ResponseHeadersToAdd = append(fi.ResponseHeadersToAdd, mapper.HeaderValue{
 							Name: string(h.Name), Value: h.Value,
 						})
 					}
 					for _, h := range f.ResponseHeaderModifier.Set {
-						fi.HeadersToAdd = append(fi.HeadersToAdd, mapper.HeaderValue{
+						fi.ResponseHeadersToAdd = append(fi.ResponseHeadersToAdd, mapper.HeaderValue{
 							Name: string(h.Name), Value: h.Value,
 						})
 					}
 					for _, name := range f.ResponseHeaderModifier.Remove {
-						fi.HeadersToRemove = append(fi.HeadersToRemove, name)
+						fi.ResponseHeadersToRemove = append(fi.ResponseHeadersToRemove, name)
 					}
 				}
 			}
@@ -1094,14 +1094,27 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 					if f.RequestRedirect.StatusCode != nil {
 						fi.RedirectCode = uint32(*f.RequestRedirect.StatusCode)
 					}
-					if f.RequestRedirect.Path != nil && f.RequestRedirect.Path.ReplaceFullPath != nil {
-						fi.RedirectPath = *f.RequestRedirect.Path.ReplaceFullPath
+					if f.RequestRedirect.Port != nil {
+						fi.RedirectPort = uint32(*f.RequestRedirect.Port)
+					}
+					if f.RequestRedirect.Path != nil {
+						if f.RequestRedirect.Path.ReplaceFullPath != nil {
+							fi.RedirectPath = *f.RequestRedirect.Path.ReplaceFullPath
+						}
+						if f.RequestRedirect.Path.ReplacePrefixMatch != nil {
+							fi.RedirectPathPrefix = *f.RequestRedirect.Path.ReplacePrefixMatch
+						}
 					}
 				}
 			case gwapiv1.HTTPRouteFilterURLRewrite:
 				if f.URLRewrite != nil {
-					if f.URLRewrite.Path != nil && f.URLRewrite.Path.ReplacePrefixMatch != nil {
-						fi.RewritePathPrefix = *f.URLRewrite.Path.ReplacePrefixMatch
+					if f.URLRewrite.Path != nil {
+						if f.URLRewrite.Path.ReplacePrefixMatch != nil {
+							fi.RewritePathPrefix = *f.URLRewrite.Path.ReplacePrefixMatch
+						}
+						if f.URLRewrite.Path.ReplaceFullPath != nil {
+							fi.RewriteFullPath = *f.URLRewrite.Path.ReplaceFullPath
+						}
 					}
 					if f.URLRewrite.Hostname != nil {
 						fi.RewriteHostname = string(*f.URLRewrite.Hostname)
@@ -1121,6 +1134,22 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 					}
 					for _, name := range f.RequestHeaderModifier.Remove {
 						fi.HeadersToRemove = append(fi.HeadersToRemove, name)
+					}
+				}
+			case gwapiv1.HTTPRouteFilterResponseHeaderModifier:
+				if f.ResponseHeaderModifier != nil {
+					for _, h := range f.ResponseHeaderModifier.Add {
+						fi.ResponseHeadersToAdd = append(fi.ResponseHeadersToAdd, mapper.HeaderValue{
+							Name: string(h.Name), Value: h.Value,
+						})
+					}
+					for _, h := range f.ResponseHeaderModifier.Set {
+						fi.ResponseHeadersToAdd = append(fi.ResponseHeadersToAdd, mapper.HeaderValue{
+							Name: string(h.Name), Value: h.Value,
+						})
+					}
+					for _, name := range f.ResponseHeaderModifier.Remove {
+						fi.ResponseHeadersToRemove = append(fi.ResponseHeadersToRemove, name)
 					}
 				}
 			}

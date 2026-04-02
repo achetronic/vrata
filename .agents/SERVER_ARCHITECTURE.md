@@ -166,6 +166,6 @@ server/
 ├── proto/                      # gRPC proto definitions (extproc, extauthz)
 ├── test/e2e/                   # End-to-end tests
 ├── docs/                       # Generated OpenAPI spec
-├── Dockerfile
+├── Dockerfile (at repo root)
 └── go.mod
 ```

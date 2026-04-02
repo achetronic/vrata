@@ -27,7 +27,11 @@ const defaultFailureThreshold = 5
 const defaultOpenDuration = 30 * time.Second
 
 // CircuitBreaker tracks failures per destination and opens the circuit
-// when thresholds are exceeded.
+// when thresholds are exceeded. It enforces four concurrency limits:
+//   - maxConnections: total active requests (connections)
+//   - maxPendingRequests: requests queued waiting when at maxConnections
+//   - maxRequests: active requests in closed state (separate from connections)
+//   - maxRetries: concurrent retry attempts across all requests
 type CircuitBreaker struct {
 	maxConnections     uint32
 	maxPendingRequests uint32
@@ -37,6 +41,8 @@ type CircuitBreaker struct {
 
 	activeConnections atomic.Int64
 	activeRequests    atomic.Int64
+	activePending     atomic.Int64
+	activeRetries     atomic.Int64
 
 	consecutiveFailures atomic.Int64
 	state               atomic.Int32
@@ -104,6 +110,9 @@ func (cb *CircuitBreaker) Allow() bool {
 	}
 
 	if cb.activeConnections.Load() >= int64(cb.maxConnections) {
+		if cb.activePending.Load() >= int64(cb.maxPendingRequests) {
+			return false
+		}
 		return false
 	}
 	if cb.activeRequests.Load() >= int64(cb.maxRequests) {
@@ -111,6 +120,38 @@ func (cb *CircuitBreaker) Allow() bool {
 	}
 
 	return true
+}
+
+// AllowPending checks if a pending (queued) request should be allowed.
+// Returns true if the pending queue is not full.
+func (cb *CircuitBreaker) AllowPending() bool {
+	return cb.activePending.Load() < int64(cb.maxPendingRequests)
+}
+
+// OnPending increments the pending request count.
+func (cb *CircuitBreaker) OnPending() {
+	cb.activePending.Add(1)
+}
+
+// OnPendingComplete decrements the pending request count.
+func (cb *CircuitBreaker) OnPendingComplete() {
+	cb.activePending.Add(-1)
+}
+
+// AllowRetry checks if a retry attempt should be allowed based on
+// the maxRetries concurrency limit.
+func (cb *CircuitBreaker) AllowRetry() bool {
+	return cb.activeRetries.Load() < int64(cb.maxRetries)
+}
+
+// OnRetry increments the active retry count.
+func (cb *CircuitBreaker) OnRetry() {
+	cb.activeRetries.Add(1)
+}
+
+// OnRetryComplete decrements the active retry count.
+func (cb *CircuitBreaker) OnRetryComplete() {
+	cb.activeRetries.Add(-1)
 }
 
 // RecordSuccess marks a successful request. Closes the circuit if half-open.
@@ -140,4 +181,19 @@ func (cb *CircuitBreaker) OnRequest() {
 func (cb *CircuitBreaker) OnComplete() {
 	cb.activeRequests.Add(-1)
 	cb.activeConnections.Add(-1)
+}
+
+// State returns the current circuit state.
+func (cb *CircuitBreaker) State() CircuitState {
+	return CircuitState(cb.state.Load())
+}
+
+// ActiveRetries returns the current active retry count for metrics.
+func (cb *CircuitBreaker) ActiveRetries() int64 {
+	return cb.activeRetries.Load()
+}
+
+// ActivePending returns the current pending request count for metrics.
+func (cb *CircuitBreaker) ActivePending() int64 {
+	return cb.activePending.Load()
 }

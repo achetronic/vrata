@@ -17,17 +17,19 @@ import (
 
 // retryTransport wraps an http.RoundTripper with retry logic.
 type retryTransport struct {
-	inner   http.RoundTripper
-	retry   *model.RouteRetry
-	onRetry func(req *http.Request, attempt int)
+	inner          http.RoundTripper
+	retry          *model.RouteRetry
+	onRetry        func(req *http.Request, attempt int)
+	circuitBreaker *CircuitBreaker
 }
 
 // newRetryTransport wraps a transport with retry behaviour.
-func newRetryTransport(inner http.RoundTripper, retry *model.RouteRetry, onRetry func(*http.Request, int)) http.RoundTripper {
+// The optional circuitBreaker enforces the maxRetries concurrency limit.
+func newRetryTransport(inner http.RoundTripper, retry *model.RouteRetry, onRetry func(*http.Request, int), cb *CircuitBreaker) http.RoundTripper {
 	if retry == nil || retry.Attempts == 0 {
 		return inner
 	}
-	return &retryTransport{inner: inner, retry: retry, onRetry: onRetry}
+	return &retryTransport{inner: inner, retry: retry, onRetry: onRetry, circuitBreaker: cb}
 }
 
 // Unwrap returns the underlying transport for safe type unwrapping.
@@ -73,8 +75,17 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if attempt > 0 && rt.onRetry != nil {
-			rt.onRetry(req, attempt)
+		if attempt > 0 {
+			if rt.circuitBreaker != nil {
+				if !rt.circuitBreaker.AllowRetry() {
+					return nil, lastErr
+				}
+				rt.circuitBreaker.OnRetry()
+				defer rt.circuitBreaker.OnRetryComplete()
+			}
+			if rt.onRetry != nil {
+				rt.onRetry(req, attempt)
+			}
 		}
 		if bodyBytes != nil {
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))

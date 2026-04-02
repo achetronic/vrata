@@ -35,7 +35,7 @@ apply first, then GC.
 ## Batch snapshot coordination via `vrata.io/batch` annotation
 
 **Date**: 2026-03-20
-**Status**: Decided — not yet implemented
+**Status**: Implemented
 
 ### Problem
 

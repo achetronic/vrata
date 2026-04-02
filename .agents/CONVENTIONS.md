@@ -90,7 +90,7 @@
 
 ## Testing
 
-479 unit tests + 119 e2e tests. See FEATURES.md for full breakdown.
+Unit tests + e2e tests. See `SERVER_FEATURES.md` for full breakdown.
 
 ## Configuration
 

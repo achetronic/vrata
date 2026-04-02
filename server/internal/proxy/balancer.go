@@ -55,14 +55,19 @@ func (rr *RoundRobinBalancer) Pick(_ *http.Request, dests []model.DestinationRef
 }
 
 // LeastRequestBalancer picks the upstream with the fewest active requests.
+// When choiceCount > 0, it uses the power-of-two-choices algorithm: pick
+// choiceCount random candidates and select the one with the lowest inflight.
 type LeastRequestBalancer struct {
-	mu       sync.Mutex
-	inflight map[string]int64
+	mu          sync.Mutex
+	inflight    map[string]int64
+	choiceCount int
 }
 
 // NewLeastRequestBalancer creates a LeastRequestBalancer.
-func NewLeastRequestBalancer() *LeastRequestBalancer {
-	return &LeastRequestBalancer{inflight: make(map[string]int64)}
+// choiceCount controls the power-of-two-choices sample size. When 0 or >= len(dests),
+// all destinations are considered (exact least-request).
+func NewLeastRequestBalancer(choiceCount int) *LeastRequestBalancer {
+	return &LeastRequestBalancer{inflight: make(map[string]int64), choiceCount: choiceCount}
 }
 
 // Pick selects the endpoint with the fewest active requests.
@@ -70,9 +75,14 @@ func (lb *LeastRequestBalancer) Pick(_ *http.Request, dests []model.DestinationR
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
+	candidates := dests
+	if lb.choiceCount > 0 && lb.choiceCount < len(dests) {
+		candidates = sampleDests(dests, lb.choiceCount)
+	}
+
 	var best string
 	bestCount := int64(1<<63 - 1)
-	for _, b := range dests {
+	for _, b := range candidates {
 		count := lb.inflight[b.DestinationID]
 		if count < bestCount {
 			bestCount = count
@@ -94,6 +104,19 @@ func (lb *LeastRequestBalancer) Done(destID string) {
 	if lb.inflight[destID] < 0 {
 		lb.inflight[destID] = 0
 	}
+}
+
+// sampleDests returns a random sample of n destinations from the slice.
+func sampleDests(dests []model.DestinationRef, n int) []model.DestinationRef {
+	if n >= len(dests) {
+		return dests
+	}
+	perm := rand.Perm(len(dests))
+	out := make([]model.DestinationRef, n)
+	for i := 0; i < n; i++ {
+		out[i] = dests[perm[i]]
+	}
+	return out
 }
 
 // RandomBalancer picks a random destination.

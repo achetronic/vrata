@@ -107,6 +107,9 @@ func (od *OutlierDetector) RecordResponse(destID, epID string, statusCode int) {
 	}
 
 	if shouldEject && !t.ejected.Load() {
+		if od.maxEjectionReached(destID, t.cfg) {
+			return
+		}
 		t.ejected.Store(true)
 		od.mu.Lock()
 		t.ejectedAt = time.Now()
@@ -122,13 +125,43 @@ func (od *OutlierDetector) RecordResponse(destID, epID string, statusCode int) {
 	}
 }
 
-// Start begins the periodic check to un-eject endpoints. The loop ticks
-// every second and evaluates each tracker against its configured interval.
+// maxEjectionReached returns true if ejecting another endpoint in this
+// destination would exceed the configured MaxEjectionPercent.
+func (od *OutlierDetector) maxEjectionReached(destID string, cfg *model.OutlierDetectionOptions) bool {
+	if cfg.MaxEjectionPercent == 0 {
+		return false
+	}
+	od.mu.Lock()
+	defer od.mu.Unlock()
+
+	total := 0
+	ejected := 0
+	for _, t := range od.trackers {
+		key := destID + "/"
+		if len(t.endpoint.ID) > 0 {
+			k := destID + "/" + t.endpoint.ID
+			if len(k) >= len(key) && k[:len(key)] == key {
+				total++
+				if t.ejected.Load() {
+					ejected++
+				}
+			}
+		}
+	}
+	if total == 0 {
+		return false
+	}
+	currentPercent := uint32((ejected + 1) * 100 / total)
+	return currentPercent > cfg.MaxEjectionPercent
+}
+
+// Start begins the periodic check to un-eject endpoints.
 func (od *OutlierDetector) Start(ctx context.Context) {
 	ctx, od.cancel = context.WithCancel(ctx)
 
 	go func() {
-		ticker := time.NewTicker(time.Second)
+		interval := od.resolveInterval()
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
 		for {
@@ -140,6 +173,23 @@ func (od *OutlierDetector) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// resolveInterval returns the smallest configured outlier detection interval
+// across all tracked destinations, defaulting to 10s.
+func (od *OutlierDetector) resolveInterval() time.Duration {
+	od.mu.Lock()
+	defer od.mu.Unlock()
+
+	minInterval := 10 * time.Second
+	for _, t := range od.trackers {
+		if t.cfg.Interval != "" {
+			if d, err := time.ParseDuration(t.cfg.Interval); err == nil && d > 0 && d < minInterval {
+				minInterval = d
+			}
+		}
+	}
+	return minInterval
 }
 
 func (od *OutlierDetector) checkEjections() {

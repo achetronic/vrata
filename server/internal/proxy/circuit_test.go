@@ -69,3 +69,57 @@ func TestCircuitBreakerCustomOpenDuration(t *testing.T) {
 		t.Error("should transition to half-open immediately (openDuration=0s)")
 	}
 }
+
+func TestCircuitBreakerMaxRequests(t *testing.T) {
+	cb := NewCircuitBreaker(1024, 1024, 2, 3, 0, "")
+	cb.OnRequest()
+	cb.OnRequest()
+	if cb.Allow() {
+		t.Error("should reject when at maxRequests")
+	}
+	cb.OnComplete()
+	if !cb.Allow() {
+		t.Error("should allow after completing a request")
+	}
+}
+
+func TestCircuitBreakerMaxConnections(t *testing.T) {
+	cb := NewCircuitBreaker(2, 1024, 1024, 3, 0, "")
+	cb.OnRequest()
+	cb.OnRequest()
+	if cb.Allow() {
+		t.Error("should reject when at maxConnections")
+	}
+}
+
+func TestCircuitBreakerAllowRetry(t *testing.T) {
+	cb := NewCircuitBreaker(10, 10, 10, 2, 0, "")
+	if !cb.AllowRetry() {
+		t.Error("should allow retry initially")
+	}
+	cb.OnRetry()
+	cb.OnRetry()
+	if cb.AllowRetry() {
+		t.Error("should reject retry when at maxRetries=2")
+	}
+	cb.OnRetryComplete()
+	if !cb.AllowRetry() {
+		t.Error("should allow retry after one completes")
+	}
+}
+
+func TestCircuitBreakerAllowPending(t *testing.T) {
+	cb := NewCircuitBreaker(10, 2, 10, 3, 0, "")
+	if !cb.AllowPending() {
+		t.Error("should allow pending initially")
+	}
+	cb.OnPending()
+	cb.OnPending()
+	if cb.AllowPending() {
+		t.Error("should reject pending when at maxPendingRequests=2")
+	}
+	cb.OnPendingComplete()
+	if !cb.AllowPending() {
+		t.Error("should allow pending after one completes")
+	}
+}

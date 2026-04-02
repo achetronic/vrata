@@ -54,23 +54,29 @@ type BackendRefInput struct {
 
 // FilterInput holds a filter from a rule.
 type FilterInput struct {
-	Type string // "RequestRedirect", "URLRewrite", "RequestHeaderModifier"
+	Type string // "RequestRedirect", "URLRewrite", "RequestHeaderModifier", "ResponseHeaderModifier"
 
 	// RequestRedirect fields.
-	RedirectScheme   string
-	RedirectHost     string
-	RedirectPort     uint32
-	RedirectPath     string
-	RedirectCode     uint32
-	RedirectStripQuery bool
+	RedirectScheme      string
+	RedirectHost        string
+	RedirectPort        uint32
+	RedirectPath        string
+	RedirectPathPrefix  string
+	RedirectCode        uint32
+	RedirectStripQuery  bool
 
 	// URLRewrite fields.
 	RewritePathPrefix string
+	RewriteFullPath   string
 	RewriteHostname   string
 
-	// RequestHeaderModifier fields.
+	// RequestHeaderModifier / ResponseHeaderModifier fields.
 	HeadersToAdd    []HeaderValue
 	HeadersToRemove []string
+
+	// ResponseHeaderModifier fields.
+	ResponseHeadersToAdd    []HeaderValue
+	ResponseHeadersToRemove []string
 }
 
 // HeaderValue is a key-value pair for header manipulation.
@@ -172,12 +178,18 @@ func MapHTTPRoute(input HTTPRouteInput) MappedEntities {
 		redirectFilter := findFilter(rule.Filters, "RequestRedirect")
 		rewriteFilter := findFilter(rule.Filters, "URLRewrite")
 		headerFilter := findFilter(rule.Filters, "RequestHeaderModifier")
+		respHeaderFilter := findFilter(rule.Filters, "ResponseHeaderModifier")
 
-		// Create a middleware for header modification if present.
 		var middlewareIDs []string
 		if headerFilter != nil {
 			mwName := fmt.Sprintf("%s/rule-%d/headers", prefix, ri)
 			mw := mapHeaderModifierFilter(mwName, headerFilter)
+			allMiddlewares = append(allMiddlewares, mw)
+			middlewareIDs = append(middlewareIDs, mwName)
+		}
+		if respHeaderFilter != nil {
+			mwName := fmt.Sprintf("%s/rule-%d/resp-headers", prefix, ri)
+			mw := mapResponseHeaderModifierFilter(mwName, respHeaderFilter)
 			allMiddlewares = append(allMiddlewares, mw)
 			middlewareIDs = append(middlewareIDs, mwName)
 		}
@@ -291,10 +303,17 @@ func MapGRPCRoute(input GRPCRouteInput) MappedEntities {
 		}
 
 		headerFilter := findFilter(rule.Filters, "RequestHeaderModifier")
+		respHeaderFilter := findFilter(rule.Filters, "ResponseHeaderModifier")
 		var middlewareIDs []string
 		if headerFilter != nil {
 			mwName := fmt.Sprintf("%s/rule-%d/headers", prefix, ri)
 			mw := mapHeaderModifierFilter(mwName, headerFilter)
+			allMiddlewares = append(allMiddlewares, mw)
+			middlewareIDs = append(middlewareIDs, mwName)
+		}
+		if respHeaderFilter != nil {
+			mwName := fmt.Sprintf("%s/rule-%d/resp-headers", prefix, ri)
+			mw := mapResponseHeaderModifierFilter(mwName, respHeaderFilter)
 			allMiddlewares = append(allMiddlewares, mw)
 			middlewareIDs = append(middlewareIDs, mwName)
 		}
@@ -441,6 +460,12 @@ func mapRedirectFilter(f *FilterInput) map[string]any {
 	if f.RedirectPath != "" {
 		rd["path"] = f.RedirectPath
 	}
+	if f.RedirectPathPrefix != "" {
+		rd["prefixPath"] = f.RedirectPathPrefix
+	}
+	if f.RedirectPort > 0 {
+		rd["port"] = f.RedirectPort
+	}
 	if f.RedirectCode > 0 {
 		rd["code"] = f.RedirectCode
 	}
@@ -455,6 +480,9 @@ func mapRewriteFilter(f *FilterInput) map[string]any {
 	rw := make(map[string]any)
 	if f.RewritePathPrefix != "" {
 		rw["path"] = f.RewritePathPrefix
+	}
+	if f.RewriteFullPath != "" {
+		rw["fullPath"] = f.RewriteFullPath
 	}
 	if f.RewriteHostname != "" {
 		rw["host"] = f.RewriteHostname
@@ -474,6 +502,26 @@ func mapHeaderModifierFilter(name string, f *FilterInput) vrata.Middleware {
 	}
 	if len(f.HeadersToRemove) > 0 {
 		headers["requestHeadersToRemove"] = f.HeadersToRemove
+	}
+	return vrata.Middleware{
+		Name:    name,
+		Type:    "headers",
+		Headers: headers,
+	}
+}
+
+// mapResponseHeaderModifierFilter converts a response header modifier filter to a Vrata Middleware.
+func mapResponseHeaderModifierFilter(name string, f *FilterInput) vrata.Middleware {
+	headers := make(map[string]any)
+	if len(f.ResponseHeadersToAdd) > 0 {
+		var add []map[string]any
+		for _, h := range f.ResponseHeadersToAdd {
+			add = append(add, map[string]any{"key": h.Name, "value": h.Value})
+		}
+		headers["responseHeadersToAdd"] = add
+	}
+	if len(f.ResponseHeadersToRemove) > 0 {
+		headers["responseHeadersToRemove"] = f.ResponseHeadersToRemove
 	}
 	return vrata.Middleware{
 		Name:    name,

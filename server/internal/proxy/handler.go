@@ -67,7 +67,7 @@ func buildRouteHandler(
 			continue
 		}
 
-		m, cleanup := buildMiddleware(mw, pools, celBodyMaxSize)
+		m, cleanup := buildMiddleware(mw, ov, pools, celBodyMaxSize)
 		if m == nil {
 			continue
 		}
@@ -80,7 +80,11 @@ func buildRouteHandler(
 			m = wrapWithConditions(m, ov, celBodyMaxSize)
 		}
 
-		m = wrapWithMetrics(m, mw.Name, string(mw.Type))
+		metricsName := mw.Name
+		if mw.Type == model.MiddlewareTypeExtProc && mw.ExtProc != nil && mw.ExtProc.MetricsPrefix != "" {
+			metricsName = mw.ExtProc.MetricsPrefix
+		}
+		m = wrapWithMetrics(m, metricsName, string(mw.Type))
 
 		mws = append(mws, m)
 	}
@@ -232,32 +236,75 @@ func collectMiddlewareIDs(route model.Route, group *model.RouteGroup) []string {
 	return ids
 }
 
-func buildMiddleware(mw model.Middleware, pools map[string]*DestinationPool, celBodyMaxSize int) (middlewares.Middleware, func()) {
+func buildMiddleware(mw model.Middleware, ov *model.MiddlewareOverride, pools map[string]*DestinationPool, celBodyMaxSize int) (middlewares.Middleware, func()) {
 	services := poolsToServices(pools)
-	switch mw.Type {
+
+	effectiveMW := mw
+	if ov != nil {
+		if ov.Headers != nil && mw.Type == model.MiddlewareTypeHeaders {
+			effectiveMW.Headers = mergeHeadersConfig(mw.Headers, ov.Headers)
+		}
+		if ov.ExtProc != nil && mw.Type == model.MiddlewareTypeExtProc && mw.ExtProc != nil {
+			merged := *mw.ExtProc
+			if ov.ExtProc.Phases != nil {
+				merged.Phases = ov.ExtProc.Phases
+			}
+			if ov.ExtProc.AllowOnError != nil {
+				merged.AllowOnError = *ov.ExtProc.AllowOnError
+			}
+			effectiveMW.ExtProc = &merged
+		}
+	}
+
+	switch effectiveMW.Type {
 	case model.MiddlewareTypeCORS:
-		return middlewares.CORSMiddleware(mw.CORS), nil
+		return middlewares.CORSMiddleware(effectiveMW.CORS), nil
 	case model.MiddlewareTypeHeaders:
-		return middlewares.HeadersMiddleware(mw.Headers), nil
+		return middlewares.HeadersMiddleware(effectiveMW.Headers), nil
 	case model.MiddlewareTypeExtAuthz:
-		return middlewares.ExtAuthzMiddleware(mw.ExtAuthz, services), nil
+		return middlewares.ExtAuthzMiddleware(effectiveMW.ExtAuthz, services), nil
 	case model.MiddlewareTypeRateLimit:
-		m, stop := middlewares.RateLimitMiddlewareWithStop(mw.RateLimit)
+		m, stop := middlewares.RateLimitMiddlewareWithStop(effectiveMW.RateLimit)
 		return m, stop
 	case model.MiddlewareTypeJWT:
-		m, stop := middlewares.JWTMiddlewareWithStop(mw.JWT, services)
+		m, stop := middlewares.JWTMiddlewareWithStop(effectiveMW.JWT, services)
 		return m, stop
 	case model.MiddlewareTypeAccessLog:
-		m, stop := middlewares.AccessLogMiddlewareWithStop(mw.AccessLog)
+		m, stop := middlewares.AccessLogMiddlewareWithStop(effectiveMW.AccessLog)
 		return m, stop
 	case model.MiddlewareTypeExtProc:
-		m, stop := middlewares.ExtProcMiddlewareWithStop(mw.ExtProc, services)
+		m, stop := middlewares.ExtProcMiddlewareWithStop(effectiveMW.ExtProc, services)
 		return m, stop
 	case model.MiddlewareTypeInlineAuthz:
-		return middlewares.InlineAuthzMiddleware(mw.InlineAuthz, celBodyMaxSize), nil
+		return middlewares.InlineAuthzMiddleware(effectiveMW.InlineAuthz, celBodyMaxSize), nil
 	default:
 		return nil, nil
 	}
+}
+
+// mergeHeadersConfig merges an override HeadersConfig on top of the base.
+// Override values replace base values where set.
+func mergeHeadersConfig(base, override *model.HeadersConfig) *model.HeadersConfig {
+	if base == nil {
+		return override
+	}
+	if override == nil {
+		return base
+	}
+	merged := *base
+	if len(override.RequestHeadersToAdd) > 0 {
+		merged.RequestHeadersToAdd = override.RequestHeadersToAdd
+	}
+	if len(override.RequestHeadersToRemove) > 0 {
+		merged.RequestHeadersToRemove = override.RequestHeadersToRemove
+	}
+	if len(override.ResponseHeadersToAdd) > 0 {
+		merged.ResponseHeadersToAdd = override.ResponseHeadersToAdd
+	}
+	if len(override.ResponseHeadersToRemove) > 0 {
+		merged.ResponseHeadersToRemove = override.ResponseHeadersToRemove
+	}
+	return &merged
 }
 
 func poolsToServices(pools map[string]*DestinationPool) map[string]middlewares.Service {
@@ -399,7 +446,7 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 		upstreamStart := time.Now()
 
 		if fwd.Retry != nil {
-			proxy.Transport = newRetryTransport(proxy.Transport, fwd.Retry, retryCallback)
+			proxy.Transport = newRetryTransport(proxy.Transport, fwd.Retry, retryCallback, pool.CircuitBreaker)
 		}
 		if fwd.Rewrite != nil {
 			applyRewrite(r, fwd.Rewrite)
@@ -414,7 +461,7 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 			r.Header.Set("X-Request-Attempt-Count", "1")
 		}
 		if fwd.Retry == nil && group != nil && group.RetryDefault != nil {
-			proxy.Transport = newRetryTransport(proxy.Transport, group.RetryDefault, retryCallback)
+			proxy.Transport = newRetryTransport(proxy.Transport, group.RetryDefault, retryCallback, pool.CircuitBreaker)
 		}
 		if fwd.MaxGRPCTimeout != "" {
 			if maxDur, err := time.ParseDuration(fwd.MaxGRPCTimeout); err == nil {
