@@ -61,6 +61,10 @@ func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApp
 
 	// Destination endpoints
 	mux.HandleFunc("GET /api/v1/destinations", deps.HandleListDestinations)
+	mux.HandleFunc("POST /api/v1/destinations", deps.HandleCreateDestination)
+	mux.HandleFunc("GET /api/v1/destinations/{destinationId}", deps.HandleGetDestination)
+	mux.HandleFunc("PUT /api/v1/destinations/{destinationId}", deps.HandleUpdateDestination)
+	mux.HandleFunc("DELETE /api/v1/destinations/{destinationId}", deps.HandleDeleteDestination)
 
 	// Secret endpoints
 	mux.HandleFunc("GET /api/v1/secrets", deps.HandleListSecrets)
@@ -82,10 +86,6 @@ func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApp
 
 	// Debug
 	mux.HandleFunc("GET /api/v1/debug/config", deps.HandleGetConfigDump)
-	mux.HandleFunc("POST /api/v1/destinations", deps.HandleCreateDestination)
-	mux.HandleFunc("GET /api/v1/destinations/{destinationId}", deps.HandleGetDestination)
-	mux.HandleFunc("PUT /api/v1/destinations/{destinationId}", deps.HandleUpdateDestination)
-	mux.HandleFunc("DELETE /api/v1/destinations/{destinationId}", deps.HandleDeleteDestination)
 
 	// Swagger UI
 	mux.HandleFunc("GET /api/v1/docs/doc.json", func(w http.ResponseWriter, r *http.Request) {

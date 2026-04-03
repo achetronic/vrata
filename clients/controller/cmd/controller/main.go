@@ -238,6 +238,19 @@ func run() error {
 		syncCycle := func() {
 			start := time.Now()
 
+			// --- Phase 0: Circuit breaker for Vrata API ---
+			// Fast-fail if Vrata API is completely unreachable to prevent O(M*N) failing calls.
+			pingCtx, pingCancel := context.WithTimeout(ctx, 2*time.Second)
+			_, pingErr := rec.Client().ListGroups(pingCtx)
+			pingCancel()
+			if pingErr != nil {
+				logger.Error("Vrata API unreachable, skipping sync cycle", slog.String("error", pingErr.Error()))
+				if m != nil {
+					m.ReconcileErrors.WithLabelValues("ping").Inc()
+				}
+				return
+			}
+
 			// Reset dedup detector before each cycle to clear stale entries.
 			if detector != nil {
 				detector.Reset()
@@ -365,9 +378,9 @@ func run() error {
 				}
 			}
 
-			// --- Phase 3: Gateways (always processed, not queue-gated) ---
+			// --- Phase 3: Gateways (only when not blocked by a batch) ---
 
-			if cfg.WatchGateways() {
+			if !batchBlocking && cfg.WatchGateways() {
 				if err := syncAllGateways(ctx, informerCache, rec, bat, statusWriter, cfg.GatewayClass(), logger); err != nil {
 					logger.Error("Gateway sync failed", slog.String("error", err.Error()))
 					if m != nil {
@@ -549,6 +562,15 @@ func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconci
 				var listenerConds []metav1.Condition
 				now := metav1.Now()
 				if mapper.GatewayListenerProtocolSupported(listenerInput.Protocol) {
+					supportedKinds := []gwapiv1.RouteGroupKind{
+						{Group: (*gwapiv1.Group)(&gwapiv1.GroupVersion.Group), Kind: "HTTPRoute"},
+					}
+					if listenerInput.Protocol == "GRPC" || listenerInput.Protocol == "GRPCS" || listenerInput.Protocol == "HTTPS" {
+						supportedKinds = append(supportedKinds, gwapiv1.RouteGroupKind{
+							Group: (*gwapiv1.Group)(&gwapiv1.GroupVersion.Group), Kind: "GRPCRoute",
+						})
+					}
+					
 					listenerConds = append(listenerConds,
 						metav1.Condition{
 							Type:               string(gwapiv1.ListenerConditionAccepted),
@@ -567,6 +589,14 @@ func syncAllGateways(ctx context.Context, c cache.Cache, rec *reconciler.Reconci
 							Message:            "Listener programmed in Vrata",
 						},
 					)
+					
+					// Update SupportedKinds in ListenerStatus
+					for i, ls := range gw.Status.Listeners {
+						if string(ls.Name) == listenerInput.Name {
+							gw.Status.Listeners[i].SupportedKinds = supportedKinds
+							break
+						}
+					}
 				} else {
 					listenerConds = append(listenerConds,
 						metav1.Condition{
@@ -753,6 +783,49 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 	return changes, groupName, nil
 }
 
+// convertGRPCToHTTPInput translates a GRPCRouteInput into an HTTPRouteInput
+// purely for the purpose of overlap detection.
+func convertGRPCToHTTPInput(input mapper.GRPCRouteInput) mapper.HTTPRouteInput {
+	out := mapper.HTTPRouteInput{
+		Name:      input.Name,
+		Namespace: input.Namespace,
+		Hostnames: input.Hostnames,
+	}
+
+	for _, r := range input.Rules {
+		rout := mapper.RuleInput{
+			BackendRefs: r.BackendRefs,
+			Filters:     r.Filters,
+		}
+		for _, m := range r.Matches {
+			mout := mapper.MatchInput{
+				Method: "POST", // gRPC uses POST
+				Headers: append([]mapper.HeaderMatchInput{
+					{Name: "Content-Type", Value: "application/grpc"},
+				}, m.Headers...),
+			}
+
+			if m.MatchType == "RegularExpression" {
+				mout.PathType = "RegularExpression"
+			} else {
+				if m.MethodName != "" && m.ServiceName != "" {
+					mout.PathType = "Exact"
+					mout.PathValue = fmt.Sprintf("/%s/%s", m.ServiceName, m.MethodName)
+				} else if m.ServiceName != "" {
+					mout.PathType = "PathPrefix"
+					mout.PathValue = fmt.Sprintf("/%s/", m.ServiceName)
+				} else {
+					mout.PathType = "PathPrefix"
+					mout.PathValue = "/"
+				}
+			}
+			rout.Matches = append(rout.Matches, mout)
+		}
+		out.Rules = append(out.Rules, rout)
+	}
+	return out
+}
+
 // reconcileGRPCRoute handles reconciliation of a GRPCRoute.
 func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, sw *status.Writer, detector *dedup.Detector, dupMode config.DuplicateMode, rgc *refgrant.Checker, m *kcmetrics.Metrics, logger *slog.Logger, ref *workqueue.RouteRef, groupName string) (int, string, error) {
 	var fetched gwapiv1.GRPCRoute
@@ -796,6 +869,30 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 		}
 		if denied {
 			return 0, groupName, nil
+		}
+	}
+
+	if detector != nil {
+		ols := detector.Check(convertGRPCToHTTPInput(input))
+		if len(ols) > 0 {
+			if m != nil {
+				m.OverlapsDetected.Inc()
+			}
+			if dupMode == config.DuplicateModeReject {
+				if m != nil {
+					m.OverlapsRejected.Inc()
+				}
+				msg := formatOverlapMessage(ols)
+				logger.Warn("rejecting grpc route due to overlapping paths",
+					slog.String("namespace", ref.Namespace),
+					slog.String("name", ref.Name),
+					slog.String("overlaps", msg),
+				)
+				if sw != nil && gr != nil {
+					sw.SetGRPCRouteAccepted(ctx, gr, false, "OverlappingRoute", msg)
+				}
+				return 0, groupName, nil
+			}
 		}
 	}
 
@@ -920,6 +1017,15 @@ func gatewayToInput(gw *gwapiv1.Gateway) mapper.GatewayInput {
 		if l.Hostname != nil {
 			gl.Hostname = string(*l.Hostname)
 		}
+		if l.TLS != nil && len(l.TLS.CertificateRefs) > 0 {
+			ref := l.TLS.CertificateRefs[0]
+			ns := gw.Namespace
+			if ref.Namespace != nil {
+				ns = string(*ref.Namespace)
+			}
+			gl.CertRef = fmt.Sprintf("{{secret:%s/%s/tls.crt}}", ns, ref.Name)
+			gl.KeyRef = fmt.Sprintf("{{secret:%s/%s/tls.key}}", ns, ref.Name)
+		}
 		input.Listeners = append(input.Listeners, gl)
 	}
 	return input
@@ -971,6 +1077,10 @@ func grpcRouteToInput(gr *gwapiv1.GRPCRoute) mapper.GRPCRouteInput {
 		}
 
 		for _, br := range rule.BackendRefs {
+			if (br.Group != nil && *br.Group != "core" && *br.Group != "") || (br.Kind != nil && *br.Kind != "Service") {
+				continue
+			}
+
 			ns := gr.Namespace
 			if br.Namespace != nil {
 				ns = string(*br.Namespace)
@@ -1025,6 +1135,29 @@ func grpcRouteToInput(gr *gwapiv1.GRPCRoute) mapper.GRPCRouteInput {
 					for _, name := range f.ResponseHeaderModifier.Remove {
 						fi.ResponseHeadersToRemove = append(fi.ResponseHeadersToRemove, name)
 					}
+				}
+			case gwapiv1.GRPCRouteFilterRequestMirror:
+				if f.RequestMirror != nil {
+					fi.MirrorServiceName = string(f.RequestMirror.BackendRef.Name)
+					ns := gr.Namespace
+					if f.RequestMirror.BackendRef.Namespace != nil {
+						ns = string(*f.RequestMirror.BackendRef.Namespace)
+					}
+					fi.MirrorServiceNamespace = ns
+					if f.RequestMirror.BackendRef.Port != nil {
+						fi.MirrorPort = uint32(*f.RequestMirror.BackendRef.Port)
+					}
+					if f.RequestMirror.Percent != nil {
+						fi.MirrorPercent = uint32(*f.RequestMirror.Percent)
+					} else if f.RequestMirror.Fraction != nil && f.RequestMirror.Fraction.Denominator != nil && *f.RequestMirror.Fraction.Denominator > 0 {
+						fi.MirrorPercent = uint32(float64(f.RequestMirror.Fraction.Numerator) / float64(*f.RequestMirror.Fraction.Denominator) * 100)
+					}
+				}
+			case gwapiv1.GRPCRouteFilterExtensionRef:
+				if f.ExtensionRef != nil {
+					fi.ExtensionGroup = string(f.ExtensionRef.Group)
+					fi.ExtensionKind = string(f.ExtensionRef.Kind)
+					fi.ExtensionName = string(f.ExtensionRef.Name)
 				}
 			}
 			ri.Filters = append(ri.Filters, fi)
@@ -1088,6 +1221,10 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 		}
 
 		for _, br := range rule.BackendRefs {
+			if (br.Group != nil && *br.Group != "core" && *br.Group != "") || (br.Kind != nil && *br.Kind != "Service") {
+				continue
+			}
+
 			ns := namespace
 			if br.Namespace != nil {
 				ns = string(*br.Namespace)
@@ -1126,10 +1263,10 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 						fi.RedirectPort = uint32(*f.RequestRedirect.Port)
 					}
 					if f.RequestRedirect.Path != nil {
-						if f.RequestRedirect.Path.ReplaceFullPath != nil {
+						if f.RequestRedirect.Path.Type == gwapiv1.FullPathHTTPPathModifier && f.RequestRedirect.Path.ReplaceFullPath != nil {
 							fi.RedirectPath = *f.RequestRedirect.Path.ReplaceFullPath
 						}
-						if f.RequestRedirect.Path.ReplacePrefixMatch != nil {
+						if f.RequestRedirect.Path.Type == gwapiv1.PrefixMatchHTTPPathModifier && f.RequestRedirect.Path.ReplacePrefixMatch != nil {
 							fi.RedirectPathPrefix = *f.RequestRedirect.Path.ReplacePrefixMatch
 						}
 					}
@@ -1137,10 +1274,10 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 			case gwapiv1.HTTPRouteFilterURLRewrite:
 				if f.URLRewrite != nil {
 					if f.URLRewrite.Path != nil {
-						if f.URLRewrite.Path.ReplacePrefixMatch != nil {
+						if f.URLRewrite.Path.Type == gwapiv1.PrefixMatchHTTPPathModifier && f.URLRewrite.Path.ReplacePrefixMatch != nil {
 							fi.RewritePathPrefix = *f.URLRewrite.Path.ReplacePrefixMatch
 						}
-						if f.URLRewrite.Path.ReplaceFullPath != nil {
+						if f.URLRewrite.Path.Type == gwapiv1.FullPathHTTPPathModifier && f.URLRewrite.Path.ReplaceFullPath != nil {
 							fi.RewriteFullPath = *f.URLRewrite.Path.ReplaceFullPath
 						}
 					}
@@ -1180,8 +1317,56 @@ func httpRouteSpecToInput(namespace, name string, spec *gwapiv1.HTTPRouteSpec) m
 						fi.ResponseHeadersToRemove = append(fi.ResponseHeadersToRemove, name)
 					}
 				}
+			case gwapiv1.HTTPRouteFilterRequestMirror:
+				if f.RequestMirror != nil {
+					fi.MirrorServiceName = string(f.RequestMirror.BackendRef.Name)
+					ns := namespace
+					if f.RequestMirror.BackendRef.Namespace != nil {
+						ns = string(*f.RequestMirror.BackendRef.Namespace)
+					}
+					fi.MirrorServiceNamespace = ns
+					if f.RequestMirror.BackendRef.Port != nil {
+						fi.MirrorPort = uint32(*f.RequestMirror.BackendRef.Port)
+					}
+					if f.RequestMirror.Percent != nil {
+						fi.MirrorPercent = uint32(*f.RequestMirror.Percent)
+					} else if f.RequestMirror.Fraction != nil && f.RequestMirror.Fraction.Denominator != nil && *f.RequestMirror.Fraction.Denominator > 0 {
+						fi.MirrorPercent = uint32(float64(f.RequestMirror.Fraction.Numerator) / float64(*f.RequestMirror.Fraction.Denominator) * 100)
+					}
+				}
+			case gwapiv1.HTTPRouteFilterExtensionRef:
+				if f.ExtensionRef != nil {
+					fi.ExtensionGroup = string(f.ExtensionRef.Group)
+					fi.ExtensionKind = string(f.ExtensionRef.Kind)
+					fi.ExtensionName = string(f.ExtensionRef.Name)
+				}
 			}
 			ri.Filters = append(ri.Filters, fi)
+		}
+
+		if rule.Timeouts != nil && rule.Timeouts.Request != nil {
+			ri.Timeouts = &mapper.RuleTimeouts{
+				Request: string(*rule.Timeouts.Request),
+			}
+		}
+
+		if rule.Retry != nil {
+			ri.Retry = &mapper.RuleRetry{}
+			if rule.Retry.Attempts != nil {
+				ri.Retry.Attempts = uint32(*rule.Retry.Attempts)
+			}
+			if rule.Retry.Backoff != nil {
+				ri.Retry.PerAttemptTimeout = string(*rule.Retry.Backoff) // Note: mapping backoff to perAttemptTimeout as an approximation, although they differ semantically.
+			}
+		}
+
+		if rule.SessionPersistence != nil && rule.SessionPersistence.SessionName != nil {
+			ri.SessionPersistence = &mapper.RuleSessionPersistence{
+				SessionName: *rule.SessionPersistence.SessionName,
+			}
+			if rule.SessionPersistence.AbsoluteTimeout != nil {
+				ri.SessionPersistence.AbsoluteTimeout = string(*rule.SessionPersistence.AbsoluteTimeout)
+			}
 		}
 
 		input.Rules = append(input.Rules, ri)

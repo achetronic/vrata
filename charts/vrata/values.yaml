@@ -83,24 +83,29 @@ controlPlane:
   #
   # To enable Raft HA (3 or 5 replicas), add controlPlane.raft:
   #
-  #   config:
-  #     controlPlane:
-  #       address: ":8080"
-  #       storePath: "/data"
-  #       raft:
-  #         nodeId: "${POD_IP}:7000"
-  #         bindAddress: ":7000"
-  #         advertiseAddress: "${POD_IP}:7000"
-  #         discovery:
-  #           dns: "<release>-vrata-cp-headless.<namespace>.svc.cluster.local"
-  #         # Or use static peers instead of DNS discovery:
-  #         # peers:
-  #         #   - "<pod0-ip>:7000=cp-0.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
-  #         #   - "<pod1-ip>:7000=cp-1.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
-  #         #   - "<pod2-ip>:7000=cp-2.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
-  #     log:
-  #       format: console
-  #       level: info
+  # config:
+  #   controlPlane:
+  #     address: ":8080"
+  #     storePath: "/data"
+  #     raft:
+  #       nodeId: "${POD_IP}:7000"
+  #       bindAddress: ":7000"
+  #       advertiseAddress: "${POD_IP}:7000"
+  #       discovery:
+  #         dns: "<release>-vrata-cp-headless.<namespace>.svc.cluster.local"
+  #       # Or use static peers instead of DNS discovery:
+  #       # peers:
+  #       #   - "<pod0-ip>:7000=cp-0.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
+  #       #   - "<pod1-ip>:7000=cp-1.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
+  #       #   - "<pod2-ip>:7000=cp-2.<release>-vrata-cp-headless.<namespace>.svc.cluster.local:7000"
+  #   log:
+  #     format: console
+  #     level: info
+  #   sessionStore:
+  #     type: redis
+  #     redis:
+  #       address: "redis:6379"
+  #       db: 0
   config:
     controlPlane:
       address: ":8080"
@@ -170,6 +175,7 @@ proxy:
     proxy:
       # controlPlaneUrl: "http://external-cp:8080"
       reconnectInterval: 5s
+      # celBodyMaxSize: 1048576
       # TLS for the connection to the control plane (optional).
       # tls:
       #   cert: "${PROXY_TLS_CERT}"

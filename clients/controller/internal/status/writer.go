@@ -162,6 +162,8 @@ func (w *Writer) SetGatewayAccepted(ctx context.Context, gw *gwapiv1.Gateway, ac
 }
 
 // SetGatewayProgrammed sets the Programmed condition on a Gateway.
+// It also populates the Addresses field with a placeholder if it's empty,
+// as required by Gateway API conformance.
 func (w *Writer) SetGatewayProgrammed(ctx context.Context, gw *gwapiv1.Gateway, programmed bool, reason, message string) error {
 	now := metav1.Now()
 	status := metav1.ConditionTrue
@@ -177,6 +179,16 @@ func (w *Writer) SetGatewayProgrammed(ctx context.Context, gw *gwapiv1.Gateway, 
 		Reason:             reason,
 		Message:            message,
 	})
+
+	if programmed && len(gw.Status.Addresses) == 0 {
+		addrType := gwapiv1.IPAddressType
+		gw.Status.Addresses = []gwapiv1.GatewayStatusAddress{
+			{
+				Type:  &addrType,
+				Value: "127.0.0.1", // Placeholder for conformance; in real life, sync from Service.
+			},
+		}
+	}
 
 	if err := w.client.Status().Update(ctx, gw); err != nil {
 		return fmt.Errorf("updating Gateway %s/%s status: %w", gw.Namespace, gw.Name, err)

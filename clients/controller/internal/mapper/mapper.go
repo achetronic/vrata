@@ -24,9 +24,26 @@ type HTTPRouteInput struct {
 
 // RuleInput holds a single rule from an HTTPRoute.
 type RuleInput struct {
-	Matches    []MatchInput
+	Matches     []MatchInput
 	BackendRefs []BackendRefInput
-	Filters    []FilterInput
+	Filters     []FilterInput
+	Timeouts    *RuleTimeouts
+	Retry       *RuleRetry
+	SessionPersistence *RuleSessionPersistence
+}
+
+type RuleTimeouts struct {
+	Request string
+}
+
+type RuleRetry struct {
+	Attempts          uint32
+	PerAttemptTimeout string
+}
+
+type RuleSessionPersistence struct {
+	SessionName     string
+	AbsoluteTimeout string
 }
 
 // MatchInput holds a single match within a rule.
@@ -85,6 +102,17 @@ type FilterInput struct {
 	// ResponseHeaderModifier fields.
 	ResponseHeadersToAdd    []HeaderValue
 	ResponseHeadersToRemove []string
+
+	// RequestMirror fields.
+	MirrorServiceName      string
+	MirrorServiceNamespace string
+	MirrorPort             uint32
+	MirrorPercent          uint32
+
+	// ExtensionRef fields.
+	ExtensionGroup string
+	ExtensionKind  string
+	ExtensionName  string
 }
 
 // HeaderValue is a key-value pair for header manipulation.
@@ -107,6 +135,8 @@ type GatewayListenerInput struct {
 	Port     uint32
 	Protocol string // "HTTP", "HTTPS", "GRPC", "GRPCS"
 	Hostname string
+	CertRef  string
+	KeyRef   string
 }
 
 // GRPCRouteInput holds the fields extracted from a Gateway API GRPCRoute.
@@ -186,6 +216,7 @@ func MapHTTPRoute(input HTTPRouteInput) MappedEntities {
 		// Check for redirect filter (overrides forward).
 		redirectFilter := findFilter(rule.Filters, "RequestRedirect")
 		rewriteFilter := findFilter(rule.Filters, "URLRewrite")
+		mirrorFilter := findFilter(rule.Filters, "RequestMirror")
 		headerFilter := findFilter(rule.Filters, "RequestHeaderModifier")
 		respHeaderFilter := findFilter(rule.Filters, "ResponseHeaderModifier")
 
@@ -225,6 +256,31 @@ func MapHTTPRoute(input HTTPRouteInput) MappedEntities {
 				}
 				if rewriteFilter != nil {
 					fwd["rewrite"] = mapRewriteFilter(rewriteFilter)
+				}
+				if mirrorFilter != nil {
+					fwd["mirror"] = mapMirrorFilter(mirrorFilter)
+				}
+				if rule.Timeouts != nil {
+					fwd["timeouts"] = map[string]any{
+						"request": rule.Timeouts.Request,
+					}
+				}
+				if rule.Retry != nil {
+					fwd["retry"] = map[string]any{
+						"attempts":          rule.Retry.Attempts,
+						"perAttemptTimeout": rule.Retry.PerAttemptTimeout,
+					}
+				}
+				if rule.SessionPersistence != nil {
+					fwd["destinationBalancing"] = map[string]any{
+						"algorithm": "WEIGHTED_CONSISTENT_HASH",
+						"weightedConsistentHash": map[string]any{
+							"cookie": map[string]any{
+								"name": rule.SessionPersistence.SessionName,
+								"ttl":  rule.SessionPersistence.AbsoluteTimeout,
+							},
+						},
+					}
 				}
 				route.Forward = fwd
 			}
@@ -268,7 +324,14 @@ func MapGateway(input GatewayInput) []vrata.Listener {
 		}
 		switch l.Protocol {
 		case "HTTPS", "GRPCS", "TLS":
-			listener.TLS = map[string]any{"enabled": true}
+			tlsConf := map[string]any{"enabled": true}
+			if l.CertRef != "" {
+				tlsConf["cert"] = l.CertRef
+			}
+			if l.KeyRef != "" {
+				tlsConf["key"] = l.KeyRef
+			}
+			listener.TLS = tlsConf
 		}
 		listeners = append(listeners, listener)
 	}
@@ -313,6 +376,7 @@ func MapGRPCRoute(input GRPCRouteInput) MappedEntities {
 
 		headerFilter := findFilter(rule.Filters, "RequestHeaderModifier")
 		respHeaderFilter := findFilter(rule.Filters, "ResponseHeaderModifier")
+		mirrorFilter := findFilter(rule.Filters, "RequestMirror")
 		var middlewareIDs []string
 		if headerFilter != nil {
 			mwName := fmt.Sprintf("%s/rule-%d/headers", prefix, ri)
@@ -341,9 +405,13 @@ func MapGRPCRoute(input GRPCRouteInput) MappedEntities {
 			}
 
 			if len(destRefs) > 0 {
-				route.Forward = map[string]any{
+				fwd := map[string]any{
 					"destinations": destRefs,
 				}
+				if mirrorFilter != nil {
+					fwd["mirror"] = mapMirrorFilter(mirrorFilter)
+				}
+				route.Forward = fwd
 			}
 
 			routes = append(routes, route)
@@ -508,6 +576,17 @@ func mapRewriteFilter(f *FilterInput) map[string]any {
 		rw["host"] = f.RewriteHostname
 	}
 	return rw
+}
+
+func mapMirrorFilter(f *FilterInput) map[string]any {
+	dk := DestinationKey{Name: f.MirrorServiceName, Namespace: f.MirrorServiceNamespace, Port: f.MirrorPort}
+	res := map[string]any{
+		"destinationId": dk.DestinationName(),
+	}
+	if f.MirrorPercent > 0 {
+		res["percentage"] = f.MirrorPercent
+	}
+	return res
 }
 
 // mapHeaderModifierFilter converts a header modifier filter to a Vrata Middleware.

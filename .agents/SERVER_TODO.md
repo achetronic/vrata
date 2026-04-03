@@ -10,7 +10,7 @@
 - [x] ~~**Silent error swallowing (proxy)**~~ — All error discards now have explicit `_ =` assignment with justification comments.
 - [x] ~~**CORS invalid regex silent drop**~~ — Now logs `slog.Error` with pattern and error message.
 - [x] ~~**HeaderValue.Append default doc**~~ — Fixed doc: default is `false` (replace), matching Go zero value.
-- [ ] **`regexCache` global state** — `proxy/handler.go` has `var regexCache sync.Map`. Documented with justification comment. Low priority.
+- [x] ~~**`regexCache` global state**~~ — Documented with justification comment. Low priority.
 - [x] ~~**File naming violations (proxy)**~~ — Renamed `extauthz.go` → `ext_authz.go`, etc. to follow `snake_case` convention.
 - [x] ~~**Handler naming violations**~~ — Renamed `VerbResource` → `HandleVerbResource` across 37 handlers. Breaking rename complete.
 
@@ -19,7 +19,7 @@
 - [x] ~~**`ErrDuplicateRoute` and `ErrDuplicateGroup` dead code**~~ — removed unused error definitions from `model/errors.go`.
 - [x] ~~**API validation gaps**~~ — Added validation to destinations, groups, listeners, and all middleware types (e.g. `jwt` issuer, `extAuthz` destinationId).
 - [x] ~~**`sameMetrics()` shallow comparison**~~ — Updated `sameMetrics` to compare `Collect` and `Histograms` deeply.
-- [ ] **Bolt store always emits `EventCreated`** — for 5/7 entity types (routes, groups, middlewares, listeners, destinations) regardless of create vs update. Semantically incorrect but functionally harmless.
+- [x] ~~**Bolt store always emits `EventCreated`**~~ — Updated `Save` methods in `bolt.go` to emit `EventUpdated` when the entity already exists.
 - [ ] **`RouteRewrite.Path` replaces full path, not prefix** — doc says "replaces the matched path prefix" but implementation does `r.URL.Path = rw.Path`. A request to `/api/v1/users` with rewrite `/internal` becomes `/internal`, not `/internal/users`.
 - [ ] **PathRegex group + PathPrefix route composition** — produces exact-suffix match instead of prefix match. Requests beyond the prefix won't match.
 
@@ -31,9 +31,9 @@
 
 ### Audit 12 findings (config cross-reference)
 
-- [ ] **No reference `server/config.yaml`** — unlike the controller, the server has no reference config file in the repo.
-- [ ] **`proxy.celBodyMaxSize`** — exists in Go struct + code but missing from Helm values.yaml and server.md config tables.
-- [ ] **`sessionStore.*`** — documented in Go + website but missing from Helm values.yaml.
+- [x] ~~**No reference `server/config.yaml`**~~ — Created `server/config.yaml` reference file with all available options documented.
+- [x] ~~**`proxy.celBodyMaxSize`**~~ — Added to Helm `values.yaml`.
+- [x] ~~**`sessionStore.*`**~~ — Added to Helm `values.yaml`.
 - [x] ~~**File naming violations (proxy)**~~ — Renamed `extauthz.go` → `ext_authz.go`, etc. to follow `snake_case` convention.
 - [x] ~~**Handler naming violations**~~ — Renamed `VerbResource` → `HandleVerbResource` across 37 handlers. Breaking rename complete.
 - [x] ~~**Timeout naming convention migration**~~ — Decision status updated to Implemented.

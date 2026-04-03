@@ -1,0 +1,90 @@
+# Vrata Server Configuration Reference
+# This file documents all available configuration options for the Vrata server.
+
+# mode selects the operating mode. Default: "controlplane".
+# Valid values: "controlplane" (runs API + proxy), "proxy" (runs only proxy, connects to remote controlplane).
+mode: "controlplane"
+
+# controlPlane holds settings for the control plane process.
+controlPlane:
+  # address is the host:port the HTTP API server listens on.
+  address: ":8080"
+  
+  # storePath is the root directory for all control plane state.
+  # Vrata places the bbolt database at <storePath>/vrata.db and, when Raft is
+  # enabled, Raft logs and snapshots at <storePath>/raft/.
+  storePath: "/data"
+
+  # raft enables multi-node HA replication via embedded Raft consensus.
+  # When absent, the control plane runs in single-node mode.
+  raft:
+    # nodeId is the unique identifier for this node in the Raft cluster.
+    nodeId: "cp-0"
+    
+    # bindAddress is the host:port this node listens on for Raft peer-to-peer communication.
+    bindAddress: ":7000"
+    
+    # advertiseAddress is the host:port that other nodes use to reach this node.
+    advertiseAddress: "${POD_IP}:7000"
+    
+    # peers is the explicit list of all cluster members. Used when DNS discovery is not configured.
+    # peers:
+    #   - "cp-0=10.0.0.1:7000"
+    #   - "cp-1=10.0.0.2:7000"
+    
+    # discovery configures automatic peer discovery (e.g. headless service in k8s).
+    discovery:
+      dns: "vrata-headless.vrata-system.svc.cluster.local"
+
+  # tls configures TLS for the HTTP API server.
+  tls:
+    # cert is the path to the PEM-encoded TLS certificate.
+    cert: "/etc/vrata/certs/tls.crt"
+    # key is the path to the PEM-encoded private key.
+    key: "/etc/vrata/certs/tls.key"
+    # clientAuth configures mutual TLS for client verification.
+    clientAuth:
+      mode: "require" # none, optional, require
+      ca: "/etc/vrata/certs/ca.crt"
+
+  # auth configures client authentication for the REST API.
+  auth:
+    # apiKeys is a list of acceptable Bearer tokens.
+    apiKeys:
+      - name: "admin"
+        key: "secret-token-123"
+
+  # encryption configures at-rest encryption for sensitive data in bbolt.
+  encryption:
+    # key must contain a base64-encoded 32-byte AES-256 key.
+    key: "YmFzZTY0LWVuY29kZWQtMzItYnl0ZS1rZXktdmFsdWU="
+
+# proxy holds settings for proxy-mode instances.
+proxy:
+  # controlPlaneUrl is the base URL of the control plane this proxy connects to.
+  controlPlaneUrl: "http://vrata-cp:8080"
+  
+  # reconnectInterval is how long to wait before reconnecting after a stream disconnection.
+  reconnectInterval: "5s"
+  
+  # celBodyMaxSize is the maximum request body size (in bytes) buffered for CEL expressions.
+  celBodyMaxSize: 1048576
+
+# log controls the logging behaviour.
+log:
+  # level selects the minimum severity: debug, info, warn, error.
+  level: "info"
+  # format selects the output structure: console or json.
+  format: "console"
+
+# sessionStore configures the external session backend used by the STICKY balancing algorithm.
+sessionStore:
+  # type selects the backend type. Currently only "redis".
+  type: "redis"
+  
+  # redis holds settings for the Redis backend.
+  redis:
+    address: "redis:6379"
+    password: "" # Optional
+    db: 0
+    tls: false

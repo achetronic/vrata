@@ -162,24 +162,39 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 	changes := 0
 
 	// 1. Ensure destinations exist.
+	allDests, err := r.client.ListDestinations(ctx)
+	if err != nil {
+		return changes, fmt.Errorf("listing destinations: %w", err)
+	}
+	destByName := make(map[string]vrata.Destination)
+	for _, d := range allDests {
+		destByName[d.Name] = d
+	}
+
 	for _, dk := range mapped.Destinations {
 		name := dk.DestinationName()
-		existing, err := r.findByName(ctx, "destinations", name)
-		if err != nil {
-			return changes, fmt.Errorf("checking destination %q: %w", name, err)
-		}
 		dest := vrata.Destination{
 			Name: name,
 			Host: dk.FQDN(),
 			Port: dk.Port,
 		}
-		if existing == nil {
+		
+		if existing, ok := destByName[name]; !ok {
 			created, err := r.client.CreateDestination(ctx, dest)
 			if err != nil {
 				return changes, fmt.Errorf("creating destination %q: %w", name, err)
 			}
 			r.logger.Info("reconciler: created destination", slog.String("name", name), slog.String("id", created.ID))
 			changes++
+		} else {
+			dest.ID = existing.ID
+			if existing.Host != dest.Host || existing.Port != dest.Port {
+				if err := r.client.UpdateDestination(ctx, dest.ID, dest); err != nil {
+					return changes, fmt.Errorf("updating destination %q: %w", name, err)
+				}
+				r.logger.Info("reconciler: updated destination", slog.String("name", name), slog.String("id", dest.ID))
+				changes++
+			}
 		}
 	}
 

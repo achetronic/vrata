@@ -37,6 +37,7 @@ func buildRouteHandler(
 	onCleanup func(func()),
 	sessStore SessionStore,
 	celBodyMaxSize int,
+	matchedPrefix string,
 ) http.Handler {
 	var handler http.Handler
 
@@ -46,7 +47,7 @@ func buildRouteHandler(
 	case route.Redirect != nil:
 		handler = redirectHandler(route.Redirect)
 	case route.Forward != nil:
-		handler = forwardHandler(route.Forward, pools, group, route.ID, route.Name, sessStore)
+		handler = forwardHandler(route.Forward, pools, group, route.ID, route.Name, sessStore, matchedPrefix)
 	default:
 		handler = http.NotFoundHandler()
 	}
@@ -370,7 +371,7 @@ func redirectHandler(rd *model.RouteRedirect) http.Handler {
 }
 
 // forwardHandler creates a handler that proxies to upstream destinations.
-func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool, group *model.RouteGroup, routeID string, routeName string, sessStore SessionStore) http.Handler {
+func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool, group *model.RouteGroup, routeID string, routeName string, sessStore SessionStore, matchedPrefix string) http.Handler {
 	var pinRing *destinationRing
 	if fwd.DestinationBalancing != nil &&
 		(fwd.DestinationBalancing.Algorithm == model.DestinationLBWeightedConsistentHash ||
@@ -451,7 +452,7 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 			proxy.Transport = newRetryTransport(proxy.Transport, fwd.Retry, retryCallback, pool.CircuitBreaker)
 		}
 		if fwd.Rewrite != nil {
-			applyRewrite(r, fwd.Rewrite)
+			applyRewrite(r, fwd.Rewrite, matchedPrefix)
 		}
 		if fwd.Mirror != nil {
 			mirrorRequest(r, fwd.Mirror, pools)
@@ -798,14 +799,18 @@ func mirrorRequest(original *http.Request, mirror *model.RouteMirror, pools map[
 	}()
 }
 
-func applyRewrite(r *http.Request, rw *model.RouteRewrite) {
+func applyRewrite(r *http.Request, rw *model.RouteRewrite, matchedPrefix string) {
 	if rw.PathRegex != nil {
 		re, err := cachedCompile(rw.PathRegex.Pattern)
 		if err == nil {
 			r.URL.Path = re.ReplaceAllString(r.URL.Path, rw.PathRegex.Substitution)
 		}
 	} else if rw.Path != "" {
-		r.URL.Path = rw.Path
+		if matchedPrefix != "" && strings.HasPrefix(r.URL.Path, matchedPrefix) {
+			r.URL.Path = rw.Path + strings.TrimPrefix(r.URL.Path, matchedPrefix)
+		} else {
+			r.URL.Path = rw.Path
+		}
 	}
 	if rw.Host != "" {
 		r.Host = rw.Host

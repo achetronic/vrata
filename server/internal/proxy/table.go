@@ -253,7 +253,11 @@ func compileRoute(
 	}
 
 	// Build handler with middleware chain.
-	cr.handler = buildRouteHandler(r, g, pools, allMw, onCleanup, sessStore, celBodyMaxSize)
+	prefix := cr.pathPrefix
+	if prefix == "" {
+		prefix = cr.pathExact
+	}
+	cr.handler = buildRouteHandler(r, g, pools, allMw, onCleanup, sessStore, celBodyMaxSize, prefix)
 
 	return cr, nil
 }

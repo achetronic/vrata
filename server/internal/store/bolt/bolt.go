@@ -188,8 +188,12 @@ func (s *Store) SaveRoute(_ context.Context, route model.Route) error {
 		return fmt.Errorf("marshalling route: %w", err)
 	}
 
+	var isUpdate bool
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketRoutes))
+		if b.Get([]byte(route.ID)) != nil {
+			isUpdate = true
+		}
 		if err := b.Put([]byte(route.ID), data); err != nil {
 			return fmt.Errorf("saving route %q: %w", route.ID, err)
 		}
@@ -198,7 +202,11 @@ func (s *Store) SaveRoute(_ context.Context, route model.Route) error {
 	if err != nil {
 		return err
 	}
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceRoute, ID: route.ID})
+	evt := store.EventCreated
+	if isUpdate {
+		evt = store.EventUpdated
+	}
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceRoute, ID: route.ID})
 	return nil
 }
 
@@ -275,8 +283,12 @@ func (s *Store) SaveGroup(_ context.Context, group model.RouteGroup) error {
 		return fmt.Errorf("marshalling group: %w", err)
 	}
 
+	var isUpdate bool
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketGroups))
+		if b.Get([]byte(group.ID)) != nil {
+			isUpdate = true
+		}
 		if err := b.Put([]byte(group.ID), data); err != nil {
 			return fmt.Errorf("saving group %q: %w", group.ID, err)
 		}
@@ -285,7 +297,11 @@ func (s *Store) SaveGroup(_ context.Context, group model.RouteGroup) error {
 	if err != nil {
 		return err
 	}
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceGroup, ID: group.ID})
+	evt := store.EventCreated
+	if isUpdate {
+		evt = store.EventUpdated
+	}
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceGroup, ID: group.ID})
 	return nil
 }
 
@@ -362,8 +378,12 @@ func (s *Store) SaveMiddleware(_ context.Context, filter model.Middleware) error
 		return fmt.Errorf("marshalling filter: %w", err)
 	}
 
+	var isUpdate bool
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketMiddlewares))
+		if b.Get([]byte(filter.ID)) != nil {
+			isUpdate = true
+		}
 		if err := b.Put([]byte(filter.ID), data); err != nil {
 			return fmt.Errorf("saving filter %q: %w", filter.ID, err)
 		}
@@ -372,7 +392,11 @@ func (s *Store) SaveMiddleware(_ context.Context, filter model.Middleware) error
 	if err != nil {
 		return err
 	}
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceMiddleware, ID: filter.ID})
+	evt := store.EventCreated
+	if isUpdate {
+		evt = store.EventUpdated
+	}
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceMiddleware, ID: filter.ID})
 	return nil
 }
 
@@ -449,8 +473,12 @@ func (s *Store) SaveListener(_ context.Context, listener model.Listener) error {
 		return fmt.Errorf("marshalling listener: %w", err)
 	}
 
+	var isUpdate bool
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketListeners))
+		if b.Get([]byte(listener.ID)) != nil {
+			isUpdate = true
+		}
 		if err := b.Put([]byte(listener.ID), data); err != nil {
 			return fmt.Errorf("saving listener %q: %w", listener.ID, err)
 		}
@@ -459,7 +487,11 @@ func (s *Store) SaveListener(_ context.Context, listener model.Listener) error {
 	if err != nil {
 		return err
 	}
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceListener, ID: listener.ID})
+	evt := store.EventCreated
+	if isUpdate {
+		evt = store.EventUpdated
+	}
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceListener, ID: listener.ID})
 	return nil
 }
 
@@ -536,8 +568,12 @@ func (s *Store) SaveDestination(_ context.Context, d model.Destination) error {
 		return fmt.Errorf("marshalling destination: %w", err)
 	}
 
+	var isUpdate bool
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketDestinations))
+		if b.Get([]byte(d.ID)) != nil {
+			isUpdate = true
+		}
 		if err := b.Put([]byte(d.ID), data); err != nil {
 			return fmt.Errorf("saving destination %q: %w", d.ID, err)
 		}
@@ -546,7 +582,11 @@ func (s *Store) SaveDestination(_ context.Context, d model.Destination) error {
 	if err != nil {
 		return err
 	}
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceDestination, ID: d.ID})
+	evt := store.EventCreated
+	if isUpdate {
+		evt = store.EventUpdated
+	}
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceDestination, ID: d.ID})
 	return nil
 }
 
