@@ -24,7 +24,7 @@ import (
 // @Success     200 {array}   model.Middleware
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /middlewares [get]
-func (d *Dependencies) ListMiddlewares(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleListMiddlewares(w http.ResponseWriter, r *http.Request) {
 	middlewares, err := d.Store.ListMiddlewares(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
@@ -45,7 +45,7 @@ func (d *Dependencies) ListMiddlewares(w http.ResponseWriter, r *http.Request) {
 // @Failure     400    {object}  respond.ErrorBody
 // @Failure     500    {object}  respond.ErrorBody
 // @Router      /middlewares [post]
-func (d *Dependencies) CreateMiddleware(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleCreateMiddleware(w http.ResponseWriter, r *http.Request) {
 	var mw model.Middleware
 	if err := json.NewDecoder(r.Body).Decode(&mw); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
@@ -80,7 +80,7 @@ func (d *Dependencies) CreateMiddleware(w http.ResponseWriter, r *http.Request) 
 // @Failure     404      {object} respond.ErrorBody
 // @Failure     500      {object} respond.ErrorBody
 // @Router      /middlewares/{middlewareId} [get]
-func (d *Dependencies) GetMiddleware(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleGetMiddleware(w http.ResponseWriter, r *http.Request) {
 	middlewareID := r.PathValue("middlewareId")
 
 	mw, err := d.Store.GetMiddleware(r.Context(), middlewareID)
@@ -105,7 +105,7 @@ func (d *Dependencies) GetMiddleware(w http.ResponseWriter, r *http.Request) {
 // @Failure     404      {object} respond.ErrorBody
 // @Failure     500      {object} respond.ErrorBody
 // @Router      /middlewares/{middlewareId} [put]
-func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleUpdateMiddleware(w http.ResponseWriter, r *http.Request) {
 	middlewareID := r.PathValue("middlewareId")
 
 	if _, err := d.Store.GetMiddleware(r.Context(), middlewareID); err != nil {
@@ -144,7 +144,7 @@ func (d *Dependencies) UpdateMiddleware(w http.ResponseWriter, r *http.Request) 
 // @Failure     404      {object} respond.ErrorBody
 // @Failure     500      {object} respond.ErrorBody
 // @Router      /middlewares/{middlewareId} [delete]
-func (d *Dependencies) DeleteMiddleware(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleDeleteMiddleware(w http.ResponseWriter, r *http.Request) {
 	middlewareID := r.PathValue("middlewareId")
 
 	if err := d.Store.DeleteMiddleware(r.Context(), middlewareID); err != nil {
@@ -157,7 +157,12 @@ func (d *Dependencies) DeleteMiddleware(w http.ResponseWriter, r *http.Request) 
 
 // validateMiddleware checks that the middleware configuration is valid.
 func validateMiddleware(mw model.Middleware) error {
-	if mw.Type == model.MiddlewareTypeInlineAuthz {
+	if mw.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+
+	switch mw.Type {
+	case model.MiddlewareTypeInlineAuthz:
 		if mw.InlineAuthz == nil {
 			return fmt.Errorf("inlineAuthz config is required when type is %q", mw.Type)
 		}
@@ -179,6 +184,34 @@ func validateMiddleware(mw model.Middleware) error {
 				return fmt.Errorf("inlineAuthz.rules[%d].cel: %w", i, err)
 			}
 		}
+
+	case model.MiddlewareTypeJWT:
+		if mw.JWT == nil {
+			return fmt.Errorf("jwt config is required when type is %q", mw.Type)
+		}
+		if mw.JWT.Issuer == "" {
+			return fmt.Errorf("jwt.issuer is required")
+		}
+		if mw.JWT.JWKsPath != "" && mw.JWT.JWKsDestinationID == "" {
+			return fmt.Errorf("jwt.jwksDestinationId is required when jwksPath is set")
+		}
+
+	case model.MiddlewareTypeExtAuthz:
+		if mw.ExtAuthz == nil {
+			return fmt.Errorf("extAuthz config is required when type is %q", mw.Type)
+		}
+		if mw.ExtAuthz.DestinationID == "" {
+			return fmt.Errorf("extAuthz.destinationId is required")
+		}
+
+	case model.MiddlewareTypeExtProc:
+		if mw.ExtProc == nil {
+			return fmt.Errorf("extProc config is required when type is %q", mw.Type)
+		}
+		if mw.ExtProc.DestinationID == "" {
+			return fmt.Errorf("extProc.destinationId is required")
+		}
 	}
+
 	return nil
 }

@@ -26,7 +26,7 @@ import (
 // @Success     200 {array}   model.SnapshotSummary
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /snapshots [get]
-func (d *Dependencies) ListSnapshots(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	summaries, err := d.Store.ListSnapshots(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
@@ -48,7 +48,7 @@ func (d *Dependencies) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 // @Failure     400  {object} respond.ErrorBody
 // @Failure     500  {object} respond.ErrorBody
 // @Router      /snapshots [post]
-func (d *Dependencies) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req SnapshotCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
@@ -100,7 +100,7 @@ func (d *Dependencies) CreateSnapshot(w http.ResponseWriter, r *http.Request) {
 // @Failure     404        {object} respond.ErrorBody
 // @Failure     500        {object} respond.ErrorBody
 // @Router      /snapshots/{snapshotId} [get]
-func (d *Dependencies) GetSnapshot(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleGetSnapshot(w http.ResponseWriter, r *http.Request) {
 	snapshotID := r.PathValue("snapshotId")
 
 	vs, err := d.Store.GetSnapshot(r.Context(), snapshotID)
@@ -128,7 +128,7 @@ func (d *Dependencies) GetSnapshot(w http.ResponseWriter, r *http.Request) {
 // @Failure     404        {object} respond.ErrorBody
 // @Failure     500        {object} respond.ErrorBody
 // @Router      /snapshots/{snapshotId} [delete]
-func (d *Dependencies) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleDeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 	snapshotID := r.PathValue("snapshotId")
 
 	if err := d.Store.DeleteSnapshot(r.Context(), snapshotID); err != nil {
@@ -156,7 +156,7 @@ func (d *Dependencies) DeleteSnapshot(w http.ResponseWriter, r *http.Request) {
 // @Failure     404        {object} respond.ErrorBody
 // @Failure     500        {object} respond.ErrorBody
 // @Router      /snapshots/{snapshotId}/activate [post]
-func (d *Dependencies) ActivateSnapshot(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleActivateSnapshot(w http.ResponseWriter, r *http.Request) {
 	snapshotID := r.PathValue("snapshotId")
 	ctx := r.Context()
 

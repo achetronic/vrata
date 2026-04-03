@@ -19,7 +19,7 @@ import (
 // @Success     200 {object} map[string]interface{}
 // @Failure     500 {object} respond.ErrorBody
 // @Router      /debug/config [get]
-func (d *Dependencies) GetConfigDump(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleGetConfigDump(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	listeners, err := d.Store.ListListeners(ctx)

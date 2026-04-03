@@ -364,7 +364,7 @@ func TestApplyHTTPRoute_IntraGroupGC_RemoveMiddleware(t *testing.T) {
 	}
 }
 
-func TestDeleteHTTPRoute_CleansAll(t *testing.T) {
+func TestDeleteRouteGroup_CleansAll(t *testing.T) {
 	mock, srv, client := setupMock()
 	defer srv.Close()
 	rec := NewReconciler(client, testLogger())
@@ -375,7 +375,7 @@ func TestDeleteHTTPRoute_CleansAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changes, err := rec.DeleteHTTPRoute(ctx, "default", "my-route")
+	changes, err := rec.DeleteRouteGroup(ctx, "default", "my-route")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,7 +396,7 @@ func TestDeleteHTTPRoute_CleansAll(t *testing.T) {
 	}
 }
 
-func TestDeleteHTTPRoute_SharedDestSurvives(t *testing.T) {
+func TestDeleteRouteGroup_SharedDestSurvives(t *testing.T) {
 	mock, srv, client := setupMock()
 	defer srv.Close()
 	rec := NewReconciler(client, testLogger())
@@ -411,7 +411,7 @@ func TestDeleteHTTPRoute_SharedDestSurvives(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := rec.DeleteHTTPRoute(ctx, "default", "route-a"); err != nil {
+	if _, err := rec.DeleteRouteGroup(ctx, "default", "route-a"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -443,7 +443,7 @@ func TestInit_RebuildsRefCount(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := rec2.DeleteHTTPRoute(ctx, "default", "route-a"); err != nil {
+	if _, err := rec2.DeleteRouteGroup(ctx, "default", "route-a"); err != nil {
 		t.Fatal(err)
 	}
 

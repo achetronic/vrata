@@ -480,6 +480,18 @@ func claimGatewayClass(ctx context.Context, c cache.Cache, sw *status.Writer, lo
 		if gc.Spec.ControllerName != status.ControllerName {
 			continue
 		}
+
+		alreadyAccepted := false
+		for _, c := range gc.Status.Conditions {
+			if c.Type == string(gwapiv1.GatewayClassConditionStatusAccepted) && c.Status == metav1.ConditionTrue && c.ObservedGeneration == gc.Generation {
+				alreadyAccepted = true
+				break
+			}
+		}
+		if alreadyAccepted {
+			continue
+		}
+
 		if err := sw.SetGatewayClassAccepted(ctx, gc, true, string(gwapiv1.GatewayClassReasonAccepted), "Accepted by Vrata controller"); err != nil {
 			logger.Error("setting GatewayClass status", slog.String("name", gc.Name), slog.String("error", err.Error()))
 		}
@@ -873,7 +885,7 @@ func gcOrphanedGroups(ctx context.Context, rec *reconciler.Reconciler, bat *batc
 		if !ok {
 			continue
 		}
-		changes, err := rec.DeleteHTTPRoute(ctx, ns, name)
+		changes, err := rec.DeleteRouteGroup(ctx, ns, name)
 		if err != nil {
 			logger.Error("deleting orphaned entities",
 				slog.String("group", groupName),

@@ -17,7 +17,7 @@ func TestRaftApplyRejectsNonClusterMode(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/", nil)
 	r.RemoteAddr = "127.0.0.1:1234"
-	deps.RaftApply(w, r)
+	deps.HandleRaftApply(w, r)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503, got %d", w.Code)
 	}
@@ -31,7 +31,7 @@ func TestRaftApplyRejectsPublicIP(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/", strings.NewReader(`{"type":"SaveRoute"}`))
 	r.RemoteAddr = "203.0.113.1:1234"
-	deps.RaftApply(w, r)
+	deps.HandleRaftApply(w, r)
 	if w.Code != http.StatusForbidden {
 		t.Errorf("expected 403 for public IP, got %d", w.Code)
 	}
@@ -45,7 +45,7 @@ func TestRaftApplyAcceptsPrivateIP(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/", strings.NewReader(`{"type":"SaveRoute"}`))
 	r.RemoteAddr = "10.0.0.5:1234"
-	deps.RaftApply(w, r)
+	deps.HandleRaftApply(w, r)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200 for private IP, got %d", w.Code)
 	}
@@ -59,7 +59,7 @@ func TestRaftApplyAcceptsLoopback(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/", strings.NewReader(`{"type":"SaveRoute"}`))
 	r.RemoteAddr = "127.0.0.1:1234"
-	deps.RaftApply(w, r)
+	deps.HandleRaftApply(w, r)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200 for loopback, got %d", w.Code)
 	}

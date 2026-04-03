@@ -255,6 +255,9 @@ func TestExtAuthzGRPCAllow(t *testing.T) {
 	cfg := &model.ExtAuthzConfig{
 		DestinationID: "authz-1",
 		Mode:          "grpc",
+		OnAllow: &model.ExtAuthzOnAllow{
+			CopyToUpstream: []string{"x-grpc-user"},
+		},
 	}
 	services := map[string]Service{"authz-1": {BaseURL: fmt.Sprintf("http://%s", addr)}}
 	mw := ExtAuthzMiddleware(cfg, services)

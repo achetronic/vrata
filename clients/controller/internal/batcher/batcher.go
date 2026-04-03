@@ -60,7 +60,7 @@ func (b *Batcher) Signal(ctx context.Context) {
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		if b.pending > 0 {
-			b.flushLocked(ctx)
+			b.flushLocked(context.Background())
 		}
 	})
 }

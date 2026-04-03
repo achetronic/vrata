@@ -23,7 +23,7 @@ import (
 // @Success     200 {array}   model.Listener
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /listeners [get]
-func (d *Dependencies) ListListeners(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleListListeners(w http.ResponseWriter, r *http.Request) {
 	listeners, err := d.Store.ListListeners(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
@@ -44,7 +44,7 @@ func (d *Dependencies) ListListeners(w http.ResponseWriter, r *http.Request) {
 // @Failure     400      {object}  respond.ErrorBody
 // @Failure     500      {object}  respond.ErrorBody
 // @Router      /listeners [post]
-func (d *Dependencies) CreateListener(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleCreateListener(w http.ResponseWriter, r *http.Request) {
 	var listener model.Listener
 	if err := json.NewDecoder(r.Body).Decode(&listener); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
@@ -83,7 +83,7 @@ func (d *Dependencies) CreateListener(w http.ResponseWriter, r *http.Request) {
 // @Failure     404        {object} respond.ErrorBody
 // @Failure     500        {object} respond.ErrorBody
 // @Router      /listeners/{listenerId} [get]
-func (d *Dependencies) GetListener(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleGetListener(w http.ResponseWriter, r *http.Request) {
 	listenerID := r.PathValue("listenerId")
 
 	listener, err := d.Store.GetListener(r.Context(), listenerID)
@@ -108,7 +108,7 @@ func (d *Dependencies) GetListener(w http.ResponseWriter, r *http.Request) {
 // @Failure     404        {object} respond.ErrorBody
 // @Failure     500        {object} respond.ErrorBody
 // @Router      /listeners/{listenerId} [put]
-func (d *Dependencies) UpdateListener(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleUpdateListener(w http.ResponseWriter, r *http.Request) {
 	listenerID := r.PathValue("listenerId")
 
 	if _, err := d.Store.GetListener(r.Context(), listenerID); err != nil {
@@ -151,7 +151,7 @@ func (d *Dependencies) UpdateListener(w http.ResponseWriter, r *http.Request) {
 // @Failure     404        {object} respond.ErrorBody
 // @Failure     500        {object} respond.ErrorBody
 // @Router      /listeners/{listenerId} [delete]
-func (d *Dependencies) DeleteListener(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleDeleteListener(w http.ResponseWriter, r *http.Request) {
 	listenerID := r.PathValue("listenerId")
 
 	if err := d.Store.DeleteListener(r.Context(), listenerID); err != nil {
@@ -164,6 +164,13 @@ func (d *Dependencies) DeleteListener(w http.ResponseWriter, r *http.Request) {
 
 // validateListener checks that the listener configuration is valid.
 func validateListener(l model.Listener) error {
+	if l.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if l.Port == 0 {
+		return fmt.Errorf("port is required and must be greater than 0")
+	}
+
 	if l.TLS != nil && l.TLS.ClientAuth != nil {
 		ca := l.TLS.ClientAuth
 		switch ca.Mode {

@@ -149,6 +149,16 @@ func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 		}
 	}
 
+	var allowPatterns []string
+	if cfg.OnAllow != nil {
+		allowPatterns = cfg.OnAllow.CopyToUpstream
+	}
+
+	denyPatterns := []string{"location", "set-cookie", "www-authenticate", "content-type"}
+	if cfg.OnDeny != nil {
+		denyPatterns = append(denyPatterns, cfg.OnDeny.CopyToClient...)
+	}
+
 	target := strings.TrimPrefix(strings.TrimPrefix(svc.BaseURL, "http://"), "https://")
 
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
@@ -168,6 +178,12 @@ func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 					for _, v := range values {
 						headers = append(headers, &extauthzv1.HeaderPair{Key: strings.ToLower(key), Value: v})
 					}
+				}
+			}
+
+			if cfg.OnCheck != nil {
+				for _, h := range cfg.OnCheck.InjectHeaders {
+					headers = append(headers, &extauthzv1.HeaderPair{Key: h.Key, Value: Interpolate(h.Value, r)})
 				}
 			}
 
@@ -197,16 +213,22 @@ func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 			}
 
 			if resp.Allowed {
-				for _, h := range resp.Headers {
-					r.Header.Set(h.Key, h.Value)
+				if len(allowPatterns) > 0 {
+					tempHeader := make(http.Header)
+					for _, h := range resp.Headers {
+						tempHeader.Add(h.Key, h.Value)
+					}
+					copyMatchingHeaders(r.Header, tempHeader, allowPatterns)
 				}
 				next.ServeHTTP(w, r)
 				return
 			}
 
+			tempHeader := make(http.Header)
 			for _, h := range resp.Headers {
-				w.Header().Set(h.Key, h.Value)
+				tempHeader.Add(h.Key, h.Value)
 			}
+			copyMatchingHeaders(w.Header(), tempHeader, denyPatterns)
 			status := int(resp.DeniedStatus)
 			if status == 0 {
 				status = http.StatusForbidden

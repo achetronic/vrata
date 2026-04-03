@@ -6,6 +6,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/achetronic/vrata/internal/api/respond"
@@ -22,7 +23,7 @@ import (
 // @Success     200 {array}   model.Destination
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /destinations [get]
-func (d *Dependencies) ListDestinations(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleListDestinations(w http.ResponseWriter, r *http.Request) {
 	destinations, err := d.Store.ListDestinations(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
@@ -43,7 +44,7 @@ func (d *Dependencies) ListDestinations(w http.ResponseWriter, r *http.Request) 
 // @Failure     400         {object}  respond.ErrorBody
 // @Failure     500         {object}  respond.ErrorBody
 // @Router      /destinations [post]
-func (d *Dependencies) CreateDestination(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleCreateDestination(w http.ResponseWriter, r *http.Request) {
 	var destination model.Destination
 	if err := json.NewDecoder(r.Body).Decode(&destination); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
@@ -52,6 +53,11 @@ func (d *Dependencies) CreateDestination(w http.ResponseWriter, r *http.Request)
 
 	if destination.ID == "" {
 		destination.ID = uuid.NewString()
+	}
+
+	if err := validateDestination(destination); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		return
 	}
 
 	if err := d.Store.SaveDestination(r.Context(), destination); err != nil {
@@ -73,7 +79,7 @@ func (d *Dependencies) CreateDestination(w http.ResponseWriter, r *http.Request)
 // @Failure     404           {object} respond.ErrorBody
 // @Failure     500           {object} respond.ErrorBody
 // @Router      /destinations/{destinationId} [get]
-func (d *Dependencies) GetDestination(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleGetDestination(w http.ResponseWriter, r *http.Request) {
 	destinationID := r.PathValue("destinationId")
 
 	destination, err := d.Store.GetDestination(r.Context(), destinationID)
@@ -98,7 +104,7 @@ func (d *Dependencies) GetDestination(w http.ResponseWriter, r *http.Request) {
 // @Failure     404           {object} respond.ErrorBody
 // @Failure     500           {object} respond.ErrorBody
 // @Router      /destinations/{destinationId} [put]
-func (d *Dependencies) UpdateDestination(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleUpdateDestination(w http.ResponseWriter, r *http.Request) {
 	destinationID := r.PathValue("destinationId")
 
 	if _, err := d.Store.GetDestination(r.Context(), destinationID); err != nil {
@@ -112,6 +118,11 @@ func (d *Dependencies) UpdateDestination(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	destination.ID = destinationID
+
+	if err := validateDestination(destination); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		return
+	}
 
 	if err := d.Store.SaveDestination(r.Context(), destination); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
@@ -132,7 +143,7 @@ func (d *Dependencies) UpdateDestination(w http.ResponseWriter, r *http.Request)
 // @Failure     404           {object} respond.ErrorBody
 // @Failure     500           {object} respond.ErrorBody
 // @Router      /destinations/{destinationId} [delete]
-func (d *Dependencies) DeleteDestination(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleDeleteDestination(w http.ResponseWriter, r *http.Request) {
 	destinationID := r.PathValue("destinationId")
 
 	if err := d.Store.DeleteDestination(r.Context(), destinationID); err != nil {
@@ -141,4 +152,19 @@ func (d *Dependencies) DeleteDestination(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateDestination checks that the destination configuration is valid.
+func validateDestination(d model.Destination) error {
+	if d.Name == "" {
+		return errors.New("name is required")
+	}
+	if len(d.Endpoints) == 0 && d.Host == "" && d.Options != nil && d.Options.Discovery == nil {
+		// Wait, if Options is nil, Discovery is nil.
+		return errors.New("destination must have either endpoints, a host, or discovery configured")
+	}
+	if len(d.Endpoints) == 0 && d.Host == "" && d.Options == nil {
+		return errors.New("destination must have either endpoints, a host, or discovery configured")
+	}
+	return nil
 }

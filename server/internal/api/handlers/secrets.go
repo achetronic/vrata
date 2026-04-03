@@ -24,7 +24,7 @@ import (
 // @Success     200 {array}   model.SecretSummary
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /secrets [get]
-func (d *Dependencies) ListSecrets(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleListSecrets(w http.ResponseWriter, r *http.Request) {
 	secrets, err := d.Store.ListSecrets(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, "listing secrets", d.Logger)
@@ -45,7 +45,7 @@ func (d *Dependencies) ListSecrets(w http.ResponseWriter, r *http.Request) {
 // @Failure     400    {object}  respond.ErrorBody
 // @Failure     500    {object}  respond.ErrorBody
 // @Router      /secrets [post]
-func (d *Dependencies) CreateSecret(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleCreateSecret(w http.ResponseWriter, r *http.Request) {
 	var sec model.Secret
 	if err := json.NewDecoder(r.Body).Decode(&sec); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
@@ -80,7 +80,7 @@ func (d *Dependencies) CreateSecret(w http.ResponseWriter, r *http.Request) {
 // @Failure     404      {object} respond.ErrorBody
 // @Failure     500      {object} respond.ErrorBody
 // @Router      /secrets/{secretId} [get]
-func (d *Dependencies) GetSecret(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleGetSecret(w http.ResponseWriter, r *http.Request) {
 	secretID := r.PathValue("secretId")
 
 	sec, err := d.Store.GetSecret(r.Context(), secretID)
@@ -108,7 +108,7 @@ func (d *Dependencies) GetSecret(w http.ResponseWriter, r *http.Request) {
 // @Failure     400      {object} respond.ErrorBody
 // @Failure     500      {object} respond.ErrorBody
 // @Router      /secrets/{secretId} [put]
-func (d *Dependencies) UpdateSecret(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleUpdateSecret(w http.ResponseWriter, r *http.Request) {
 	secretID := r.PathValue("secretId")
 
 	var sec model.Secret
@@ -141,7 +141,7 @@ func (d *Dependencies) UpdateSecret(w http.ResponseWriter, r *http.Request) {
 // @Failure     404 {object} respond.ErrorBody
 // @Failure     500 {object} respond.ErrorBody
 // @Router      /secrets/{secretId} [delete]
-func (d *Dependencies) DeleteSecret(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleDeleteSecret(w http.ResponseWriter, r *http.Request) {
 	secretID := r.PathValue("secretId")
 
 	if err := d.Store.DeleteSecret(r.Context(), secretID); err != nil {

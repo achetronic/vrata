@@ -16,13 +16,13 @@
 
 - [x] ~~**Listener update not signaling batcher**~~ — `syncAllGateways` now calls `bat.Signal(ctx)` on listener update (not just create).
 - [x] ~~**`claimGatewayClass` unused `className` param**~~ — removed; function now filters only on `ControllerName`.
-- [ ] **`claimGatewayClass` unconditional write every 2s** — writes GatewayClass status every sync cycle even if nothing changed. Should check-before-write.
+- [x] ~~**`claimGatewayClass` unconditional write every 2s**~~ — Function now checks if the class is already accepted before writing.
 - [ ] **`reconcileGRPCRoute` never runs overlap detection** — accepts `detector`/`dupMode` params but never calls `detector.Check()`. GRPCRoutes skip overlap detection entirely.
 - [ ] **Gateway sync runs during `batchBlocking=true`** — listener creates can trigger premature snapshot while a route batch is still accumulating.
-- [ ] **`DeleteHTTPRoute` naming** — used for both HTTPRoute and GRPCRoute groups. Should be renamed to `DeleteRouteGroup` for clarity.
+- [x] ~~**`DeleteHTTPRoute` naming**~~ — renamed to `DeleteRouteGroup` for clarity.
 - [ ] **Existing destinations never updated** — if Vrata state drifts (manual edit), `ApplyHTTPRoute` creates new destinations but never updates existing ones with different host/port.
 - [ ] **No circuit breaker on Vrata API calls** — unreachable Vrata causes O(M×N) failing 30s HTTP calls per 2s cycle with no backoff.
-- [ ] **Batcher `AfterFunc` stale context** — timer closure captures context from `Signal()` which may be cancelled by the time it fires.
+- [x] ~~**Batcher `AfterFunc` stale context**~~ — timer closure now uses `context.Background()` instead of capturing `ctx` from `Signal()`.
 
 ### Mapper gaps
 

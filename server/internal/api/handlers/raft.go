@@ -30,7 +30,7 @@ import (
 // @Failure     403 {object} respond.ErrorBody
 // @Failure     500 {object} respond.ErrorBody
 // @Router      /sync/raft [post]
-func (d *Dependencies) RaftApply(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleRaftApply(w http.ResponseWriter, r *http.Request) {
 	if d.Raft == nil {
 		respond.Error(w, http.StatusServiceUnavailable, "cluster mode not active", d.Logger)
 		return

@@ -11,31 +11,31 @@
 - [x] ~~**CORS invalid regex silent drop**~~ — Now logs `slog.Error` with pattern and error message.
 - [x] ~~**HeaderValue.Append default doc**~~ — Fixed doc: default is `false` (replace), matching Go zero value.
 - [ ] **`regexCache` global state** — `proxy/handler.go` has `var regexCache sync.Map`. Documented with justification comment. Low priority.
-- [ ] **File naming violations (proxy)** — `extauthz.go` → `ext_authz.go`, etc. Large rename. Low priority.
-- [ ] **Handler naming violations** — `VerbResource` → `HandleVerbResource` across 37 handlers. Breaking rename.
+- [x] ~~**File naming violations (proxy)**~~ — Renamed `extauthz.go` → `ext_authz.go`, etc. to follow `snake_case` convention.
+- [x] ~~**Handler naming violations**~~ — Renamed `VerbResource` → `HandleVerbResource` across 37 handlers. Breaking rename complete.
 
 ### Audit 9 findings (server internal model→consumer)
 
-- [ ] **`ErrDuplicateRoute` and `ErrDuplicateGroup` dead code** — defined in `model/errors.go` but never referenced. Either use them or remove.
-- [ ] **API validation gaps** — destinations, groups, listeners (most fields), 7/8 middleware types have zero field validation. E.g. `jwt` without `issuer`, `extAuthz` without `destinationId`.
-- [ ] **`sameMetrics()` shallow comparison** — only compares `ResolvedPath()`. Changes to `Collect` toggles or `Histograms` buckets don't trigger listener restart.
+- [x] ~~**`ErrDuplicateRoute` and `ErrDuplicateGroup` dead code**~~ — removed unused error definitions from `model/errors.go`.
+- [x] ~~**API validation gaps**~~ — Added validation to destinations, groups, listeners, and all middleware types (e.g. `jwt` issuer, `extAuthz` destinationId).
+- [x] ~~**`sameMetrics()` shallow comparison**~~ — Updated `sameMetrics` to compare `Collect` and `Histograms` deeply.
 - [ ] **Bolt store always emits `EventCreated`** — for 5/7 entity types (routes, groups, middlewares, listeners, destinations) regardless of create vs update. Semantically incorrect but functionally harmless.
 - [ ] **`RouteRewrite.Path` replaces full path, not prefix** — doc says "replaces the matched path prefix" but implementation does `r.URL.Path = rw.Path`. A request to `/api/v1/users` with rewrite `/internal` becomes `/internal`, not `/internal/users`.
 - [ ] **PathRegex group + PathPrefix route composition** — produces exact-suffix match instead of prefix match. Requests beyond the prefix won't match.
 
 ### Audit 11 findings (middleware config field trace)
 
-- [ ] **ExtAuthz gRPC: `OnCheck.InjectHeaders` not wired** — gRPC mode never injects headers. HTTP-only feature silently ignored in gRPC mode.
-- [ ] **ExtAuthz gRPC: `OnAllow.CopyToUpstream` not wired** — gRPC mode copies ALL response headers to upstream blindly instead of filtering.
-- [ ] **ExtAuthz gRPC: `OnDeny.CopyToClient` not wired** — gRPC mode copies ALL response headers on deny instead of filtering.
+- [x] ~~**ExtAuthz gRPC: `OnCheck.InjectHeaders` not wired**~~ — Wired gRPC mode to inject headers.
+- [x] ~~**ExtAuthz gRPC: `OnAllow.CopyToUpstream` not wired**~~ — Wired gRPC mode to filter upstream headers.
+- [x] ~~**ExtAuthz gRPC: `OnDeny.CopyToClient` not wired**~~ — Wired gRPC mode to filter deny headers.
 
 ### Audit 12 findings (config cross-reference)
 
 - [ ] **No reference `server/config.yaml`** — unlike the controller, the server has no reference config file in the repo.
 - [ ] **`proxy.celBodyMaxSize`** — exists in Go struct + code but missing from Helm values.yaml and server.md config tables.
 - [ ] **`sessionStore.*`** — documented in Go + website but missing from Helm values.yaml.
-- [ ] **File naming violations (proxy)** — `extauthz.go` → `ext_authz.go`, etc. Large rename. Low priority.
-- [ ] **Handler naming violations** — `VerbResource` → `HandleVerbResource` across 37 handlers. Breaking rename.
+- [x] ~~**File naming violations (proxy)**~~ — Renamed `extauthz.go` → `ext_authz.go`, etc. to follow `snake_case` convention.
+- [x] ~~**Handler naming violations**~~ — Renamed `VerbResource` → `HandleVerbResource` across 37 handlers. Breaking rename complete.
 - [x] ~~**Timeout naming convention migration**~~ — Decision status updated to Implemented.
 
 ### Proxy: not-wired features

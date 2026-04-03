@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 
@@ -365,7 +366,16 @@ func sameMetrics(a, b *model.ListenerMetrics) bool {
 	if a == nil || b == nil {
 		return false
 	}
-	return a.ResolvedPath() == b.ResolvedPath()
+	if a.ResolvedPath() != b.ResolvedPath() {
+		return false
+	}
+	if !reflect.DeepEqual(a.Collect, b.Collect) {
+		return false
+	}
+	if !reflect.DeepEqual(a.Histograms, b.Histograms) {
+		return false
+	}
+	return true
 }
 
 // sameTimeouts compares two listener timeout configs for equality.

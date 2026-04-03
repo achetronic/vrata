@@ -23,7 +23,7 @@ import (
 // @Success     200 {array}   model.Route
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /routes [get]
-func (d *Dependencies) ListRoutes(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleListRoutes(w http.ResponseWriter, r *http.Request) {
 	routes, err := d.Store.ListRoutes(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
@@ -44,7 +44,7 @@ func (d *Dependencies) ListRoutes(w http.ResponseWriter, r *http.Request) {
 // @Failure     400   {object}  respond.ErrorBody
 // @Failure     500   {object}  respond.ErrorBody
 // @Router      /routes [post]
-func (d *Dependencies) CreateRoute(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleCreateRoute(w http.ResponseWriter, r *http.Request) {
 	var route model.Route
 	if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
@@ -79,7 +79,7 @@ func (d *Dependencies) CreateRoute(w http.ResponseWriter, r *http.Request) {
 // @Failure     404     {object} respond.ErrorBody
 // @Failure     500     {object} respond.ErrorBody
 // @Router      /routes/{routeId} [get]
-func (d *Dependencies) GetRoute(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleGetRoute(w http.ResponseWriter, r *http.Request) {
 	routeID := r.PathValue("routeId")
 
 	route, err := d.Store.GetRoute(r.Context(), routeID)
@@ -104,7 +104,7 @@ func (d *Dependencies) GetRoute(w http.ResponseWriter, r *http.Request) {
 // @Failure     404     {object} respond.ErrorBody
 // @Failure     500     {object} respond.ErrorBody
 // @Router      /routes/{routeId} [put]
-func (d *Dependencies) UpdateRoute(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 	routeID := r.PathValue("routeId")
 
 	if _, err := d.Store.GetRoute(r.Context(), routeID); err != nil {
@@ -173,7 +173,7 @@ func validateRouteAction(route model.Route) error {
 // @Failure     404     {object} respond.ErrorBody
 // @Failure     500     {object} respond.ErrorBody
 // @Router      /routes/{routeId} [delete]
-func (d *Dependencies) DeleteRoute(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 	routeID := r.PathValue("routeId")
 
 	if err := d.Store.DeleteRoute(r.Context(), routeID); err != nil {

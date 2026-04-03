@@ -28,7 +28,7 @@ import (
 // @Success     200 {object} model.Snapshot
 // @Failure     503 {object} respond.ErrorBody
 // @Router      /sync/snapshot [get]
-func (d *Dependencies) SyncSnapshot(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleSyncSnapshot(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		respond.Error(w, http.StatusInternalServerError, "streaming not supported", d.Logger)

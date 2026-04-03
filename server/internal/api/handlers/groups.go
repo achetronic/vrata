@@ -8,6 +8,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/achetronic/vrata/internal/api/respond"
@@ -24,7 +25,7 @@ import (
 // @Success     200 {array}   model.RouteGroup
 // @Failure     500 {object}  respond.ErrorBody
 // @Router      /groups [get]
-func (d *Dependencies) ListGroups(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleListGroups(w http.ResponseWriter, r *http.Request) {
 	groups, err := d.Store.ListGroups(r.Context())
 	if err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
@@ -45,7 +46,7 @@ func (d *Dependencies) ListGroups(w http.ResponseWriter, r *http.Request) {
 // @Failure     400   {object}  respond.ErrorBody
 // @Failure     500   {object}  respond.ErrorBody
 // @Router      /groups [post]
-func (d *Dependencies) CreateGroup(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	var group model.RouteGroup
 	if err := json.NewDecoder(r.Body).Decode(&group); err != nil {
 		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
@@ -54,6 +55,11 @@ func (d *Dependencies) CreateGroup(w http.ResponseWriter, r *http.Request) {
 
 	if group.ID == "" {
 		group.ID = uuid.NewString()
+	}
+
+	if err := validateGroup(group); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		return
 	}
 
 	if err := d.Store.SaveGroup(r.Context(), group); err != nil {
@@ -75,7 +81,7 @@ func (d *Dependencies) CreateGroup(w http.ResponseWriter, r *http.Request) {
 // @Failure     404     {object} respond.ErrorBody
 // @Failure     500     {object} respond.ErrorBody
 // @Router      /groups/{groupId} [get]
-func (d *Dependencies) GetGroup(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleGetGroup(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 
 	group, err := d.Store.GetGroup(r.Context(), groupID)
@@ -100,7 +106,7 @@ func (d *Dependencies) GetGroup(w http.ResponseWriter, r *http.Request) {
 // @Failure     404     {object} respond.ErrorBody
 // @Failure     500     {object} respond.ErrorBody
 // @Router      /groups/{groupId} [put]
-func (d *Dependencies) UpdateGroup(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 
 	if _, err := d.Store.GetGroup(r.Context(), groupID); err != nil {
@@ -114,6 +120,11 @@ func (d *Dependencies) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	group.ID = groupID
+
+	if err := validateGroup(group); err != nil {
+		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		return
+	}
 
 	if err := d.Store.SaveGroup(r.Context(), group); err != nil {
 		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
@@ -134,7 +145,7 @@ func (d *Dependencies) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 // @Failure     404     {object} respond.ErrorBody
 // @Failure     500     {object} respond.ErrorBody
 // @Router      /groups/{groupId} [delete]
-func (d *Dependencies) DeleteGroup(w http.ResponseWriter, r *http.Request) {
+func (d *Dependencies) HandleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	groupID := r.PathValue("groupId")
 
 	if err := d.Store.DeleteGroup(r.Context(), groupID); err != nil {
@@ -143,4 +154,12 @@ func (d *Dependencies) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// validateGroup checks that the group configuration is valid.
+func validateGroup(g model.RouteGroup) error {
+	if g.Name == "" {
+		return errors.New("name is required")
+	}
+	return nil
 }

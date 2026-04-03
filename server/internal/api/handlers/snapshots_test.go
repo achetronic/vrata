@@ -46,7 +46,7 @@ func TestCreateSnapshot(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/snapshots", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
-	deps.CreateSnapshot(w, req)
+	deps.HandleCreateSnapshot(w, req)
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
@@ -80,7 +80,7 @@ func TestCreateSnapshotMissingName(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/snapshots", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
-	deps.CreateSnapshot(w, req)
+	deps.HandleCreateSnapshot(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
@@ -93,7 +93,7 @@ func TestCreateSnapshotInvalidBody(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/snapshots", bytes.NewReader([]byte("not json")))
 	w := httptest.NewRecorder()
 
-	deps.CreateSnapshot(w, req)
+	deps.HandleCreateSnapshot(w, req)
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
@@ -108,7 +108,7 @@ func TestListSnapshotsEmpty(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v1/snapshots", nil)
 	w := httptest.NewRecorder()
 
-	deps.ListSnapshots(w, req)
+	deps.HandleListSnapshots(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
@@ -140,7 +140,7 @@ func TestListSnapshotsShowsActive(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v1/snapshots", nil)
 	w := httptest.NewRecorder()
 
-	deps.ListSnapshots(w, req)
+	deps.HandleListSnapshots(w, req)
 
 	var summaries []model.SnapshotSummary
 	json.NewDecoder(w.Body).Decode(&summaries)
@@ -180,7 +180,7 @@ func TestGetSnapshot(t *testing.T) {
 	req.SetPathValue("snapshotId", "s1")
 	w := httptest.NewRecorder()
 
-	deps.GetSnapshot(w, req)
+	deps.HandleGetSnapshot(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -203,7 +203,7 @@ func TestGetSnapshotNotFound(t *testing.T) {
 	req.SetPathValue("snapshotId", "nonexistent")
 	w := httptest.NewRecorder()
 
-	deps.GetSnapshot(w, req)
+	deps.HandleGetSnapshot(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)
@@ -222,7 +222,7 @@ func TestDeleteSnapshot(t *testing.T) {
 	req.SetPathValue("snapshotId", "s1")
 	w := httptest.NewRecorder()
 
-	deps.DeleteSnapshot(w, req)
+	deps.HandleDeleteSnapshot(w, req)
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
@@ -241,7 +241,7 @@ func TestDeleteSnapshotNotFound(t *testing.T) {
 	req.SetPathValue("snapshotId", "nonexistent")
 	w := httptest.NewRecorder()
 
-	deps.DeleteSnapshot(w, req)
+	deps.HandleDeleteSnapshot(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)
@@ -259,7 +259,7 @@ func TestDeleteActiveSnapshotClearsPointer(t *testing.T) {
 	req.SetPathValue("snapshotId", "s1")
 	w := httptest.NewRecorder()
 
-	deps.DeleteSnapshot(w, req)
+	deps.HandleDeleteSnapshot(w, req)
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("expected 204, got %d", w.Code)
@@ -283,7 +283,7 @@ func TestActivateSnapshot(t *testing.T) {
 	req.SetPathValue("snapshotId", "s1")
 	w := httptest.NewRecorder()
 
-	deps.ActivateSnapshot(w, req)
+	deps.HandleActivateSnapshot(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
@@ -315,7 +315,7 @@ func TestActivateSnapshotNotFound(t *testing.T) {
 	req.SetPathValue("snapshotId", "nonexistent")
 	w := httptest.NewRecorder()
 
-	deps.ActivateSnapshot(w, req)
+	deps.HandleActivateSnapshot(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", w.Code)

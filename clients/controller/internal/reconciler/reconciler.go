@@ -340,10 +340,10 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 	return changes, nil
 }
 
-// DeleteHTTPRoute removes all entities created from an HTTPRoute.
+// DeleteRouteGroup removes all entities created from an HTTPRoute.
 // Destinations are only deleted if their refcount reaches zero.
 // Returns the number of changes applied.
-func (r *Reconciler) DeleteHTTPRoute(ctx context.Context, namespace, name string) (int, error) {
+func (r *Reconciler) DeleteRouteGroup(ctx context.Context, namespace, name string) (int, error) {
 	prefix := fmt.Sprintf("k8s:%s/%s", namespace, name)
 	changes := 0
 

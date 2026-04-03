@@ -32,60 +32,60 @@ func NewRouter(st store.Store, logger *slog.Logger, raftApplier handlers.RaftApp
 	}
 
 	// Route endpoints
-	mux.HandleFunc("GET /api/v1/routes", deps.ListRoutes)
-	mux.HandleFunc("POST /api/v1/routes", deps.CreateRoute)
-	mux.HandleFunc("GET /api/v1/routes/{routeId}", deps.GetRoute)
-	mux.HandleFunc("PUT /api/v1/routes/{routeId}", deps.UpdateRoute)
-	mux.HandleFunc("DELETE /api/v1/routes/{routeId}", deps.DeleteRoute)
+	mux.HandleFunc("GET /api/v1/routes", deps.HandleListRoutes)
+	mux.HandleFunc("POST /api/v1/routes", deps.HandleCreateRoute)
+	mux.HandleFunc("GET /api/v1/routes/{routeId}", deps.HandleGetRoute)
+	mux.HandleFunc("PUT /api/v1/routes/{routeId}", deps.HandleUpdateRoute)
+	mux.HandleFunc("DELETE /api/v1/routes/{routeId}", deps.HandleDeleteRoute)
 
 	// Group endpoints
-	mux.HandleFunc("GET /api/v1/groups", deps.ListGroups)
-	mux.HandleFunc("POST /api/v1/groups", deps.CreateGroup)
-	mux.HandleFunc("GET /api/v1/groups/{groupId}", deps.GetGroup)
-	mux.HandleFunc("PUT /api/v1/groups/{groupId}", deps.UpdateGroup)
-	mux.HandleFunc("DELETE /api/v1/groups/{groupId}", deps.DeleteGroup)
+	mux.HandleFunc("GET /api/v1/groups", deps.HandleListGroups)
+	mux.HandleFunc("POST /api/v1/groups", deps.HandleCreateGroup)
+	mux.HandleFunc("GET /api/v1/groups/{groupId}", deps.HandleGetGroup)
+	mux.HandleFunc("PUT /api/v1/groups/{groupId}", deps.HandleUpdateGroup)
+	mux.HandleFunc("DELETE /api/v1/groups/{groupId}", deps.HandleDeleteGroup)
 
 	// Middleware endpoints
-	mux.HandleFunc("GET /api/v1/middlewares", deps.ListMiddlewares)
-	mux.HandleFunc("POST /api/v1/middlewares", deps.CreateMiddleware)
-	mux.HandleFunc("GET /api/v1/middlewares/{middlewareId}", deps.GetMiddleware)
-	mux.HandleFunc("PUT /api/v1/middlewares/{middlewareId}", deps.UpdateMiddleware)
-	mux.HandleFunc("DELETE /api/v1/middlewares/{middlewareId}", deps.DeleteMiddleware)
+	mux.HandleFunc("GET /api/v1/middlewares", deps.HandleListMiddlewares)
+	mux.HandleFunc("POST /api/v1/middlewares", deps.HandleCreateMiddleware)
+	mux.HandleFunc("GET /api/v1/middlewares/{middlewareId}", deps.HandleGetMiddleware)
+	mux.HandleFunc("PUT /api/v1/middlewares/{middlewareId}", deps.HandleUpdateMiddleware)
+	mux.HandleFunc("DELETE /api/v1/middlewares/{middlewareId}", deps.HandleDeleteMiddleware)
 
 	// Listener endpoints
-	mux.HandleFunc("GET /api/v1/listeners", deps.ListListeners)
-	mux.HandleFunc("POST /api/v1/listeners", deps.CreateListener)
-	mux.HandleFunc("GET /api/v1/listeners/{listenerId}", deps.GetListener)
-	mux.HandleFunc("PUT /api/v1/listeners/{listenerId}", deps.UpdateListener)
-	mux.HandleFunc("DELETE /api/v1/listeners/{listenerId}", deps.DeleteListener)
+	mux.HandleFunc("GET /api/v1/listeners", deps.HandleListListeners)
+	mux.HandleFunc("POST /api/v1/listeners", deps.HandleCreateListener)
+	mux.HandleFunc("GET /api/v1/listeners/{listenerId}", deps.HandleGetListener)
+	mux.HandleFunc("PUT /api/v1/listeners/{listenerId}", deps.HandleUpdateListener)
+	mux.HandleFunc("DELETE /api/v1/listeners/{listenerId}", deps.HandleDeleteListener)
 
 	// Destination endpoints
-	mux.HandleFunc("GET /api/v1/destinations", deps.ListDestinations)
+	mux.HandleFunc("GET /api/v1/destinations", deps.HandleListDestinations)
 
 	// Secret endpoints
-	mux.HandleFunc("GET /api/v1/secrets", deps.ListSecrets)
-	mux.HandleFunc("POST /api/v1/secrets", deps.CreateSecret)
-	mux.HandleFunc("GET /api/v1/secrets/{secretId}", deps.GetSecret)
-	mux.HandleFunc("PUT /api/v1/secrets/{secretId}", deps.UpdateSecret)
-	mux.HandleFunc("DELETE /api/v1/secrets/{secretId}", deps.DeleteSecret)
+	mux.HandleFunc("GET /api/v1/secrets", deps.HandleListSecrets)
+	mux.HandleFunc("POST /api/v1/secrets", deps.HandleCreateSecret)
+	mux.HandleFunc("GET /api/v1/secrets/{secretId}", deps.HandleGetSecret)
+	mux.HandleFunc("PUT /api/v1/secrets/{secretId}", deps.HandleUpdateSecret)
+	mux.HandleFunc("DELETE /api/v1/secrets/{secretId}", deps.HandleDeleteSecret)
 
 	// Sync — snapshot streaming to proxies and Raft write-forwarding between nodes
-	mux.HandleFunc("GET /api/v1/sync/snapshot", deps.SyncSnapshot)
-	mux.HandleFunc("POST /api/v1/sync/raft", deps.RaftApply)
+	mux.HandleFunc("GET /api/v1/sync/snapshot", deps.HandleSyncSnapshot)
+	mux.HandleFunc("POST /api/v1/sync/raft", deps.HandleRaftApply)
 
 	// Snapshot endpoints
-	mux.HandleFunc("GET /api/v1/snapshots", deps.ListSnapshots)
-	mux.HandleFunc("POST /api/v1/snapshots", deps.CreateSnapshot)
-	mux.HandleFunc("GET /api/v1/snapshots/{snapshotId}", deps.GetSnapshot)
-	mux.HandleFunc("DELETE /api/v1/snapshots/{snapshotId}", deps.DeleteSnapshot)
-	mux.HandleFunc("POST /api/v1/snapshots/{snapshotId}/activate", deps.ActivateSnapshot)
+	mux.HandleFunc("GET /api/v1/snapshots", deps.HandleListSnapshots)
+	mux.HandleFunc("POST /api/v1/snapshots", deps.HandleCreateSnapshot)
+	mux.HandleFunc("GET /api/v1/snapshots/{snapshotId}", deps.HandleGetSnapshot)
+	mux.HandleFunc("DELETE /api/v1/snapshots/{snapshotId}", deps.HandleDeleteSnapshot)
+	mux.HandleFunc("POST /api/v1/snapshots/{snapshotId}/activate", deps.HandleActivateSnapshot)
 
 	// Debug
-	mux.HandleFunc("GET /api/v1/debug/config", deps.GetConfigDump)
-	mux.HandleFunc("POST /api/v1/destinations", deps.CreateDestination)
-	mux.HandleFunc("GET /api/v1/destinations/{destinationId}", deps.GetDestination)
-	mux.HandleFunc("PUT /api/v1/destinations/{destinationId}", deps.UpdateDestination)
-	mux.HandleFunc("DELETE /api/v1/destinations/{destinationId}", deps.DeleteDestination)
+	mux.HandleFunc("GET /api/v1/debug/config", deps.HandleGetConfigDump)
+	mux.HandleFunc("POST /api/v1/destinations", deps.HandleCreateDestination)
+	mux.HandleFunc("GET /api/v1/destinations/{destinationId}", deps.HandleGetDestination)
+	mux.HandleFunc("PUT /api/v1/destinations/{destinationId}", deps.HandleUpdateDestination)
+	mux.HandleFunc("DELETE /api/v1/destinations/{destinationId}", deps.HandleDeleteDestination)
 
 	// Swagger UI
 	mux.HandleFunc("GET /api/v1/docs/doc.json", func(w http.ResponseWriter, r *http.Request) {

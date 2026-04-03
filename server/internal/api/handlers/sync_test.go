@@ -25,9 +25,9 @@ func TestSyncSnapshotSendsActiveSnapshot(t *testing.T) {
 
 	st.SaveListener(ctx, model.Listener{ID: "l1", Name: "listener-1", Port: 8080})
 	st.SaveRoute(ctx, model.Route{
-		ID:   "r1",
-		Name: "route-1",
-		Match: model.MatchRule{PathPrefix: "/api"},
+		ID:             "r1",
+		Name:           "route-1",
+		Match:          model.MatchRule{PathPrefix: "/api"},
 		DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
 	})
 
@@ -37,9 +37,9 @@ func TestSyncSnapshotSendsActiveSnapshot(t *testing.T) {
 		Snapshot: model.Snapshot{
 			Listeners: []model.Listener{{ID: "l1", Name: "listener-1", Port: 8080}},
 			Routes: []model.Route{{
-				ID:   "r1",
-				Name: "route-1",
-				Match: model.MatchRule{PathPrefix: "/api"},
+				ID:             "r1",
+				Name:           "route-1",
+				Match:          model.MatchRule{PathPrefix: "/api"},
 				DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
 			}},
 			Groups:       []model.RouteGroup{},
@@ -60,7 +60,7 @@ func TestSyncSnapshotSendsActiveSnapshot(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		deps.SyncSnapshot(w, req)
+		deps.HandleSyncSnapshot(w, req)
 		close(done)
 	}()
 
@@ -111,7 +111,7 @@ func TestSyncSnapshotSendsOnSnapshotActivate(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		deps.SyncSnapshot(w, req)
+		deps.HandleSyncSnapshot(w, req)
 		close(done)
 	}()
 
@@ -163,7 +163,7 @@ func TestSyncSnapshotNoSnapshotNoEvent(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		deps.SyncSnapshot(w, req)
+		deps.HandleSyncSnapshot(w, req)
 		close(done)
 	}()
 

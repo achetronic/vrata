@@ -47,7 +47,7 @@ func decode[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 func TestRouteListEmpty(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.ListRoutes(w, httptest.NewRequest("GET", "/api/v1/routes", nil))
+	d.HandleListRoutes(w, httptest.NewRequest("GET", "/api/v1/routes", nil))
 	if w.Code != 200 {
 		t.Fatalf("got %d", w.Code)
 	}
@@ -63,7 +63,7 @@ func TestRouteCreateAndGet(t *testing.T) {
 		DirectResponse: &model.RouteDirectResponse{Status: 200}}
 
 	w := httptest.NewRecorder()
-	d.CreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
+	d.HandleCreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
 	if w.Code != 201 {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -75,7 +75,7 @@ func TestRouteCreateAndGet(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.SetPathValue("routeId", created.ID)
 	w2 := httptest.NewRecorder()
-	d.GetRoute(w2, req)
+	d.HandleGetRoute(w2, req)
 	if w2.Code != 200 {
 		t.Fatalf("get: %d", w2.Code)
 	}
@@ -88,7 +88,7 @@ func TestRouteCreateConflictingAction(t *testing.T) {
 		DirectResponse: &model.RouteDirectResponse{Status: 200},
 	}
 	w := httptest.NewRecorder()
-	d.CreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
+	d.HandleCreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
 	if w.Code != 400 {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
@@ -106,7 +106,7 @@ func TestRouteCreateInvalidWeights(t *testing.T) {
 		},
 	}
 	w := httptest.NewRecorder()
-	d.CreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
+	d.HandleCreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
 	if w.Code != 400 {
 		t.Fatalf("expected 400 for weights not summing to 100, got %d: %s", w.Code, w.Body.String())
 	}
@@ -123,7 +123,7 @@ func TestRouteCreateSingleDestinationNoWeightCheck(t *testing.T) {
 		},
 	}
 	w := httptest.NewRecorder()
-	d.CreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
+	d.HandleCreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
 	if w.Code != 201 {
 		t.Fatalf("expected 201 for single destination (no weight check), got %d: %s", w.Code, w.Body.String())
 	}
@@ -133,7 +133,7 @@ func TestRouteCreateNoAction(t *testing.T) {
 	d, _ := newDeps(t)
 	body := model.Route{Name: "empty"}
 	w := httptest.NewRecorder()
-	d.CreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
+	d.HandleCreateRoute(w, httptest.NewRequest("POST", "/", jsonBody(t, body)))
 	if w.Code != 400 {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
@@ -148,7 +148,7 @@ func TestRouteUpdate(t *testing.T) {
 	req := httptest.NewRequest("PUT", "/", jsonBody(t, body))
 	req.SetPathValue("routeId", "r1")
 	w := httptest.NewRecorder()
-	d.UpdateRoute(w, req)
+	d.HandleUpdateRoute(w, req)
 	if w.Code != 200 {
 		t.Fatalf("update: %d %s", w.Code, w.Body.String())
 	}
@@ -166,7 +166,7 @@ func TestRouteUpdateNotFound(t *testing.T) {
 	req := httptest.NewRequest("PUT", "/", jsonBody(t, model.Route{DirectResponse: &model.RouteDirectResponse{Status: 200}}))
 	req.SetPathValue("routeId", "nonexistent")
 	w := httptest.NewRecorder()
-	d.UpdateRoute(w, req)
+	d.HandleUpdateRoute(w, req)
 	if w.Code != 404 {
 		t.Fatalf("expected 404, got %d", w.Code)
 	}
@@ -179,7 +179,7 @@ func TestRouteDelete(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/", nil)
 	req.SetPathValue("routeId", "r1")
 	w := httptest.NewRecorder()
-	d.DeleteRoute(w, req)
+	d.HandleDeleteRoute(w, req)
 	if w.Code != 204 {
 		t.Fatalf("expected 204, got %d", w.Code)
 	}
@@ -190,7 +190,7 @@ func TestRouteDeleteNotFound(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/", nil)
 	req.SetPathValue("routeId", "nope")
 	w := httptest.NewRecorder()
-	d.DeleteRoute(w, req)
+	d.HandleDeleteRoute(w, req)
 	if w.Code != 404 {
 		t.Fatalf("expected 404, got %d", w.Code)
 	}
@@ -203,14 +203,14 @@ func TestGroupCRUD(t *testing.T) {
 
 	// List empty
 	w := httptest.NewRecorder()
-	d.ListGroups(w, httptest.NewRequest("GET", "/", nil))
+	d.HandleListGroups(w, httptest.NewRequest("GET", "/", nil))
 	if len(decode[[]model.RouteGroup](t, w)) != 0 {
 		t.Error("expected empty")
 	}
 
 	// Create
 	w = httptest.NewRecorder()
-	d.CreateGroup(w, httptest.NewRequest("POST", "/", jsonBody(t, model.RouteGroup{Name: "g1"})))
+	d.HandleCreateGroup(w, httptest.NewRequest("POST", "/", jsonBody(t, model.RouteGroup{Name: "g1"})))
 	if w.Code != 201 {
 		t.Fatalf("create: %d", w.Code)
 	}
@@ -223,7 +223,7 @@ func TestGroupCRUD(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.SetPathValue("groupId", created.ID)
 	w = httptest.NewRecorder()
-	d.GetGroup(w, req)
+	d.HandleGetGroup(w, req)
 	if w.Code != 200 {
 		t.Fatalf("get: %d", w.Code)
 	}
@@ -232,7 +232,7 @@ func TestGroupCRUD(t *testing.T) {
 	req = httptest.NewRequest("PUT", "/", jsonBody(t, model.RouteGroup{Name: "updated"}))
 	req.SetPathValue("groupId", created.ID)
 	w = httptest.NewRecorder()
-	d.UpdateGroup(w, req)
+	d.HandleUpdateGroup(w, req)
 	if w.Code != 200 {
 		t.Fatalf("update: %d", w.Code)
 	}
@@ -241,7 +241,7 @@ func TestGroupCRUD(t *testing.T) {
 	req = httptest.NewRequest("DELETE", "/", nil)
 	req.SetPathValue("groupId", created.ID)
 	w = httptest.NewRecorder()
-	d.DeleteGroup(w, req)
+	d.HandleDeleteGroup(w, req)
 	if w.Code != 204 {
 		t.Fatalf("delete: %d", w.Code)
 	}
@@ -250,7 +250,7 @@ func TestGroupCRUD(t *testing.T) {
 	req = httptest.NewRequest("DELETE", "/", nil)
 	req.SetPathValue("groupId", "nope")
 	w = httptest.NewRecorder()
-	d.DeleteGroup(w, req)
+	d.HandleDeleteGroup(w, req)
 	if w.Code != 404 {
 		t.Fatalf("expected 404, got %d", w.Code)
 	}
@@ -262,13 +262,13 @@ func TestDestinationCRUD(t *testing.T) {
 	d, _ := newDeps(t)
 
 	w := httptest.NewRecorder()
-	d.ListDestinations(w, httptest.NewRequest("GET", "/", nil))
+	d.HandleListDestinations(w, httptest.NewRequest("GET", "/", nil))
 	if len(decode[[]model.Destination](t, w)) != 0 {
 		t.Error("expected empty")
 	}
 
 	w = httptest.NewRecorder()
-	d.CreateDestination(w, httptest.NewRequest("POST", "/", jsonBody(t, model.Destination{Name: "d1", Host: "10.0.0.1", Port: 80})))
+	d.HandleCreateDestination(w, httptest.NewRequest("POST", "/", jsonBody(t, model.Destination{Name: "d1", Host: "10.0.0.1", Port: 80})))
 	if w.Code != 201 {
 		t.Fatalf("create: %d", w.Code)
 	}
@@ -277,7 +277,7 @@ func TestDestinationCRUD(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	req.SetPathValue("destinationId", created.ID)
 	w = httptest.NewRecorder()
-	d.GetDestination(w, req)
+	d.HandleGetDestination(w, req)
 	if w.Code != 200 {
 		t.Fatalf("get: %d", w.Code)
 	}
@@ -285,7 +285,7 @@ func TestDestinationCRUD(t *testing.T) {
 	req = httptest.NewRequest("PUT", "/", jsonBody(t, model.Destination{Name: "updated", Host: "10.0.0.2", Port: 8080}))
 	req.SetPathValue("destinationId", created.ID)
 	w = httptest.NewRecorder()
-	d.UpdateDestination(w, req)
+	d.HandleUpdateDestination(w, req)
 	if w.Code != 200 {
 		t.Fatalf("update: %d", w.Code)
 	}
@@ -297,7 +297,7 @@ func TestDestinationCRUD(t *testing.T) {
 	req = httptest.NewRequest("DELETE", "/", nil)
 	req.SetPathValue("destinationId", created.ID)
 	w = httptest.NewRecorder()
-	d.DeleteDestination(w, req)
+	d.HandleDeleteDestination(w, req)
 	if w.Code != 204 {
 		t.Fatalf("delete: %d", w.Code)
 	}
@@ -310,7 +310,7 @@ func TestListenerCRUD(t *testing.T) {
 
 	// Create with default address
 	w := httptest.NewRecorder()
-	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, model.Listener{Name: "main", Port: 3000})))
+	d.HandleCreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, model.Listener{Name: "main", Port: 3000})))
 	if w.Code != 201 {
 		t.Fatalf("create: %d", w.Code)
 	}
@@ -322,7 +322,7 @@ func TestListenerCRUD(t *testing.T) {
 	req := httptest.NewRequest("PUT", "/", jsonBody(t, model.Listener{Name: "updated", Port: 8080}))
 	req.SetPathValue("listenerId", created.ID)
 	w = httptest.NewRecorder()
-	d.UpdateListener(w, req)
+	d.HandleUpdateListener(w, req)
 	if w.Code != 200 {
 		t.Fatalf("update: %d", w.Code)
 	}
@@ -334,7 +334,7 @@ func TestListenerCRUD(t *testing.T) {
 	req = httptest.NewRequest("DELETE", "/", nil)
 	req.SetPathValue("listenerId", created.ID)
 	w = httptest.NewRecorder()
-	d.DeleteListener(w, req)
+	d.HandleDeleteListener(w, req)
 	if w.Code != 204 {
 		t.Fatalf("delete: %d", w.Code)
 	}
@@ -346,7 +346,7 @@ func TestMiddlewareCRUD(t *testing.T) {
 	d, _ := newDeps(t)
 
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, model.Middleware{Name: "cors", Type: model.MiddlewareTypeCORS})))
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, model.Middleware{Name: "cors", Type: model.MiddlewareTypeCORS})))
 	if w.Code != 201 {
 		t.Fatalf("create: %d", w.Code)
 	}
@@ -355,7 +355,7 @@ func TestMiddlewareCRUD(t *testing.T) {
 	req := httptest.NewRequest("PUT", "/", jsonBody(t, model.Middleware{Name: "updated", Type: model.MiddlewareTypeCORS}))
 	req.SetPathValue("middlewareId", created.ID)
 	w = httptest.NewRecorder()
-	d.UpdateMiddleware(w, req)
+	d.HandleUpdateMiddleware(w, req)
 	if w.Code != 200 {
 		t.Fatalf("update: %d", w.Code)
 	}
@@ -363,7 +363,7 @@ func TestMiddlewareCRUD(t *testing.T) {
 	req = httptest.NewRequest("DELETE", "/", nil)
 	req.SetPathValue("middlewareId", created.ID)
 	w = httptest.NewRecorder()
-	d.DeleteMiddleware(w, req)
+	d.HandleDeleteMiddleware(w, req)
 	if w.Code != 204 {
 		t.Fatalf("delete: %d", w.Code)
 	}
@@ -379,7 +379,7 @@ func TestConfigDump(t *testing.T) {
 	st.SaveDestination(ctx, model.Destination{ID: "d1", Name: "up", Host: "10.0.0.1", Port: 80})
 
 	w := httptest.NewRecorder()
-	d.GetConfigDump(w, httptest.NewRequest("GET", "/", nil))
+	d.HandleGetConfigDump(w, httptest.NewRequest("GET", "/", nil))
 	if w.Code != 200 {
 		t.Fatalf("config dump: %d", w.Code)
 	}
@@ -402,11 +402,11 @@ func TestCreateInvalidJSON(t *testing.T) {
 		name    string
 		handler func(http.ResponseWriter, *http.Request)
 	}{
-		{"route", d.CreateRoute},
-		{"group", d.CreateGroup},
-		{"destination", d.CreateDestination},
-		{"listener", d.CreateListener},
-		{"middleware", d.CreateMiddleware},
+		{"route", d.HandleCreateRoute},
+		{"group", d.HandleCreateGroup},
+		{"destination", d.HandleCreateDestination},
+		{"listener", d.HandleCreateListener},
+		{"middleware", d.HandleCreateMiddleware},
 	}
 
 	for _, tt := range tests {
@@ -425,7 +425,7 @@ func TestCreateInvalidJSON(t *testing.T) {
 func TestListenerValidation_ClientAuthUnknownMode(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
 			"cert": "/cert.pem", "key": "/key.pem",
@@ -440,7 +440,7 @@ func TestListenerValidation_ClientAuthUnknownMode(t *testing.T) {
 func TestListenerValidation_ClientAuthRequireNoCA(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
 			"cert": "/cert.pem", "key": "/key.pem",
@@ -455,7 +455,7 @@ func TestListenerValidation_ClientAuthRequireNoCA(t *testing.T) {
 func TestListenerValidation_ClientAuthOptionalNoCA(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
 			"cert": "/cert.pem", "key": "/key.pem",
@@ -470,7 +470,7 @@ func TestListenerValidation_ClientAuthOptionalNoCA(t *testing.T) {
 func TestListenerValidation_ClientAuthRequireWithCA(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
 			"cert": "/cert.pem", "key": "/key.pem",
@@ -485,7 +485,7 @@ func TestListenerValidation_ClientAuthRequireWithCA(t *testing.T) {
 func TestListenerValidation_NoClientAuth(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8080,
 	})))
 	if w.Code != 201 {
@@ -496,7 +496,7 @@ func TestListenerValidation_NoClientAuth(t *testing.T) {
 func TestListenerValidation_ClientAuthNoneMode(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateListener(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "port": 8443,
 		"tls": map[string]any{
 			"cert": "/cert.pem", "key": "/key.pem",
@@ -513,7 +513,7 @@ func TestListenerValidation_ClientAuthNoneMode(t *testing.T) {
 func TestMiddlewareValidation_InlineAuthzNoConfig(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "type": "inlineAuthz",
 	})))
 	if w.Code != 400 {
@@ -524,7 +524,7 @@ func TestMiddlewareValidation_InlineAuthzNoConfig(t *testing.T) {
 func TestMiddlewareValidation_InlineAuthzEmptyRules(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "type": "inlineAuthz",
 		"inlineAuthz": map[string]any{
 			"rules":         []any{},
@@ -539,7 +539,7 @@ func TestMiddlewareValidation_InlineAuthzEmptyRules(t *testing.T) {
 func TestMiddlewareValidation_InlineAuthzBadAction(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "type": "inlineAuthz",
 		"inlineAuthz": map[string]any{
 			"rules": []map[string]any{
@@ -556,7 +556,7 @@ func TestMiddlewareValidation_InlineAuthzBadAction(t *testing.T) {
 func TestMiddlewareValidation_InlineAuthzBadCEL(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "type": "inlineAuthz",
 		"inlineAuthz": map[string]any{
 			"rules": []map[string]any{
@@ -573,7 +573,7 @@ func TestMiddlewareValidation_InlineAuthzBadCEL(t *testing.T) {
 func TestMiddlewareValidation_InlineAuthzEmptyCEL(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "type": "inlineAuthz",
 		"inlineAuthz": map[string]any{
 			"rules": []map[string]any{
@@ -590,7 +590,7 @@ func TestMiddlewareValidation_InlineAuthzEmptyCEL(t *testing.T) {
 func TestMiddlewareValidation_InlineAuthzBadDefaultAction(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "type": "inlineAuthz",
 		"inlineAuthz": map[string]any{
 			"rules": []map[string]any{
@@ -607,7 +607,7 @@ func TestMiddlewareValidation_InlineAuthzBadDefaultAction(t *testing.T) {
 func TestMiddlewareValidation_InlineAuthzValid(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "type": "inlineAuthz",
 		"inlineAuthz": map[string]any{
 			"rules": []map[string]any{
@@ -626,7 +626,7 @@ func TestMiddlewareValidation_InlineAuthzValid(t *testing.T) {
 func TestMiddlewareValidation_NonInlineAuthzPassesThrough(t *testing.T) {
 	d, _ := newDeps(t)
 	w := httptest.NewRecorder()
-	d.CreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, map[string]any{
 		"name": "test", "type": "cors",
 		"cors": map[string]any{"allowOrigins": []map[string]any{{"value": "*"}}},
 	})))

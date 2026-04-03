@@ -247,7 +247,7 @@ func TestE2E_Controller_SyncHTTPRoute(t *testing.T) {
 	}
 }
 
-func TestE2E_Controller_DeleteHTTPRoute(t *testing.T) {
+func TestE2E_Controller_DeleteRouteGroup(t *testing.T) {
 	ctx := context.Background()
 	vrataCleanOwned(t)
 	defer vrataCleanOwned(t)
@@ -273,7 +273,7 @@ func TestE2E_Controller_DeleteHTTPRoute(t *testing.T) {
 	}
 
 	// Delete.
-	changes, err := rec.DeleteHTTPRoute(ctx, "default", "e2e-kc-delete")
+	changes, err := rec.DeleteRouteGroup(ctx, "default", "e2e-kc-delete")
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -333,7 +333,7 @@ func TestE2E_Controller_SharedDestination(t *testing.T) {
 	}
 
 	// Delete route A — destination should survive (still used by B).
-	if _, err := rec.DeleteHTTPRoute(ctx, "default", "e2e-shared-a"); err != nil {
+	if _, err := rec.DeleteRouteGroup(ctx, "default", "e2e-shared-a"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -349,7 +349,7 @@ func TestE2E_Controller_SharedDestination(t *testing.T) {
 	}
 
 	// Delete route B — now destination should be gone.
-	if _, err := rec.DeleteHTTPRoute(ctx, "default", "e2e-shared-b"); err != nil {
+	if _, err := rec.DeleteRouteGroup(ctx, "default", "e2e-shared-b"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1670,7 +1670,7 @@ func TestE2E_Controller_DeleteGRPCRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changes, err := rec.DeleteHTTPRoute(ctx, "default", "e2e-grpc-delete")
+	changes, err := rec.DeleteRouteGroup(ctx, "default", "e2e-grpc-delete")
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
