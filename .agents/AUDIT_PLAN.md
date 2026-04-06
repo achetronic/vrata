@@ -188,4 +188,41 @@ All 7 mandatory conventions verified and passing:
 - Dependency injection (Dependencies struct, no runtime env reads)
 
 ---
+
+## Audit 6: Full Feature Verification & Convention Compliance
+*Status: Completed*
+*Date: 2026-03-31*
+*Auditor: Claude Opus 4 via Crush*
+
+Full file-by-file audit of every source file in `server/` and `clients/controller/`, verifying all features claimed in `SERVER_FEATURES.md` are implemented, all code follows `CONVENTIONS.md`, and all tests pass.
+
+### Scope
+- All packages in `server/internal/` (config, model, store, api, proxy, proxy/middlewares, proxy/celeval, gateway, raft, k8s, sync, session, tlsutil, resolve, encrypt)
+- `server/cmd/vrata/main.go`
+- All packages in `clients/controller/` (cmd, mapper, reconciler, vrata, batcher, dedup, refgrant, status, metrics, workqueue, config)
+- Full unit + e2e test suite execution (server + controller — all passing)
+
+### Feature Verification Result
+100% of features claimed in `SERVER_FEATURES.md` are fully implemented. All unit and e2e tests pass.
+
+### Bugs Found
+None. After 5 prior audits, all material bugs have been fixed. The code matches the feature claims.
+
+### Conventions Compliance
+All 7 mandatory conventions verified and passing:
+- No manual ResponseWriter wrappers (httpsnoop everywhere)
+- No external router libraries (net/http only)
+- No leaked goroutines (all `*WithStop` return `func(){}`, registered via `onCleanup`)
+- No global mutable state (1 justified `sync.Map` + CEL `sync.Once` singletons)
+- slog only (zero `fmt.Println`/`log.Printf`)
+- Error bubbling (all `_ =` have comments or are best-effort cleanup)
+- Dependency injection (Dependencies struct, no runtime env reads)
+
+### Items Verified as Non-Issues
+All previously documented open items in `SERVER_TODO.md` and `CONTROLLER_TODO.md` remain as known limitations/future work — they are not bugs, and no new issues were discovered.
+
+### Verdict
+**Validated.** The codebase has reached audit-converged state. No new findings across two consecutive full audits.
+
+---
 *Future audits will be appended to this document as new architectural phases are completed.*
