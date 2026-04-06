@@ -33,10 +33,10 @@ func AccessLogMiddleware(cfg *model.AccessLogConfig) Middleware {
 // stop function that closes the log file handle (if file-based).
 func AccessLogMiddlewareWithStop(cfg *model.AccessLogConfig) (Middleware, func()) {
 	if cfg == nil || cfg.Path == "" {
-		return passthrough, nil
+		return passthrough, func() {}
 	}
 	if cfg.OnRequest == nil && cfg.OnResponse == nil {
-		return passthrough, nil
+		return passthrough, func() {}
 	}
 
 	lw := openLogWriter(cfg.Path)

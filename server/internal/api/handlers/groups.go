@@ -50,7 +50,7 @@ func (d *Dependencies) HandleListGroups(w http.ResponseWriter, r *http.Request) 
 func (d *Dependencies) HandleCreateGroup(w http.ResponseWriter, r *http.Request) {
 	var group model.RouteGroup
 	if err := json.NewDecoder(r.Body).Decode(&group); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (d *Dependencies) HandleUpdateGroup(w http.ResponseWriter, r *http.Request)
 
 	var group model.RouteGroup
 	if err := json.NewDecoder(r.Body).Decode(&group); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 	group.ID = groupID

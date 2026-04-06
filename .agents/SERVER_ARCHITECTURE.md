@@ -36,7 +36,7 @@ Pure domain types. No business logic, no I/O. Key types:
 - **Route** — matching rules + action (forward/redirect/directResponse).
 - **RouteGroup** — a named collection of routes with shared matchers.
 - **Destination** — an upstream target with endpoints, timeouts, TLS, balancing, circuit breaker, health checks, outlier detection.
-- **Listener** — a network entry point with optional TLS, HTTP/2, metrics, proxy error formatting.
+- **Listener** — a network entry point with optional TLS, HTTP/2, metrics, proxy error formatting, timeouts.
 - **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz.
 - **Snapshot** — immutable point-in-time capture of all configuration.
 

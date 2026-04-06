@@ -37,13 +37,13 @@ func ExtProcMiddleware(cfg *model.ExtProcConfig, services map[string]Service) Mi
 // returns a stop function that closes the gRPC connection (if gRPC mode).
 func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Service) (Middleware, func()) {
 	if cfg == nil || cfg.DestinationID == "" {
-		return passthrough, nil
+		return passthrough, func() {}
 	}
 
 	svc, ok := services[cfg.DestinationID]
 	if !ok {
 		slog.Error("extproc: destination not found", slog.String("destinationId", cfg.DestinationID))
-		return passthrough, nil
+		return passthrough, func() {}
 	}
 
 	timeout := 200 * time.Millisecond

@@ -221,6 +221,9 @@ func (p *ClaimsStringProgram) Eval(claims map[string]any) string {
 		return ""
 	}
 
+	if out.Value() == nil {
+		return ""
+	}
 	return fmt.Sprintf("%v", out.Value())
 }
 
@@ -244,15 +247,16 @@ func BufferBody(r *http.Request, maxSize int) (*http.Request, *BodyData) {
 	data := &BodyData{}
 
 	if r.Body != nil && r.Body != http.NoBody {
-		reader := io.LimitReader(r.Body, int64(maxSize+1))
-		raw, err := io.ReadAll(reader)
+		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			slog.Warn("failed to read request body for CEL evaluation", "error", err)
+			r.Body = io.NopCloser(bytes.NewReader(nil))
 		} else {
+			celRaw := raw
 			if len(raw) > maxSize {
-				slog.Warn("request body exceeds celBodyMaxSize, truncating raw and skipping json parse",
+				slog.Warn("request body exceeds celBodyMaxSize, truncating for CEL and skipping json parse",
 					"size", len(raw), "maxSize", maxSize)
-				raw = raw[:maxSize]
+				celRaw = raw[:maxSize]
 			} else {
 				ct := r.Header.Get("Content-Type")
 				if strings.HasPrefix(ct, "application/json") {
@@ -266,7 +270,7 @@ func BufferBody(r *http.Request, maxSize int) (*http.Request, *BodyData) {
 					}
 				}
 			}
-			data.Raw = string(raw)
+			data.Raw = string(celRaw)
 
 			r.Body = io.NopCloser(bytes.NewReader(raw))
 		}

@@ -48,7 +48,7 @@ func (d *Dependencies) HandleListListeners(w http.ResponseWriter, r *http.Reques
 func (d *Dependencies) HandleCreateListener(w http.ResponseWriter, r *http.Request) {
 	var listener model.Listener
 	if err := json.NewDecoder(r.Body).Decode(&listener); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (d *Dependencies) HandleUpdateListener(w http.ResponseWriter, r *http.Reque
 
 	var listener model.Listener
 	if err := json.NewDecoder(r.Body).Decode(&listener); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 	listener.ID = listenerID

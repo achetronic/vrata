@@ -48,7 +48,7 @@ func (d *Dependencies) HandleListRoutes(w http.ResponseWriter, r *http.Request) 
 func (d *Dependencies) HandleCreateRoute(w http.ResponseWriter, r *http.Request) {
 	var route model.Route
 	if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 
@@ -115,7 +115,7 @@ func (d *Dependencies) HandleUpdateRoute(w http.ResponseWriter, r *http.Request)
 
 	var route model.Route
 	if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 	route.ID = routeID

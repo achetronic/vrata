@@ -48,7 +48,7 @@ func (d *Dependencies) HandleListDestinations(w http.ResponseWriter, r *http.Req
 func (d *Dependencies) HandleCreateDestination(w http.ResponseWriter, r *http.Request) {
 	var destination model.Destination
 	if err := json.NewDecoder(r.Body).Decode(&destination); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 
@@ -115,7 +115,7 @@ func (d *Dependencies) HandleUpdateDestination(w http.ResponseWriter, r *http.Re
 
 	var destination model.Destination
 	if err := json.NewDecoder(r.Body).Decode(&destination); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 	destination.ID = destinationID

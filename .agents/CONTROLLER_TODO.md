@@ -10,6 +10,12 @@ These features are conceptually large and have been deferred to avoid major arch
 - **Regex overlap detection**: detect semantic overlaps when one path is a RegularExpression.
 - **Per-backendRef filters**: `backendRefs[].filters[]` never read (only rule-level filters).
 
+## Open
+
+### Mapper gaps
+- [ ] **`MiddlewareOverrides` never populated** — The `Route.MiddlewareOverrides` field exists in the Vrata client types but the mapper never populates it. Per-route middleware customization from the controller is not functional.
+- [ ] **`ExtensionRef` filter silently ignored** — Parsed into `FilterInput.Extension{Group,Kind,Name}` but no Vrata entity is generated. Should at minimum log a warning for unsupported extension refs.
+
 ## Done
 
 ### Gateway API gaps

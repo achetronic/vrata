@@ -40,7 +40,7 @@ func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware
 // prevent goroutine leaks.
 func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (Middleware, func()) {
 	if cfg == nil || cfg.Issuer == "" {
-		return passthrough, nil
+		return passthrough, func() {}
 	}
 
 	v := &jwtValidator{

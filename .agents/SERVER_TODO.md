@@ -8,6 +8,17 @@ These features are conceptually large and have been deferred to avoid major arch
 - **Multi-value matchers on MatchRule**: Supporting arrays (`paths []string`, `pathPrefixes []string`, `pathRegexes []string`) with OR semantics would allow one Route to match multiple paths.
 - **Proxy fleets**: A single control plane should be able to manage multiple independent proxy fleets, each with its own routing config.
 
+## Open
+
+### Security
+- [ ] **`clientIp` trusts `X-Forwarded-For` unconditionally** — CEL's `request.clientIp` uses the first XFF entry without trusted-proxy validation. Clients can spoof their IP in CEL expressions used for access control.
+
+### Hardening
+- [ ] **Proxy mode has no admin HTTP server** — no readiness/liveness endpoint for load balancers. A health endpoint on a configurable admin port would be useful.
+- [ ] **No readiness gate on control plane startup** — the REST API starts listening before the gateway completes its first rebuild. Clients could hit the API before the routing table is populated.
+- [ ] **Bolt `Restore()` does not restore the `meta` bucket** — the `active_snapshot_id` and `encrypted` marker are not restored from the Raft snapshot. After a Raft restore, the active snapshot pointer may be stale.
+- [ ] **Missing `yaml` struct tags on `destination.go` types** — `DestinationOptions`, `DestinationTimeouts`, `TLSOptions`, `CircuitBreakerOptions`, `HealthCheckOptions`, `OutlierDetectionOptions`, `DestinationDiscovery`, `DestinationRef`, `Endpoint`, `Destination` all lack `yaml` tags, inconsistent with route.go/listener.go which have both `json` and `yaml` tags.
+
 ## Done
 
 ### Housekeeping & Bugs
@@ -45,3 +56,11 @@ These features are conceptually large and have been deferred to avoid major arch
 - [x] **CEL body access & mTLS client authentication** — Implemented.
 - [x] **Inline authorization middleware** — Implemented.
 - [x] **Control plane security** — Implemented.
+
+### Audit 2 findings (2026-04-03)
+- [x] **CEL body truncation corrupts upstream request** — `BufferBody` now reads the full body, uses a truncated copy for CEL, and replaces `r.Body` with the complete original. On read error, `r.Body` is replaced with an empty reader.
+- [x] **`ClaimsStringProgram.Eval` returns `"<nil>"`** — Added nil check before `fmt.Sprintf`; now returns empty string on nil result.
+- [x] **Middleware `*WithStop` returns nil stop function** — JWT, ExtProc, RateLimit, and AccessLog now return `func(){}` instead of `nil` on early-return paths, consistent with ExtAuthz.
+- [x] **`err.Error()` leaked to client in API responses** — All 9 handlers that appended `err.Error()` to 400 messages now use static strings. The snapshot 500 now logs the error server-side and returns a generic message.
+- [x] **`DestinationLBPolicy` godoc fragment** — Fixed to proper `// DestinationLBPolicy controls...` format.
+- [x] **`SERVER_DECISIONS.md` Middleware → Listener reference** — Corrected: middlewares are referenced by Route and RouteGroup, not by Listener.

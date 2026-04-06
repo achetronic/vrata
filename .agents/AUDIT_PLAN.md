@@ -43,4 +43,40 @@ This first comprehensive audit was divided into four targeted iterations to cove
 - Strict timeouts on external calls (JWKS, ExtAuthz, ExtProc) to prevent proxy hangs when upstream dependencies are unresponsive.
 
 ---
+
+## Audit 2: Full Feature Verification & Convention Compliance
+*Status: Completed*
+*Date: 2026-04-03*
+*Auditor: Claude Opus 4 via Crush*
+
+Full file-by-file audit verifying that every feature claimed in `SERVER_FEATURES.md` is actually implemented, and that all code follows `CONVENTIONS.md`.
+
+### Scope
+- All packages in `server/internal/` (config, model, store, api, proxy, proxy/middlewares, proxy/celeval, gateway, raft, k8s, sync, session, tlsutil, resolve, encrypt)
+- `server/cmd/vrata/main.go`
+- All packages in `clients/controller/`
+- Full unit test suite execution (server: 461 tests, controller: 172 tests — all passing)
+
+### Feature Verification Result
+95%+ of features claimed in `SERVER_FEATURES.md` are fully implemented and tested. All 633 tests pass.
+
+### Bugs Found and Fixed
+1. **CEL body truncation corrupts upstream request** (`celeval/cel.go`): `BufferBody` used `io.LimitReader` which discarded bytes beyond `maxSize`. The truncated body was then set as `r.Body`, meaning the upstream received an incomplete request. Fixed: now reads full body, uses truncated copy for CEL only, preserves full body for upstream.
+2. **CEL body read error leaves `r.Body` indeterminate** (`celeval/cel.go`): On `io.ReadAll` failure, `r.Body` was left partially drained. Fixed: on error, `r.Body` is replaced with an empty reader.
+3. **`ClaimsStringProgram.Eval` returns `"<nil>"`** (`celeval/cel.go`): `fmt.Sprintf("%v", nil)` produces the literal string `"<nil>"`. This injected `"<nil>"` as a header value via `claimToHeaders`. Fixed: added nil check, returns `""`.
+4. **Middleware `*WithStop` returns nil stop function**: JWT, ExtProc, RateLimit, and AccessLog returned `nil` on early-return paths. Although callers nil-check before calling, this was inconsistent with ExtAuthz (which correctly returns `func(){}`). Fixed: all now return `func(){}`.
+5. **`err.Error()` leaked to client in API responses**: 9 handlers appended Go error details (JSON decoder messages, type info) to 400 responses. 1 handler leaked in a 500. Fixed: all use static messages now; the 500 logs server-side.
+6. **`DestinationLBPolicy` godoc fragment**: The type doc comment was `// receives each request...` instead of starting with the type name. Fixed.
+
+### Documentation Corrections
+- **`SERVER_DECISIONS.md`**: Corrected "Middleware referenced by Listener" to "Middleware referenced by Route and RouteGroup". The `MiddlewareIDs` field is on `Route` and `RouteGroup`, not on `Listener`.
+- **`SERVER_TODO.md`**: Added open items for XFF trust, proxy admin endpoint, CP readiness gate, bolt Restore meta bucket, destination yaml tags.
+- **`CONTROLLER_TODO.md`**: Added open items for `MiddlewareOverrides` not populated by mapper, `ExtensionRef` filter silently ignored.
+
+### Items Verified as Non-Issues (false positives from initial review)
+- **ExtProc `capturedStatus` default**: The `if capturedStatus == 0` check before `next.ServeHTTP` is correct — it sets the default which is then overridden by the httpsnoop hook when `WriteHeader` is called. If `WriteHeader` is never called explicitly, 200 is the right default.
+- **ExtProc `MetricsPrefix`**: IS wired at `handler.go:85` — used as the metric label name in `wrapWithMetrics`.
+- **Listener `MiddlewareIDs`**: Not a missing field — middlewares are intentionally attached at Route/RouteGroup level, not Listener. The documentation was wrong, not the code.
+
+---
 *Future audits will be appended to this document as new architectural phases are completed.*

@@ -50,7 +50,7 @@ func (d *Dependencies) HandleListSnapshots(w http.ResponseWriter, r *http.Reques
 func (d *Dependencies) HandleCreateSnapshot(w http.ResponseWriter, r *http.Request) {
 	var req SnapshotCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 
@@ -63,7 +63,8 @@ func (d *Dependencies) HandleCreateSnapshot(w http.ResponseWriter, r *http.Reque
 
 	snap, err := buildSnapshot(ctx, d)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, "building snapshot: "+err.Error(), d.Logger)
+		d.Logger.Error("building snapshot failed", "error", err)
+		respond.Error(w, http.StatusInternalServerError, "internal error while building snapshot", d.Logger)
 		return
 	}
 

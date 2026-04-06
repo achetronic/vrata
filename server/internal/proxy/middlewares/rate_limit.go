@@ -26,7 +26,7 @@ func RateLimitMiddleware(cfg *model.RateLimitConfig) Middleware {
 // stop function that halts the background eviction goroutine.
 func RateLimitMiddlewareWithStop(cfg *model.RateLimitConfig) (Middleware, func()) {
 	if cfg == nil {
-		return passthrough, nil
+		return passthrough, func() {}
 	}
 
 	limiter := newTokenBucketLimiter(cfg.RequestsPerSecond, cfg.Burst)

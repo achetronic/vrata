@@ -85,7 +85,8 @@ const (
 	ProxyErrNoEndpoint ProxyErrorType = "no_endpoint"
 )
 
-// receives each request (level 1 — before endpoint selection).
+// DestinationLBPolicy controls which destination receives each request
+// (level 1 — before endpoint selection).
 type DestinationLBPolicy string
 
 const (

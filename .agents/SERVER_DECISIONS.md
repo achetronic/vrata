@@ -173,9 +173,11 @@ storage level (two flat buckets in bbolt).
 **Date**: 2026-03-16
 **Status**: Implemented
 
-A `Middleware` is a standalone entity stored and managed independently of any `Listener`.
-A `Listener` references middlewares by their IDs (`MiddlewareIDs []string`). The proxy builder
-looks up each referenced middleware and builds the corresponding handler.
+A `Middleware` is a standalone entity stored and managed independently of any `Route` or
+`RouteGroup`. Routes and RouteGroups reference middlewares by their IDs (`MiddlewareIDs []string`).
+The proxy builder looks up each referenced middleware and builds the corresponding handler.
+`MiddlewareOverrides` on both Route and RouteGroup allow per-scope customization (disable,
+adjust config) without duplicating the middleware entity.
 
 **Reasoning**: Consistent with the Route/Group separation pattern already established.
 A middleware (JWT config, ext_authz endpoint, CORS policy) is reusable across multiple
@@ -183,9 +185,10 @@ listeners — embedding it would force duplication. Storing middlewares independ
 makes partial updates (changing a JWT JWKS URI) atomic and auditable without
 touching the listener configuration.
 
-**Do not**: Embed middleware configs directly inside `Listener`. Do not add a `ListenerID`
-field to `Middleware`. Middlewares and Listeners must remain separate resources at both API
-level (`/api/v1/middlewares`, `/api/v1/listeners`) and storage level (separate bbolt buckets).
+**Do not**: Embed middleware configs directly inside `Route`, `RouteGroup`, or `Listener`.
+Do not add a `ListenerID` field to `Middleware`. Middlewares and their consumers must remain
+separate resources at both API level (`/api/v1/middlewares`, `/api/v1/routes`, `/api/v1/groups`)
+and storage level (separate bbolt buckets).
 
 ---
 

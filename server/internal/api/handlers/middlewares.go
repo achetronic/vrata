@@ -49,7 +49,7 @@ func (d *Dependencies) HandleListMiddlewares(w http.ResponseWriter, r *http.Requ
 func (d *Dependencies) HandleCreateMiddleware(w http.ResponseWriter, r *http.Request) {
 	var mw model.Middleware
 	if err := json.NewDecoder(r.Body).Decode(&mw); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 
@@ -116,7 +116,7 @@ func (d *Dependencies) HandleUpdateMiddleware(w http.ResponseWriter, r *http.Req
 
 	var mw model.Middleware
 	if err := json.NewDecoder(r.Body).Decode(&mw); err != nil {
-		respond.Error(w, http.StatusBadRequest, "invalid request body: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid request body", d.Logger)
 		return
 	}
 	mw.ID = middlewareID
