@@ -8,11 +8,12 @@ package status
 import (
 	"context"
 	"fmt"
-	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	runtimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	vratav1 "github.com/achetronic/vrata/clients/controller/apis/v1"
 )
 
 // ControllerName is the Gateway API controller name used for status entries.
@@ -302,6 +303,60 @@ func setGatewayCondition(conditions *[]metav1.Condition, cond metav1.Condition) 
 	setConditionInSlice(conditions, cond)
 }
 
+// ─── SuperHTTPRoute ────────────────────────────────────────────────────────
+
+// SetSuperHTTPRouteAccepted marks the SuperHTTPRoute as accepted.
+func (w *Writer) SetSuperHTTPRouteAccepted(ctx context.Context, sr *vratav1.SuperHTTPRoute, accepted bool, reason, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	if !accepted {
+		status = metav1.ConditionFalse
+	}
+
+	cond := metav1.Condition{
+		Type:               string(gwapiv1.RouteConditionAccepted),
+		Status:             status,
+		ObservedGeneration: sr.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	}
+
+	setRouteCondition(&sr.Status.Parents, sr.Spec.ParentRefs, cond)
+
+	if err := w.client.Status().Update(ctx, sr); err != nil {
+		return fmt.Errorf("updating SuperHTTPRoute %s/%s status: %w", sr.Namespace, sr.Name, err)
+	}
+	return nil
+}
+
+// SetSuperHTTPRouteResolvedRefs marks whether all backendRefs in the SuperHTTPRoute could be resolved.
+func (w *Writer) SetSuperHTTPRouteResolvedRefs(ctx context.Context, sr *vratav1.SuperHTTPRoute, resolved bool, message string) error {
+	now := metav1.Now()
+	status := metav1.ConditionTrue
+	reason := string(gwapiv1.RouteReasonResolvedRefs)
+	if !resolved {
+		status = metav1.ConditionFalse
+		reason = string(gwapiv1.RouteReasonBackendNotFound)
+	}
+
+	cond := metav1.Condition{
+		Type:               string(gwapiv1.RouteConditionResolvedRefs),
+		Status:             status,
+		ObservedGeneration: sr.Generation,
+		LastTransitionTime: now,
+		Reason:             reason,
+		Message:            message,
+	}
+
+	setRouteCondition(&sr.Status.Parents, sr.Spec.ParentRefs, cond)
+
+	if err := w.client.Status().Update(ctx, sr); err != nil {
+		return fmt.Errorf("updating SuperHTTPRoute %s/%s status: %w", sr.Namespace, sr.Name, err)
+	}
+	return nil
+}
+
 // setConditionInSlice updates an existing condition by type or appends a new one.
 func setConditionInSlice(conditions *[]metav1.Condition, cond metav1.Condition) {
 	for i, c := range *conditions {
@@ -311,9 +366,4 @@ func setConditionInSlice(conditions *[]metav1.Condition, cond metav1.Condition) 
 		}
 	}
 	*conditions = append(*conditions, cond)
-}
-
-// timestamp returns a formatted timestamp for snapshot names.
-func timestamp() string {
-	return time.Now().Format("20060102-150405")
 }

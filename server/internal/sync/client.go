@@ -152,35 +152,17 @@ func (c *Client) applySnapshot(data []byte) error {
 
 	snap := vs.Snapshot
 
-	table, err := proxy.BuildTable(snap.Routes, snap.Groups, snap.Destinations, snap.Middlewares, c.deps.SessionStore, c.deps.CELBodyMaxSize)
+	err := proxy.ApplySnapshot(proxy.ApplyParams{
+		Router:          c.deps.Router,
+		ListenerManager: c.deps.ListenerManager,
+		HealthChecker:   c.deps.HealthChecker,
+		OutlierDetector: c.deps.OutlierDetector,
+		SessionStore:    c.deps.SessionStore,
+		CELBodyMaxSize:  c.deps.CELBodyMaxSize,
+	}, snap.Listeners, snap.Routes, snap.Groups, snap.Destinations, snap.Middlewares)
 	if err != nil {
-		return fmt.Errorf("building routing table: %w", err)
+		return err
 	}
-
-	c.deps.Router.SwapTable(table)
-
-	if c.deps.HealthChecker != nil {
-		c.deps.HealthChecker.Update(table.Pools())
-	}
-	if c.deps.OutlierDetector != nil {
-		c.deps.OutlierDetector.Update(table.Pools())
-		od := c.deps.OutlierDetector
-		for _, pool := range table.Pools() {
-			for _, ep := range pool.Endpoints {
-				ep.OnResponse = od.RecordResponse
-			}
-		}
-	}
-
-	c.deps.ListenerManager.Reconcile(snap.Listeners)
-
-	// Update metrics collectors with the new pool snapshot and wire them
-	// into the router so ServeHTTP can record per-route metrics.
-	mcs := c.deps.ListenerManager.MetricsCollectors()
-	for _, mc := range mcs {
-		mc.UpdatePools(table.Pools())
-	}
-	c.deps.Router.SetMetricsCollectors(mcs)
 
 	c.deps.Logger.Info("sync: snapshot applied",
 		slog.String("id", vs.ID),

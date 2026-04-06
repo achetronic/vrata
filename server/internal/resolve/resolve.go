@@ -52,11 +52,12 @@ func Secrets(ctx context.Context, st store.Store, data []byte) ([]byte, error) {
 			}
 			value = sec.Value
 		case "env":
-			value = os.Getenv(ref)
-			if value == "" {
+			v, ok := os.LookupEnv(ref)
+			if !ok {
 				errs = append(errs, fmt.Sprintf("env var %q is not set", ref))
 				return match
 			}
+			value = v
 		case "file":
 			content, readErr := os.ReadFile(ref)
 			if readErr != nil {

@@ -74,7 +74,7 @@ The native HTTP reverse proxy. Core files:
 - **health.go** — HealthChecker (active HTTP probes with thresholds).
 - **outlier.go** — OutlierDetector (ejects endpoints by consecutive errors).
 - **errors.go** — ProxyError classification, structured JSON error responses with detail levels.
-- **metrics.go** — MetricsCollector (22 Prometheus metrics, per-listener registry).
+- **metrics.go** — MetricsCollector (25 Prometheus metrics, per-listener registry).
 - **session.go** — SessionStore interface for sticky sessions.
 
 ### internal/proxy/middlewares

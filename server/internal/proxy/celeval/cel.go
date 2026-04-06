@@ -17,8 +17,10 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/google/cel-go/cel"
+	"github.com/google/cel-go/common/ast"
 )
 
 // Program is a pre-compiled CEL program ready for evaluation against an
@@ -34,12 +36,43 @@ func (p *Program) NeedsBody() bool {
 	return p.needsBody
 }
 
+// requestEnv is a cached CEL environment for request-matching programs.
+// Created once on first use via sync.Once.
+var (
+	requestEnvOnce sync.Once
+	requestEnv     *cel.Env
+	requestEnvErr  error
+)
+
+func getRequestEnv() (*cel.Env, error) {
+	requestEnvOnce.Do(func() {
+		requestEnv, requestEnvErr = cel.NewEnv(
+			cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
+		)
+	})
+	return requestEnv, requestEnvErr
+}
+
+// claimsEnv is a cached CEL environment for claims-matching programs.
+var (
+	claimsEnvOnce sync.Once
+	claimsEnv     *cel.Env
+	claimsEnvErr  error
+)
+
+func getClaimsEnv() (*cel.Env, error) {
+	claimsEnvOnce.Do(func() {
+		claimsEnv, claimsEnvErr = cel.NewEnv(
+			cel.Variable("claims", cel.MapType(cel.StringType, cel.DynType)),
+		)
+	})
+	return claimsEnv, claimsEnvErr
+}
+
 // Compile parses and type-checks a CEL expression, returning a Program
 // that can be evaluated against requests. The expression must return a bool.
 func Compile(expr string) (*Program, error) {
-	env, err := cel.NewEnv(
-		cel.Variable("request", cel.MapType(cel.StringType, cel.DynType)),
-	)
+	env, err := getRequestEnv()
 	if err != nil {
 		return nil, fmt.Errorf("creating CEL env: %w", err)
 	}
@@ -60,16 +93,28 @@ func Compile(expr string) (*Program, error) {
 
 	return &Program{
 		program:   prg,
-		needsBody: exprReferencesBody(expr),
+		needsBody: astReferencesBody(ast),
 	}, nil
 }
 
-// exprReferencesBody checks whether a CEL expression references request.body.
-// This is a simple string check — false positives (e.g. the literal in a
-// string) are harmless (extra buffering), false negatives are not possible
-// because the field name is fixed.
-func exprReferencesBody(expr string) bool {
-	return strings.Contains(expr, "request.body")
+// astReferencesBody walks the compiled CEL AST to detect whether the
+// expression accesses request.body. This is more precise than a string
+// search: it avoids false positives from string literals containing
+// "request.body".
+func astReferencesBody(checked *cel.Ast) bool {
+	navigable := ast.NavigateAST(checked.NativeRep())
+	for _, node := range ast.MatchDescendants(navigable, ast.AllMatcher()) {
+		if node.Kind() == ast.SelectKind {
+			sel := node.AsSelect()
+			if sel.FieldName() == "body" {
+				operand := sel.Operand()
+				if operand.Kind() == ast.IdentKind && operand.AsIdent() == "request" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // Eval evaluates the compiled CEL program against the given HTTP request.
@@ -82,6 +127,7 @@ func (p *Program) Eval(r *http.Request) bool {
 
 	out, _, err := p.program.Eval(vars)
 	if err != nil {
+		slog.Debug("CEL eval error in request match", "error", err)
 		return false
 	}
 
@@ -97,9 +143,7 @@ type ClaimsProgram struct {
 // CompileClaims parses a CEL expression that receives a `claims` map
 // (the decoded JWT payload). The expression must return a bool.
 func CompileClaims(expr string) (*ClaimsProgram, error) {
-	env, err := cel.NewEnv(
-		cel.Variable("claims", cel.MapType(cel.StringType, cel.DynType)),
-	)
+	env, err := getClaimsEnv()
 	if err != nil {
 		return nil, fmt.Errorf("creating CEL env: %w", err)
 	}
@@ -129,6 +173,7 @@ func (p *ClaimsProgram) Eval(claims map[string]any) bool {
 
 	out, _, err := p.program.Eval(vars)
 	if err != nil {
+		slog.Debug("CEL eval error in claims assertion", "error", err)
 		return false
 	}
 
@@ -145,9 +190,7 @@ type ClaimsStringProgram struct {
 // CompileClaimsString parses a CEL expression that receives a `claims` map
 // and returns any value (converted to string at eval time).
 func CompileClaimsString(expr string) (*ClaimsStringProgram, error) {
-	env, err := cel.NewEnv(
-		cel.Variable("claims", cel.MapType(cel.StringType, cel.DynType)),
-	)
+	env, err := getClaimsEnv()
 	if err != nil {
 		return nil, fmt.Errorf("creating CEL env: %w", err)
 	}
@@ -174,6 +217,7 @@ func (p *ClaimsStringProgram) Eval(claims map[string]any) string {
 
 	out, _, err := p.program.Eval(vars)
 	if err != nil {
+		slog.Debug("CEL eval error in claims string extraction", "error", err)
 		return ""
 	}
 
@@ -243,15 +287,27 @@ func BodyFromCtx(r *http.Request) *BodyData {
 func buildRequestMap(r *http.Request) map[string]any {
 	headers := make(map[string]any, len(r.Header))
 	for k, v := range r.Header {
-		if len(v) > 0 {
+		if len(v) == 1 {
 			headers[strings.ToLower(k)] = v[0]
+		} else if len(v) > 1 {
+			vals := make([]any, len(v))
+			for i, s := range v {
+				vals[i] = s
+			}
+			headers[strings.ToLower(k)] = vals
 		}
 	}
 
 	queryParams := make(map[string]any, len(r.URL.Query()))
 	for k, v := range r.URL.Query() {
-		if len(v) > 0 {
+		if len(v) == 1 {
 			queryParams[k] = v[0]
+		} else if len(v) > 1 {
+			vals := make([]any, len(v))
+			for i, s := range v {
+				vals[i] = s
+			}
+			queryParams[k] = vals
 		}
 	}
 

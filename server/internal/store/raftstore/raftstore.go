@@ -34,12 +34,17 @@ type Store struct {
 	httpClient *http.Client
 }
 
-// New creates a Raft-backed Store.
-func New(local *boltstore.Store, node *rft.Node) *Store {
+// New creates a Raft-backed Store. The httpClient is used for write-forwarding
+// from followers to the leader. Pass a TLS-configured client when the control
+// plane uses HTTPS. If httpClient is nil, a default plaintext client is used.
+func New(local *boltstore.Store, node *rft.Node, httpClient *http.Client) *Store {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
 	return &Store{
 		local:      local,
 		node:       node,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: httpClient,
 	}
 }
 
@@ -207,7 +212,13 @@ func (s *Store) forwardToLeader(data []byte) error {
 		return fmt.Errorf("no raft leader available")
 	}
 
-	url := fmt.Sprintf("http://%s/api/v1/sync/raft", leaderHTTP)
+	scheme := "http"
+	if s.httpClient.Transport != nil {
+		if t, ok := s.httpClient.Transport.(*http.Transport); ok && t.TLSClientConfig != nil {
+			scheme = "https"
+		}
+	}
+	url := fmt.Sprintf("%s://%s/api/v1/sync/raft", scheme, leaderHTTP)
 	resp, err := s.httpClient.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("forwarding to leader %s: %w", leaderHTTP, err)

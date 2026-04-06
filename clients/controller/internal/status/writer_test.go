@@ -177,10 +177,3 @@ func TestSetConditionInSlice_Append(t *testing.T) {
 		t.Fatalf("expected 2 conditions, got %d", len(conditions))
 	}
 }
-
-func TestTimestamp(t *testing.T) {
-	ts := timestamp()
-	if len(ts) != 15 {
-		t.Errorf("expected 15-char timestamp (YYYYMMDD-HHMMSS), got %q (%d)", ts, len(ts))
-	}
-}

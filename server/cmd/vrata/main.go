@@ -135,7 +135,16 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 			return fmt.Errorf("waiting for raft leader: %w", err)
 		}
 
-		rs := raftstore.New(st, node)
+		var raftHTTPClient *http.Client
+		if cfg.ControlPlane.TLS != nil {
+			transport, err := tlsutil.ClientTransport(cfg.ControlPlane.TLS)
+			if err != nil {
+				return fmt.Errorf("building raft TLS transport: %w", err)
+			}
+			raftHTTPClient = &http.Client{Timeout: 10 * time.Second, Transport: transport}
+		}
+
+		rs := raftstore.New(st, node, raftHTTPClient)
 		activeStore = rs
 		raftApplier = node
 

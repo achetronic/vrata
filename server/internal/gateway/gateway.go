@@ -127,39 +127,18 @@ func (gw *Gateway) rebuild(ctx context.Context) error {
 		}
 	}
 
-	// Build new routing table.
-	table, err := proxy.BuildTable(routes, groups, destinations, middlewares, gw.deps.SessionStore, gw.deps.CELBodyMaxSize)
+	// Apply the snapshot atomically.
+	err = proxy.ApplySnapshot(proxy.ApplyParams{
+		Router:          gw.deps.Router,
+		ListenerManager: gw.deps.ListenerManager,
+		HealthChecker:   gw.deps.HealthChecker,
+		OutlierDetector: gw.deps.OutlierDetector,
+		SessionStore:    gw.deps.SessionStore,
+		CELBodyMaxSize:  gw.deps.CELBodyMaxSize,
+	}, listeners, routes, groups, destinations, middlewares)
 	if err != nil {
-		return fmt.Errorf("building routing table: %w", err)
+		return err
 	}
-
-	// Atomic swap.
-	gw.deps.Router.SwapTable(table)
-
-	// Update health checker with new upstreams.
-	if gw.deps.HealthChecker != nil {
-		gw.deps.HealthChecker.Update(table.Pools())
-	}
-	if gw.deps.OutlierDetector != nil {
-		gw.deps.OutlierDetector.Update(table.Pools())
-		od := gw.deps.OutlierDetector
-		for _, pool := range table.Pools() {
-			for _, ep := range pool.Endpoints {
-				ep.OnResponse = od.RecordResponse
-			}
-		}
-	}
-
-	// Reconcile listeners.
-	gw.deps.ListenerManager.Reconcile(listeners)
-
-	// Update metrics collectors with the new pool snapshot and wire them
-	// into the router so ServeHTTP can record per-route metrics.
-	mcs := gw.deps.ListenerManager.MetricsCollectors()
-	for _, mc := range mcs {
-		mc.UpdatePools(table.Pools())
-	}
-	gw.deps.Router.SetMetricsCollectors(mcs)
 
 	gw.deps.Logger.Info("gateway: config applied",
 		slog.Int("listeners", len(listeners)),

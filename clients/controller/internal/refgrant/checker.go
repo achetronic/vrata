@@ -60,11 +60,13 @@ func (c *Checker) AllowedBackendRef(ctx context.Context, sourceNamespace, target
 func matchesGrant(grant gwapiv1beta1.ReferenceGrant, sourceNamespace, targetName string) bool {
 	fromMatch := false
 	for _, from := range grant.Spec.From {
-		if from.Group == "gateway.networking.k8s.io" &&
-			(from.Kind == "HTTPRoute" || from.Kind == "GRPCRoute") &&
-			string(from.Namespace) == sourceNamespace {
-			fromMatch = true
-			break
+		if (from.Group == "gateway.networking.k8s.io" &&
+			(from.Kind == "HTTPRoute" || from.Kind == "GRPCRoute")) ||
+			(from.Group == "vrata.io" && from.Kind == "SuperHTTPRoute") {
+			if string(from.Namespace) == sourceNamespace {
+				fromMatch = true
+				break
+			}
 		}
 	}
 	if !fromMatch {

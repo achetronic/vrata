@@ -97,18 +97,24 @@ func (b *Batcher) TotalSignals() int {
 }
 
 // flushLocked creates and activates a snapshot. Must be called with mu held.
+// Pending count is always reset even on failure — the changes are already
+// applied to Vrata entities, only the snapshot creation/activation failed.
+// A subsequent signal will trigger a new flush attempt.
 func (b *Batcher) flushLocked(ctx context.Context) {
 	if b.timer != nil {
 		b.timer.Stop()
 		b.timer = nil
 	}
 
+	changes := b.pending
+	b.pending = 0
+
 	name := fmt.Sprintf("vrata-controller-%d", time.Now().UnixMilli())
 	snap, err := b.client.CreateSnapshot(ctx, name)
 	if err != nil {
 		b.logger.Error("batcher: failed to create snapshot",
 			slog.String("error", err.Error()),
-			slog.Int("pending", b.pending),
+			slog.Int("changes", changes),
 		)
 		return
 	}
@@ -124,12 +130,10 @@ func (b *Batcher) flushLocked(ctx context.Context) {
 	b.logger.Info("batcher: snapshot activated",
 		slog.String("id", snap.ID),
 		slog.String("name", name),
-		slog.Int("changes", b.pending),
+		slog.Int("changes", changes),
 	)
 
 	if b.onSnapshot != nil {
 		b.onSnapshot()
 	}
-
-	b.pending = 0
 }

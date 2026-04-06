@@ -35,6 +35,8 @@ func (w *slogWriter) Write(p []byte) (int, error) {
 		w.logger.Error(msg)
 	} else if strings.Contains(msg, "[WARN]") {
 		w.logger.Warn(msg)
+	} else if strings.Contains(msg, "[INFO]") {
+		w.logger.Info(msg)
 	} else {
 		w.logger.Debug(msg)
 	}

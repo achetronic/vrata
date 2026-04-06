@@ -67,7 +67,7 @@ func TestClusterSingleNode(t *testing.T) {
 	defer n.Shutdown()
 
 	waitLeader(t, n)
-	rs := raftstore.New(st, n)
+	rs := raftstore.New(st, n, nil)
 
 	route := model.Route{
 		ID: "r1", Name: "cluster-route",
@@ -147,7 +147,7 @@ func TestClusterThreeNodesReplication(t *testing.T) {
 	_ = leaderStore
 
 	// Write via the leader.
-	rs := raftstore.New(leaderStore, leader)
+	rs := raftstore.New(leaderStore, leader, nil)
 	route := model.Route{
 		ID: "rep-route", Name: "replicated",
 		Match:       model.MatchRule{PathPrefix: "/rep"},

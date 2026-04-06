@@ -258,6 +258,7 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 
 	var routeVrataIDs []string
 	for _, route := range mapped.Routes {
+		destNames := destinationNamesForRoute(route)
 		resolved := resolveRouteRefs(route, destIDs, mwIDs)
 		if existing, ok := routeByName[route.Name]; !ok {
 			created, err := r.client.CreateRoute(ctx, resolved)
@@ -265,7 +266,6 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 				return changes, fmt.Errorf("creating route %q: %w", route.Name, err)
 			}
 			routeVrataIDs = append(routeVrataIDs, created.ID)
-			destNames := destinationNamesForRoute(mapped.Destinations)
 			r.routeDestMap[route.Name] = destNames
 			for _, dn := range destNames {
 				r.refCount.Increment(dn)
@@ -277,7 +277,7 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 				return changes, fmt.Errorf("updating route %q: %w", route.Name, err)
 			}
 			routeVrataIDs = append(routeVrataIDs, existing.ID)
-			newDestNames := destinationNamesForRoute(mapped.Destinations)
+			newDestNames := destNames
 			oldDestNames := r.routeDestMap[route.Name]
 			oldSet := make(map[string]bool, len(oldDestNames))
 			for _, dn := range oldDestNames {
@@ -569,12 +569,32 @@ func resolveRouteRefs(route vrata.Route, destIDs, mwIDs map[string]string) vrata
 	return route
 }
 
-// destinationNamesForRoute returns the k8s: names for all destinations
-// in the mapped entity.
-func destinationNamesForRoute(dks []mapper.DestinationKey) []string {
-	names := make([]string, len(dks))
-	for i, dk := range dks {
-		names[i] = dk.DestinationName()
+// destinationNamesForRoute extracts the k8s: destination names referenced
+// by a single route's forward.destinations field.
+func destinationNamesForRoute(route vrata.Route) []string {
+	if route.Forward == nil {
+		return nil
+	}
+	dests, ok := route.Forward["destinations"]
+	if !ok {
+		return nil
+	}
+	var names []string
+	switch v := dests.(type) {
+	case []map[string]any:
+		for _, d := range v {
+			if name, ok := d["destinationId"].(string); ok {
+				names = append(names, name)
+			}
+		}
+	case []any:
+		for _, elem := range v {
+			if dm, ok := elem.(map[string]any); ok {
+				if name, ok := dm["destinationId"].(string); ok {
+					names = append(names, name)
+				}
+			}
+		}
 	}
 	return names
 }

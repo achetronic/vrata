@@ -335,13 +335,43 @@ func (n *Node) refreshPeersLoop(ctx context.Context) {
 				n.logger.Warn("raft: DNS refresh failed", slog.String("error", err.Error()))
 				continue
 			}
+			// Build a set of currently resolved addresses to detect stale voters.
+			resolvedAddrs := make(map[raft.ServerAddress]bool, len(peers))
 			for _, peer := range peers {
+				resolvedAddrs[peer.Address] = true
 				future := n.raft.AddVoter(peer.ID, peer.Address, 0, raftTimeout)
 				if err := future.Error(); err != nil {
-					n.logger.Debug("raft: AddVoter skipped",
+					n.logger.Warn("raft: AddVoter failed",
 						slog.String("id", string(peer.ID)),
 						slog.String("error", err.Error()),
 					)
+				}
+			}
+
+			// Remove voters whose addresses are no longer in DNS.
+			configFuture := n.raft.GetConfiguration()
+			if err := configFuture.Error(); err != nil {
+				n.logger.Warn("raft: failed to get configuration for stale voter cleanup",
+					slog.String("error", err.Error()),
+				)
+			} else {
+				for _, srv := range configFuture.Configuration().Servers {
+					if srv.ID == raft.ServerID(n.cfg.NodeID) {
+						continue
+					}
+					if !resolvedAddrs[srv.Address] {
+						n.logger.Info("raft: removing stale voter",
+							slog.String("id", string(srv.ID)),
+							slog.String("address", string(srv.Address)),
+						)
+						remFuture := n.raft.RemoveServer(srv.ID, 0, raftTimeout)
+						if err := remFuture.Error(); err != nil {
+							n.logger.Warn("raft: RemoveServer failed",
+								slog.String("id", string(srv.ID)),
+								slog.String("error", err.Error()),
+							)
+						}
+					}
 				}
 			}
 		}

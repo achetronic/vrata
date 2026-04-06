@@ -1036,8 +1036,10 @@ func (s *Store) Restore(data []byte) error {
 		return fmt.Errorf("decoding snapshot: %w", err)
 	}
 
+	dataBuckets := []string{bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners, bucketDestinations, bucketSecrets, bucketSnapshots}
+
 	err := s.db.Update(func(tx *bolt.Tx) error {
-		for bucketName, entries := range dump {
+		for _, bucketName := range dataBuckets {
 			b := tx.Bucket([]byte(bucketName))
 			if b == nil {
 				var err error
@@ -1058,7 +1060,11 @@ func (s *Store) Restore(data []byte) error {
 					return err
 				}
 			}
-			// Write new data.
+			// Write new data (if this bucket is present in the dump).
+			entries, ok := dump[bucketName]
+			if !ok {
+				continue
+			}
 			for k, v := range entries {
 				if err := b.Put([]byte(k), v); err != nil {
 					return err

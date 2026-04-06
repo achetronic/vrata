@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"reflect"
 	"sync"
 	"time"
 
@@ -395,11 +394,57 @@ func sameMetrics(a, b *model.ListenerMetrics) bool {
 	if a.ResolvedPath() != b.ResolvedPath() {
 		return false
 	}
-	if !reflect.DeepEqual(a.Collect, b.Collect) {
+	if !sameCollect(a.Collect, b.Collect) {
 		return false
 	}
-	if !reflect.DeepEqual(a.Histograms, b.Histograms) {
+	return sameHistograms(a.Histograms, b.Histograms)
+}
+
+// sameCollect compares two collect configs field by field.
+func sameCollect(a, b *model.MetricsCollectConfig) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
 		return false
+	}
+	return sameBoolPtr(a.Route, b.Route) &&
+		sameBoolPtr(a.Destination, b.Destination) &&
+		sameBoolPtr(a.Endpoint, b.Endpoint) &&
+		sameBoolPtr(a.Middleware, b.Middleware) &&
+		sameBoolPtr(a.Listener, b.Listener)
+}
+
+// sameHistograms compares two histogram configs field by field.
+func sameHistograms(a, b *model.MetricsHistogramConfig) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return sameFloat64Slice(a.DurationBuckets, b.DurationBuckets) &&
+		sameFloat64Slice(a.SizeBuckets, b.SizeBuckets)
+}
+
+func sameBoolPtr(a, b *bool) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func sameFloat64Slice(a, b []float64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
 	}
 	return true
 }

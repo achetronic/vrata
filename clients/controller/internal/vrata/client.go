@@ -122,7 +122,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
-	if resp.StatusCode >= 500 {
+	if resp.StatusCode >= 400 {
 		return fmt.Errorf("ping: server returned %d", resp.StatusCode)
 	}
 	return nil

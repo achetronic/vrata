@@ -7,6 +7,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -309,6 +310,21 @@ func validate(cfg *Config) error {
 		}
 		if cfg.TLS.Key != "" && cfg.TLS.Cert == "" {
 			return fmt.Errorf("tls: cert is required when key is set")
+		}
+	}
+	for _, entry := range []struct {
+		name, value string
+	}{
+		{"snapshot.debounce", cfg.Snapshot.Debounce},
+		{"snapshot.batchIdleTimeout", cfg.Snapshot.BatchIdleTimeout},
+		{"leaderElection.leaseDuration", cfg.LeaderElection.LeaseDuration},
+		{"leaderElection.renewDeadline", cfg.LeaderElection.RenewDeadline},
+		{"leaderElection.retryPeriod", cfg.LeaderElection.RetryPeriod},
+	} {
+		if entry.value != "" {
+			if _, err := time.ParseDuration(entry.value); err != nil {
+				return fmt.Errorf("%s: invalid duration %q: %w", entry.name, entry.value, err)
+			}
 		}
 	}
 	return nil
