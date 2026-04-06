@@ -722,10 +722,12 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 								m.RefGrantDenied.Inc()
 							}
 							if sw != nil {
-								sw.SetResolvedRefs(ctx, hr, false, fmt.Sprintf(
+								if err := sw.SetResolvedRefs(ctx, hr, false, fmt.Sprintf(
 									"cross-namespace backendRef %s/%s denied: no matching ReferenceGrant",
 									br.ServiceNamespace, br.ServiceName,
-								))
+								)); err != nil {
+									slog.Warn("failed to write ResolvedRefs status", slog.String("error", err.Error()))
+								}
 							}
 							break
 						}
@@ -758,7 +760,9 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 					slog.String("overlaps", msg),
 				)
 				if sw != nil && hr != nil {
-					sw.SetAccepted(ctx, hr, false, "OverlappingRoute", msg)
+					if err := sw.SetAccepted(ctx, hr, false, "OverlappingRoute", msg); err != nil {
+						slog.Warn("failed to write Accepted status", slog.String("error", err.Error()))
+					}
 				}
 				return 0, groupName, nil
 			}
@@ -769,7 +773,9 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 	changes, err := rec.ApplyHTTPRoute(ctx, mapped)
 	if err != nil {
 		if sw != nil && hr != nil {
-			sw.SetAccepted(ctx, hr, false, "SyncFailed", err.Error())
+			if sErr := sw.SetAccepted(ctx, hr, false, "SyncFailed", err.Error()); sErr != nil {
+				slog.Warn("failed to write Accepted status", slog.String("error", sErr.Error()))
+			}
 		}
 		return 0, groupName, fmt.Errorf("applying route %s/%s: %w", ref.Namespace, ref.Name, err)
 	}
@@ -778,7 +784,9 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 			bat.Signal(ctx)
 		}
 		if sw != nil && hr != nil {
-			sw.SetAccepted(ctx, hr, true, "Synced", "Successfully synced to Vrata")
+			if err := sw.SetAccepted(ctx, hr, true, "Synced", "Successfully synced to Vrata"); err != nil {
+				slog.Warn("failed to write Accepted status", slog.String("error", err.Error()))
+			}
 		}
 		if m != nil {
 			m.ReconcileTotal.WithLabelValues("httproute", "success").Inc()
@@ -858,10 +866,12 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 							m.RefGrantDenied.Inc()
 						}
 						if sw != nil {
-							sw.SetGRPCRouteResolvedRefs(ctx, gr, false, fmt.Sprintf(
+							if err := sw.SetGRPCRouteResolvedRefs(ctx, gr, false, fmt.Sprintf(
 								"cross-namespace backendRef %s/%s denied: no matching ReferenceGrant",
 								br.ServiceNamespace, br.ServiceName,
-							))
+							)); err != nil {
+								slog.Warn("failed to write GRPCRoute ResolvedRefs status", slog.String("error", err.Error()))
+							}
 						}
 						break
 					}
@@ -893,7 +903,9 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 					slog.String("overlaps", msg),
 				)
 				if sw != nil && gr != nil {
-					sw.SetGRPCRouteAccepted(ctx, gr, false, "OverlappingRoute", msg)
+					if err := sw.SetGRPCRouteAccepted(ctx, gr, false, "OverlappingRoute", msg); err != nil {
+						slog.Warn("failed to write GRPCRoute Accepted status", slog.String("error", err.Error()))
+					}
 				}
 				return 0, groupName, nil
 			}
@@ -904,7 +916,9 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 	changes, err := rec.ApplyHTTPRoute(ctx, mapped)
 	if err != nil {
 		if sw != nil {
-			sw.SetGRPCRouteAccepted(ctx, gr, false, "SyncFailed", err.Error())
+			if sErr := sw.SetGRPCRouteAccepted(ctx, gr, false, "SyncFailed", err.Error()); sErr != nil {
+				slog.Warn("failed to write GRPCRoute Accepted status", slog.String("error", sErr.Error()))
+			}
 		}
 		return 0, groupName, fmt.Errorf("applying grpc route %s/%s: %w", ref.Namespace, ref.Name, err)
 	}
@@ -913,7 +927,9 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 			bat.Signal(ctx)
 		}
 		if sw != nil {
-			sw.SetGRPCRouteAccepted(ctx, gr, true, "Synced", "Successfully synced to Vrata")
+			if err := sw.SetGRPCRouteAccepted(ctx, gr, true, "Synced", "Successfully synced to Vrata"); err != nil {
+				slog.Warn("failed to write GRPCRoute Accepted status", slog.String("error", err.Error()))
+			}
 		}
 		if m != nil {
 			m.ReconcileTotal.WithLabelValues("grpcroute", "success").Inc()

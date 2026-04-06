@@ -9,6 +9,7 @@ package bolt
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -179,6 +180,9 @@ func (s *Store) GetRoute(_ context.Context, id string) (model.Route, error) {
 		return json.Unmarshal(v, &route)
 	})
 	if err != nil {
+		if !errors.Is(err, model.ErrNotFound) {
+			err = fmt.Errorf("unmarshalling route %q: %w", id, err)
+		}
 		return model.Route{}, err
 	}
 	return route, nil
@@ -274,6 +278,9 @@ func (s *Store) GetGroup(_ context.Context, id string) (model.RouteGroup, error)
 		return json.Unmarshal(v, &group)
 	})
 	if err != nil {
+		if !errors.Is(err, model.ErrNotFound) {
+			err = fmt.Errorf("unmarshalling group %q: %w", id, err)
+		}
 		return model.RouteGroup{}, err
 	}
 	return group, nil
@@ -369,6 +376,9 @@ func (s *Store) GetMiddleware(_ context.Context, id string) (model.Middleware, e
 		return json.Unmarshal(v, &filter)
 	})
 	if err != nil {
+		if !errors.Is(err, model.ErrNotFound) {
+			err = fmt.Errorf("unmarshalling middleware %q: %w", id, err)
+		}
 		return model.Middleware{}, err
 	}
 	return filter, nil
@@ -464,6 +474,9 @@ func (s *Store) GetListener(_ context.Context, id string) (model.Listener, error
 		return json.Unmarshal(v, &listener)
 	})
 	if err != nil {
+		if !errors.Is(err, model.ErrNotFound) {
+			err = fmt.Errorf("unmarshalling listener %q: %w", id, err)
+		}
 		return model.Listener{}, err
 	}
 	return listener, nil
@@ -559,6 +572,9 @@ func (s *Store) GetDestination(_ context.Context, id string) (model.Destination,
 		return json.Unmarshal(v, &destination)
 	})
 	if err != nil {
+		if !errors.Is(err, model.ErrNotFound) {
+			err = fmt.Errorf("unmarshalling destination %q: %w", id, err)
+		}
 		return model.Destination{}, err
 	}
 	return destination, nil
@@ -659,6 +675,9 @@ func (s *Store) GetSecret(_ context.Context, id string) (model.Secret, error) {
 		return json.Unmarshal(plain, &sec)
 	})
 	if err != nil {
+		if !errors.Is(err, model.ErrNotFound) {
+			err = fmt.Errorf("unmarshalling secret %q: %w", id, err)
+		}
 		return model.Secret{}, err
 	}
 	return sec, nil
@@ -771,6 +790,9 @@ func (s *Store) GetSnapshot(_ context.Context, id string) (model.VersionedSnapsh
 		return json.Unmarshal(plain, &vs)
 	})
 	if err != nil {
+		if !errors.Is(err, model.ErrNotFound) {
+			err = fmt.Errorf("unmarshalling snapshot %q: %w", id, err)
+		}
 		return model.VersionedSnapshot{}, err
 	}
 	return vs, nil
@@ -872,6 +894,9 @@ func (s *Store) GetActiveSnapshot(_ context.Context) (model.VersionedSnapshot, e
 		return json.Unmarshal(plain, &vs)
 	})
 	if err != nil {
+		if !errors.Is(err, model.ErrNoActiveSnapshot) {
+			err = fmt.Errorf("unmarshalling active snapshot: %w", err)
+		}
 		return model.VersionedSnapshot{}, err
 	}
 	return vs, nil

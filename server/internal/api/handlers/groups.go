@@ -59,7 +59,7 @@ func (d *Dependencies) HandleCreateGroup(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := validateGroup(group); err != nil {
-		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid group configuration", d.Logger)
 		return
 	}
 
@@ -123,7 +123,7 @@ func (d *Dependencies) HandleUpdateGroup(w http.ResponseWriter, r *http.Request)
 	group.ID = groupID
 
 	if err := validateGroup(group); err != nil {
-		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid group configuration", d.Logger)
 		return
 	}
 

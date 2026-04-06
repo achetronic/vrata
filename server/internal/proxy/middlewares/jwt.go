@@ -175,8 +175,9 @@ func JWTMiddlewareWithStop(cfg *model.JWTConfig, services map[string]Service) (M
 		})
 	})
 
+	var stopOnce sync.Once
 	stop := func() {
-		close(v.stop)
+		stopOnce.Do(func() { close(v.stop) })
 	}
 
 	return mw, stop

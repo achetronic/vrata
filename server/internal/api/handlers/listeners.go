@@ -53,7 +53,7 @@ func (d *Dependencies) HandleCreateListener(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := validateListener(listener); err != nil {
-		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid listener configuration", d.Logger)
 		return
 	}
 
@@ -125,7 +125,7 @@ func (d *Dependencies) HandleUpdateListener(w http.ResponseWriter, r *http.Reque
 	listener.ID = listenerID
 
 	if err := validateListener(listener); err != nil {
-		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid listener configuration", d.Logger)
 		return
 	}
 

@@ -57,7 +57,7 @@ func (d *Dependencies) HandleCreateDestination(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := validateDestination(destination); err != nil {
-		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid destination configuration", d.Logger)
 		return
 	}
 
@@ -121,7 +121,7 @@ func (d *Dependencies) HandleUpdateDestination(w http.ResponseWriter, r *http.Re
 	destination.ID = destinationID
 
 	if err := validateDestination(destination); err != nil {
-		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid destination configuration", d.Logger)
 		return
 	}
 

@@ -54,7 +54,7 @@ func (d *Dependencies) HandleCreateMiddleware(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := validateMiddleware(mw); err != nil {
-		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid middleware configuration", d.Logger)
 		return
 	}
 
@@ -122,7 +122,7 @@ func (d *Dependencies) HandleUpdateMiddleware(w http.ResponseWriter, r *http.Req
 	mw.ID = middlewareID
 
 	if err := validateMiddleware(mw); err != nil {
-		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "invalid middleware configuration", d.Logger)
 		return
 	}
 

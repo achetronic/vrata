@@ -43,8 +43,9 @@ func RateLimitMiddlewareWithStop(cfg *model.RateLimitConfig) (Middleware, func()
 		})
 	})
 
+	var stopOnce sync.Once
 	stop := func() {
-		close(limiter.stop)
+		stopOnce.Do(func() { close(limiter.stop) })
 	}
 
 	return mw, stop
