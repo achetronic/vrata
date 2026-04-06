@@ -32,15 +32,18 @@ type RuleInput struct {
 	SessionPersistence *RuleSessionPersistence
 }
 
+// RuleTimeouts holds per-rule timeout configuration from an HTTPRoute.
 type RuleTimeouts struct {
 	Request string
 }
 
+// RuleRetry holds per-rule retry configuration from an HTTPRoute.
 type RuleRetry struct {
 	Attempts          uint32
 	PerAttemptTimeout string
 }
 
+// RuleSessionPersistence holds per-rule session persistence from an HTTPRoute.
 type RuleSessionPersistence struct {
 	SessionName     string
 	AbsoluteTimeout string

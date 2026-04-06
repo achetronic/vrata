@@ -13,6 +13,7 @@ import (
 
 	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
+
 	"github.com/google/uuid"
 )
 
@@ -28,7 +29,7 @@ import (
 func (d *Dependencies) HandleListGroups(w http.ResponseWriter, r *http.Request) {
 	groups, err := d.Store.ListGroups(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "groups", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, groups, d.Logger)
@@ -63,7 +64,7 @@ func (d *Dependencies) HandleCreateGroup(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := d.Store.SaveGroup(r.Context(), group); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "group", d.Logger)
 		return
 	}
 
@@ -86,7 +87,7 @@ func (d *Dependencies) HandleGetGroup(w http.ResponseWriter, r *http.Request) {
 
 	group, err := d.Store.GetGroup(r.Context(), groupID)
 	if err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "group", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, group, d.Logger)
@@ -110,7 +111,7 @@ func (d *Dependencies) HandleUpdateGroup(w http.ResponseWriter, r *http.Request)
 	groupID := r.PathValue("groupId")
 
 	if _, err := d.Store.GetGroup(r.Context(), groupID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "group", d.Logger)
 		return
 	}
 
@@ -127,7 +128,7 @@ func (d *Dependencies) HandleUpdateGroup(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := d.Store.SaveGroup(r.Context(), group); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "group", d.Logger)
 		return
 	}
 
@@ -149,7 +150,7 @@ func (d *Dependencies) HandleDeleteGroup(w http.ResponseWriter, r *http.Request)
 	groupID := r.PathValue("groupId")
 
 	if err := d.Store.DeleteGroup(r.Context(), groupID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "group", d.Logger)
 		return
 	}
 

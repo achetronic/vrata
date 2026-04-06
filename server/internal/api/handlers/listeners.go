@@ -11,6 +11,7 @@ import (
 
 	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
+
 	"github.com/google/uuid"
 )
 
@@ -26,7 +27,7 @@ import (
 func (d *Dependencies) HandleListListeners(w http.ResponseWriter, r *http.Request) {
 	listeners, err := d.Store.ListListeners(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "listeners", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, listeners, d.Logger)
@@ -65,7 +66,7 @@ func (d *Dependencies) HandleCreateListener(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := d.Store.SaveListener(r.Context(), listener); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "listener", d.Logger)
 		return
 	}
 
@@ -88,7 +89,7 @@ func (d *Dependencies) HandleGetListener(w http.ResponseWriter, r *http.Request)
 
 	listener, err := d.Store.GetListener(r.Context(), listenerID)
 	if err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "listener", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, listener, d.Logger)
@@ -112,7 +113,7 @@ func (d *Dependencies) HandleUpdateListener(w http.ResponseWriter, r *http.Reque
 	listenerID := r.PathValue("listenerId")
 
 	if _, err := d.Store.GetListener(r.Context(), listenerID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "listener", d.Logger)
 		return
 	}
 
@@ -133,7 +134,7 @@ func (d *Dependencies) HandleUpdateListener(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := d.Store.SaveListener(r.Context(), listener); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "listener", d.Logger)
 		return
 	}
 
@@ -155,7 +156,7 @@ func (d *Dependencies) HandleDeleteListener(w http.ResponseWriter, r *http.Reque
 	listenerID := r.PathValue("listenerId")
 
 	if err := d.Store.DeleteListener(r.Context(), listenerID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "listener", d.Logger)
 		return
 	}
 

@@ -11,6 +11,7 @@ import (
 
 	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
+
 	"github.com/google/uuid"
 )
 
@@ -26,7 +27,7 @@ import (
 func (d *Dependencies) HandleListRoutes(w http.ResponseWriter, r *http.Request) {
 	routes, err := d.Store.ListRoutes(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "routes", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, routes, d.Logger)
@@ -61,7 +62,7 @@ func (d *Dependencies) HandleCreateRoute(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := d.Store.SaveRoute(r.Context(), route); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "route", d.Logger)
 		return
 	}
 
@@ -84,7 +85,7 @@ func (d *Dependencies) HandleGetRoute(w http.ResponseWriter, r *http.Request) {
 
 	route, err := d.Store.GetRoute(r.Context(), routeID)
 	if err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "route", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, route, d.Logger)
@@ -108,7 +109,7 @@ func (d *Dependencies) HandleUpdateRoute(w http.ResponseWriter, r *http.Request)
 	routeID := r.PathValue("routeId")
 
 	if _, err := d.Store.GetRoute(r.Context(), routeID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "route", d.Logger)
 		return
 	}
 
@@ -125,7 +126,7 @@ func (d *Dependencies) HandleUpdateRoute(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := d.Store.SaveRoute(r.Context(), route); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "route", d.Logger)
 		return
 	}
 
@@ -177,7 +178,7 @@ func (d *Dependencies) HandleDeleteRoute(w http.ResponseWriter, r *http.Request)
 	routeID := r.PathValue("routeId")
 
 	if err := d.Store.DeleteRoute(r.Context(), routeID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "route", d.Logger)
 		return
 	}
 

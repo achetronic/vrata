@@ -23,7 +23,7 @@ type Store struct {
 	mu           sync.RWMutex
 	routes       map[string]model.Route
 	groups       map[string]model.RouteGroup
-	filters      map[string]model.Middleware
+	middlewares  map[string]model.Middleware
 	listeners    map[string]model.Listener
 	destinations map[string]model.Destination
 	secrets      map[string]model.Secret
@@ -34,12 +34,14 @@ type Store struct {
 	subs   []chan store.StoreEvent
 }
 
+var _ store.Store = (*Store)(nil)
+
 // New creates an empty in-memory Store.
 func New() *Store {
 	return &Store{
 		routes:       make(map[string]model.Route),
 		groups:       make(map[string]model.RouteGroup),
-		filters:      make(map[string]model.Middleware),
+		middlewares:  make(map[string]model.Middleware),
 		listeners:    make(map[string]model.Listener),
 		destinations: make(map[string]model.Destination),
 		secrets:      make(map[string]model.Secret),
@@ -166,8 +168,8 @@ func (s *Store) ListMiddlewares(_ context.Context) ([]model.Middleware, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	out := make([]model.Middleware, 0, len(s.filters))
-	for _, f := range s.filters {
+	out := make([]model.Middleware, 0, len(s.middlewares))
+	for _, f := range s.middlewares {
 		out = append(out, f)
 	}
 	return out, nil
@@ -178,9 +180,9 @@ func (s *Store) GetMiddleware(_ context.Context, id string) (model.Middleware, e
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	f, ok := s.filters[id]
+	f, ok := s.middlewares[id]
 	if !ok {
-		return model.Middleware{}, fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
+		return model.Middleware{}, fmt.Errorf("middleware %q: %w", id, model.ErrNotFound)
 	}
 	return f, nil
 }
@@ -191,10 +193,10 @@ func (s *Store) SaveMiddleware(_ context.Context, f model.Middleware) error {
 	defer s.mu.Unlock()
 
 	evt := store.EventUpdated
-	if _, ok := s.filters[f.ID]; !ok {
+	if _, ok := s.middlewares[f.ID]; !ok {
 		evt = store.EventCreated
 	}
-	s.filters[f.ID] = f
+	s.middlewares[f.ID] = f
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceMiddleware, ID: f.ID})
 	return nil
 }
@@ -204,10 +206,10 @@ func (s *Store) DeleteMiddleware(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, ok := s.filters[id]; !ok {
-		return fmt.Errorf("filter %q: %w", id, model.ErrNotFound)
+	if _, ok := s.middlewares[id]; !ok {
+		return fmt.Errorf("middleware %q: %w", id, model.ErrNotFound)
 	}
-	delete(s.filters, id)
+	delete(s.middlewares, id)
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceMiddleware, ID: id})
 	return nil
 }

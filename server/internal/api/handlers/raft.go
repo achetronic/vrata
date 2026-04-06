@@ -41,7 +41,7 @@ func (d *Dependencies) HandleRaftApply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := io.ReadAll(r.Body)
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 10<<20))
 	if err != nil {
 		respond.Error(w, http.StatusBadRequest, "reading body: "+err.Error(), d.Logger)
 		return

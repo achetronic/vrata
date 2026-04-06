@@ -108,6 +108,26 @@ func NewClient(baseURL string, opts ...Option) *Client {
 	return c
 }
 
+// Ping checks whether the Vrata API is reachable by hitting a lightweight
+// endpoint. Returns nil on success, an error if the API is unreachable.
+func (c *Client) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/groups", nil)
+	if err != nil {
+		return fmt.Errorf("building ping request: %w", err)
+	}
+	c.setAuth(req)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("ping: %w", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("ping: server returned %d", resp.StatusCode)
+	}
+	return nil
+}
+
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
 // ListRoutes returns all routes from Vrata.
@@ -423,6 +443,7 @@ func (c *Client) put(ctx context.Context, path string, body any) error {
 		body, _ := io.ReadAll(resp.Body)
 		return &APIError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
 
@@ -442,5 +463,6 @@ func (c *Client) del(ctx context.Context, path string) error {
 		body, _ := io.ReadAll(resp.Body)
 		return &APIError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }

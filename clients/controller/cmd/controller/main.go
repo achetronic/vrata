@@ -242,7 +242,7 @@ func run() error {
 			// --- Phase 0: Circuit breaker for Vrata API ---
 			// Fast-fail if Vrata API is completely unreachable to prevent O(M*N) failing calls.
 			pingCtx, pingCancel := context.WithTimeout(ctx, 2*time.Second)
-			_, pingErr := rec.Client().ListGroups(pingCtx)
+			pingErr := rec.Client().Ping(pingCtx)
 			pingCancel()
 			if pingErr != nil {
 				logger.Error("Vrata API unreachable, skipping sync cycle", slog.String("error", pingErr.Error()))

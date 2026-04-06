@@ -203,6 +203,7 @@ func (q *Queue) Pop() *Item {
 		return nil
 	}
 	item := q.items[0]
+	q.items[0] = nil
 	q.items = q.items[1:]
 	if item.Kind == KindBatch {
 		delete(q.byKey, item.Batch.Name)

@@ -6,8 +6,12 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
+	"net/http"
 
+	"github.com/achetronic/vrata/internal/api/respond"
+	"github.com/achetronic/vrata/internal/model"
 	"github.com/achetronic/vrata/internal/store"
 )
 
@@ -26,4 +30,16 @@ type Dependencies struct {
 	Logger *slog.Logger
 	// Raft is optional. When set, the internal Raft apply endpoint is active.
 	Raft RaftApplier
+}
+
+// storeError classifies a store error and writes the appropriate HTTP response.
+// ErrNotFound → 404 with a safe message; anything else → 500 with a generic
+// operation description. Raw Go errors are never exposed to the client.
+func storeError(w http.ResponseWriter, err error, resource string, logger *slog.Logger) {
+	if errors.Is(err, model.ErrNotFound) {
+		respond.Error(w, http.StatusNotFound, resource+" not found", logger)
+		return
+	}
+	logger.Error("store error", slog.String("resource", resource), slog.String("error", err.Error()))
+	respond.Error(w, http.StatusInternalServerError, "internal error while accessing "+resource, logger)
 }

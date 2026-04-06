@@ -313,7 +313,7 @@ func setConditionInSlice(conditions *[]metav1.Condition, cond metav1.Condition) 
 	*conditions = append(*conditions, cond)
 }
 
-// Timestamp returns a formatted timestamp for snapshot names.
-func Timestamp() string {
+// timestamp returns a formatted timestamp for snapshot names.
+func timestamp() string {
 	return time.Now().Format("20060102-150405")
 }

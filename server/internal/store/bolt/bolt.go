@@ -43,6 +43,8 @@ type Store struct {
 	subs   []chan store.StoreEvent
 }
 
+var _ store.Store = (*Store)(nil)
+
 // New opens (or creates) the bbolt database at the given path and initialises
 // the required buckets. The optional cipher enables at-rest encryption for
 // secrets and snapshots. Pass nil for plaintext (dev mode).
@@ -661,18 +663,18 @@ func (s *Store) GetSecret(_ context.Context, id string) (model.Secret, error) {
 
 // SaveSecret creates or replaces the secret identified by s.ID.
 func (s *Store) SaveSecret(_ context.Context, sec model.Secret) error {
+	data, err := json.Marshal(sec)
+	if err != nil {
+		return fmt.Errorf("encoding secret: %w", err)
+	}
+	encrypted, err := s.encryptValue(data)
+	if err != nil {
+		return fmt.Errorf("encrypting secret: %w", err)
+	}
 	isNew := false
-	err := s.db.Update(func(tx *bolt.Tx) error {
+	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketSecrets))
 		isNew = b.Get([]byte(sec.ID)) == nil
-		data, err := json.Marshal(sec)
-		if err != nil {
-			return fmt.Errorf("encoding secret: %w", err)
-		}
-		encrypted, err := s.encryptValue(data)
-		if err != nil {
-			return fmt.Errorf("encrypting secret: %w", err)
-		}
 		return b.Put([]byte(sec.ID), encrypted)
 	})
 	if err != nil {
@@ -1006,13 +1008,15 @@ func (s *Store) Dump() ([]byte, error) {
 				continue
 			}
 			entries := make(map[string]json.RawMessage)
-			b.ForEach(func(k, v []byte) error {
+			if err := b.ForEach(func(k, v []byte) error {
 				key := string(k)
 				val := make([]byte, len(v))
 				copy(val, v)
 				entries[key] = json.RawMessage(val)
 				return nil
-			})
+			}); err != nil {
+				return fmt.Errorf("iterating bucket %q: %w", name, err)
+			}
 			dump[name] = entries
 		}
 		return nil
@@ -1032,7 +1036,7 @@ func (s *Store) Restore(data []byte) error {
 		return fmt.Errorf("decoding snapshot: %w", err)
 	}
 
-	return s.db.Update(func(tx *bolt.Tx) error {
+	err := s.db.Update(func(tx *bolt.Tx) error {
 		for bucketName, entries := range dump {
 			b := tx.Bucket([]byte(bucketName))
 			if b == nil {
@@ -1063,4 +1067,9 @@ func (s *Store) Restore(data []byte) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceSnapshot, ID: "restore"})
+	return nil
 }

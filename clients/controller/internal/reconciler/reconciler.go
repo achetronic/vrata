@@ -515,12 +515,24 @@ func (r *Reconciler) OwnedListenerNames(ctx context.Context) ([]string, error) {
 func resolveRouteRefs(route vrata.Route, destIDs, mwIDs map[string]string) vrata.Route {
 	if route.Forward != nil {
 		if dests, ok := route.Forward["destinations"]; ok {
-			if destSlice, ok := dests.([]map[string]any); ok {
-				for i, d := range destSlice {
-					if name, ok := d["destinationId"].(string); ok {
-						if id, found := destIDs[name]; found {
-							destSlice[i]["destinationId"] = id
-						}
+			var destSlice []map[string]any
+			switch v := dests.(type) {
+			case []map[string]any:
+				destSlice = v
+			case []any:
+				for _, elem := range v {
+					if dm, ok := elem.(map[string]any); ok {
+						destSlice = append(destSlice, dm)
+					}
+				}
+				if len(destSlice) > 0 {
+					route.Forward["destinations"] = destSlice
+				}
+			}
+			for i, d := range destSlice {
+				if name, ok := d["destinationId"].(string); ok {
+					if id, found := destIDs[name]; found {
+						destSlice[i]["destinationId"] = id
 					}
 				}
 			}

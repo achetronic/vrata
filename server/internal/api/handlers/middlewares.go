@@ -12,6 +12,7 @@ import (
 	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
 	"github.com/achetronic/vrata/internal/proxy/celeval"
+
 	"github.com/google/uuid"
 )
 
@@ -27,7 +28,7 @@ import (
 func (d *Dependencies) HandleListMiddlewares(w http.ResponseWriter, r *http.Request) {
 	middlewares, err := d.Store.ListMiddlewares(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "middlewares", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, middlewares, d.Logger)
@@ -62,7 +63,7 @@ func (d *Dependencies) HandleCreateMiddleware(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := d.Store.SaveMiddleware(r.Context(), mw); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "middleware", d.Logger)
 		return
 	}
 
@@ -85,7 +86,7 @@ func (d *Dependencies) HandleGetMiddleware(w http.ResponseWriter, r *http.Reques
 
 	mw, err := d.Store.GetMiddleware(r.Context(), middlewareID)
 	if err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "middleware", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, mw, d.Logger)
@@ -109,7 +110,7 @@ func (d *Dependencies) HandleUpdateMiddleware(w http.ResponseWriter, r *http.Req
 	middlewareID := r.PathValue("middlewareId")
 
 	if _, err := d.Store.GetMiddleware(r.Context(), middlewareID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "middleware", d.Logger)
 		return
 	}
 
@@ -126,7 +127,7 @@ func (d *Dependencies) HandleUpdateMiddleware(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := d.Store.SaveMiddleware(r.Context(), mw); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "middleware", d.Logger)
 		return
 	}
 
@@ -148,7 +149,7 @@ func (d *Dependencies) HandleDeleteMiddleware(w http.ResponseWriter, r *http.Req
 	middlewareID := r.PathValue("middlewareId")
 
 	if err := d.Store.DeleteMiddleware(r.Context(), middlewareID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "middleware", d.Logger)
 		return
 	}
 

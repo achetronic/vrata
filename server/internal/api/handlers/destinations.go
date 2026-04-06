@@ -11,6 +11,7 @@ import (
 
 	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
+
 	"github.com/google/uuid"
 )
 
@@ -26,7 +27,7 @@ import (
 func (d *Dependencies) HandleListDestinations(w http.ResponseWriter, r *http.Request) {
 	destinations, err := d.Store.ListDestinations(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "destinations", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, destinations, d.Logger)
@@ -61,7 +62,7 @@ func (d *Dependencies) HandleCreateDestination(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := d.Store.SaveDestination(r.Context(), destination); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "destination", d.Logger)
 		return
 	}
 
@@ -84,7 +85,7 @@ func (d *Dependencies) HandleGetDestination(w http.ResponseWriter, r *http.Reque
 
 	destination, err := d.Store.GetDestination(r.Context(), destinationID)
 	if err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "destination", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, destination, d.Logger)
@@ -108,7 +109,7 @@ func (d *Dependencies) HandleUpdateDestination(w http.ResponseWriter, r *http.Re
 	destinationID := r.PathValue("destinationId")
 
 	if _, err := d.Store.GetDestination(r.Context(), destinationID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "destination", d.Logger)
 		return
 	}
 
@@ -125,7 +126,7 @@ func (d *Dependencies) HandleUpdateDestination(w http.ResponseWriter, r *http.Re
 	}
 
 	if err := d.Store.SaveDestination(r.Context(), destination); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "destination", d.Logger)
 		return
 	}
 
@@ -147,7 +148,7 @@ func (d *Dependencies) HandleDeleteDestination(w http.ResponseWriter, r *http.Re
 	destinationID := r.PathValue("destinationId")
 
 	if err := d.Store.DeleteDestination(r.Context(), destinationID); err != nil {
-		respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
+		storeError(w, err, "destination", d.Logger)
 		return
 	}
 
