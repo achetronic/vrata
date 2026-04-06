@@ -1,6 +1,6 @@
 # Feature Coverage Report — Vrata
 
-Generated: 2026-04-01
+Generated: 2026-04-03
 Method: Line-by-line source audit + unit tests + e2e tests
 
 ## API CRUD

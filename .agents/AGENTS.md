@@ -88,8 +88,8 @@ Documented in `CONVENTIONS.md`. Key rules:
 
 ## Pending work
 
-- `SERVER_TODO.md` — API auth, multi-value matchers, proxy fleets
-- `CONTROLLER_TODO.md` — TLS gap, regex overlap detection, allowedRoutes enforcement
+- `SERVER_TODO.md` — Multi-value matchers, proxy fleets, destination priority levels
+- `CONTROLLER_TODO.md` — AllowedRoutes enforcement, listener hostname binding, regex overlap detection
 
 ## Build
 
