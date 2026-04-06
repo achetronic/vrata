@@ -36,10 +36,9 @@ import (
 
 // Dependencies holds the collaborators required by the Watcher.
 type Dependencies struct {
-	Store    store.Store
-	Client   kubernetes.Interface
-	Logger   *slog.Logger
-	OnChange func(ctx context.Context) error
+	Store  store.Store
+	Client kubernetes.Interface
+	Logger *slog.Logger
 }
 
 // Watcher observes Kubernetes EndpointSlices and Services for EDS-backed
@@ -49,6 +48,8 @@ type Watcher struct {
 	mu        sync.RWMutex
 	endpoints map[string][]model.Endpoint
 	cancels   map[string]context.CancelFunc
+	onChangeMu sync.RWMutex
+	onChange   func(ctx context.Context) error
 }
 
 // New creates a new Watcher.
@@ -61,8 +62,11 @@ func New(deps Dependencies) *Watcher {
 }
 
 // SetOnChange sets the callback invoked when endpoints change.
+// Safe for concurrent use with notifyChange.
 func (w *Watcher) SetOnChange(fn func(ctx context.Context) error) {
-	w.deps.OnChange = fn
+	w.onChangeMu.Lock()
+	w.onChange = fn
+	w.onChangeMu.Unlock()
 }
 
 // Endpoints returns a snapshot of resolved endpoints keyed by Destination ID.
@@ -367,10 +371,13 @@ func isEDS(d model.Destination) bool {
 
 // notifyChange safely calls OnChange if set.
 func (w *Watcher) notifyChange(ctx context.Context, destID string) {
-	if w.deps.OnChange == nil {
+	w.onChangeMu.RLock()
+	fn := w.onChange
+	w.onChangeMu.RUnlock()
+	if fn == nil {
 		return
 	}
-	if err := w.deps.OnChange(ctx); err != nil {
+	if err := fn(ctx); err != nil {
 		w.deps.Logger.Error("k8s watcher: OnChange failed",
 			slog.String("destID", destID),
 			slog.String("error", err.Error()),

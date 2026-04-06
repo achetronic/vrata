@@ -65,6 +65,11 @@ func extAuthzHTTP(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 		baseURL += cfg.Path
 	}
 
+	maxBody := cfg.MaxBodyBytes
+	if maxBody <= 0 {
+		maxBody = 1048576
+	}
+
 	forwardHeaders := map[string]bool{"host": true, "content-length": true}
 	if cfg.OnCheck != nil {
 		for _, h := range cfg.OnCheck.ForwardHeaders {
@@ -94,7 +99,7 @@ func extAuthzHTTP(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var checkBody io.Reader
 			if cfg.IncludeBody && r.Body != nil {
-				bodyBytes, err := io.ReadAll(r.Body)
+				bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
 				if err != nil {
 					handleAuthzError(w, r, next, cfg.FailureModeAllow, "failed to read request body")
 					return
@@ -152,6 +157,11 @@ func extAuthzHTTP(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 // ─────────────────────────────────────────────────────────────────────────────
 
 func extAuthzGRPCWithStop(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration) (Middleware, func()) {
+	maxBody := cfg.MaxBodyBytes
+	if maxBody <= 0 {
+		maxBody = 1048576
+	}
+
 	forwardHeaders := map[string]bool{"host": true, "content-length": true}
 	if cfg.OnCheck != nil {
 		for _, h := range cfg.OnCheck.ForwardHeaders {
@@ -204,7 +214,7 @@ func extAuthzGRPCWithStop(cfg *model.ExtAuthzConfig, svc Service, timeout time.D
 
 			var body []byte
 			if cfg.IncludeBody && r.Body != nil {
-				bodyBytes, err := io.ReadAll(r.Body)
+				bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
 				if err != nil {
 					handleAuthzError(w, r, next, cfg.FailureModeAllow, "failed to read request body")
 					return

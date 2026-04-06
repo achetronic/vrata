@@ -236,11 +236,11 @@ func (ep *extProc) handle(next http.Handler, w http.ResponseWriter, r *http.Requ
 		},
 	})
 
+	next.ServeHTTP(hooked, r)
+
 	if capturedStatus == 0 {
 		capturedStatus = http.StatusOK
 	}
-
-	next.ServeHTTP(hooked, r)
 
 	// Phase 3: Response headers.
 	if captureHeaders {

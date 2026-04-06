@@ -67,10 +67,10 @@ func TestWatcherEndpointSlices(t *testing.T) {
 		Store:  st,
 		Client: client,
 		Logger: logger,
-		OnChange: func(_ context.Context) error {
-			changes.Add(1)
-			return nil
-		},
+	})
+	w.SetOnChange(func(_ context.Context) error {
+		changes.Add(1)
+		return nil
 	})
 
 	go w.Run(ctx)
@@ -123,11 +123,11 @@ func TestWatcherExternalNameService(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	w := New(Dependencies{
-		Store:    st,
-		Client:   client,
-		Logger:   logger,
-		OnChange: func(_ context.Context) error { return nil },
+		Store:  st,
+		Client: client,
+		Logger: logger,
 	})
+	w.SetOnChange(func(_ context.Context) error { return nil })
 
 	go w.Run(ctx)
 
@@ -168,11 +168,11 @@ func TestWatcherNonEDSDestinationIgnored(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	w := New(Dependencies{
-		Store:    st,
-		Client:   client,
-		Logger:   logger,
-		OnChange: func(_ context.Context) error { return nil },
+		Store:  st,
+		Client: client,
+		Logger: logger,
 	})
+	w.SetOnChange(func(_ context.Context) error { return nil })
 
 	go w.Run(ctx)
 
@@ -212,11 +212,11 @@ func TestWatcherDestinationRemoved(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	w := New(Dependencies{
-		Store:    st,
-		Client:   client,
-		Logger:   logger,
-		OnChange: func(_ context.Context) error { return nil },
+		Store:  st,
+		Client: client,
+		Logger: logger,
 	})
+	w.SetOnChange(func(_ context.Context) error { return nil })
 
 	go w.Run(ctx)
 

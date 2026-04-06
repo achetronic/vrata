@@ -210,6 +210,11 @@ type ExtAuthzConfig struct {
 	// IncludeBody forwards the request body to the authz service.
 	IncludeBody bool `json:"includeBody,omitempty" yaml:"includeBody,omitempty"`
 
+	// MaxBodyBytes is the maximum number of bytes to buffer from the request
+	// body when IncludeBody is true. Bodies exceeding this limit are truncated.
+	// Default: 1048576 (1MB).
+	MaxBodyBytes int64 `json:"maxBodyBytes,omitempty" yaml:"maxBodyBytes,omitempty"`
+
 	// OnCheck controls what is sent to the authz service.
 	OnCheck *ExtAuthzOnCheck `json:"onCheck,omitempty" yaml:"onCheck,omitempty"`
 
