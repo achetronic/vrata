@@ -56,6 +56,15 @@ func (d *Dependencies) HandleCreateSecret(w http.ResponseWriter, r *http.Request
 		sec.ID = uuid.NewString()
 	}
 
+	if sec.Name == "" {
+		respond.Error(w, http.StatusBadRequest, "name is required", d.Logger)
+		return
+	}
+	if sec.Value == "" {
+		respond.Error(w, http.StatusBadRequest, "value is required", d.Logger)
+		return
+	}
+
 	if err := d.Store.SaveSecret(r.Context(), sec); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "saving secret", d.Logger)
 		return
@@ -117,6 +126,15 @@ func (d *Dependencies) HandleUpdateSecret(w http.ResponseWriter, r *http.Request
 		return
 	}
 	sec.ID = secretID
+
+	if _, err := d.Store.GetSecret(r.Context(), secretID); err != nil {
+		if errors.Is(err, model.ErrNotFound) {
+			respond.Error(w, http.StatusNotFound, "secret not found", d.Logger)
+			return
+		}
+		respond.Error(w, http.StatusInternalServerError, "reading secret", d.Logger)
+		return
+	}
 
 	if err := d.Store.SaveSecret(r.Context(), sec); err != nil {
 		respond.Error(w, http.StatusInternalServerError, "saving secret", d.Logger)

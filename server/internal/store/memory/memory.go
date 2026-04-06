@@ -79,8 +79,12 @@ func (s *Store) SaveRoute(_ context.Context, route model.Route) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	evt := store.EventUpdated
+	if _, ok := s.routes[route.ID]; !ok {
+		evt = store.EventCreated
+	}
 	s.routes[route.ID] = route
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceRoute, ID: route.ID})
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceRoute, ID: route.ID})
 	return nil
 }
 
@@ -130,8 +134,12 @@ func (s *Store) SaveGroup(_ context.Context, group model.RouteGroup) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	evt := store.EventUpdated
+	if _, ok := s.groups[group.ID]; !ok {
+		evt = store.EventCreated
+	}
 	s.groups[group.ID] = group
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceGroup, ID: group.ID})
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceGroup, ID: group.ID})
 	return nil
 }
 
@@ -181,8 +189,12 @@ func (s *Store) SaveMiddleware(_ context.Context, f model.Middleware) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	evt := store.EventUpdated
+	if _, ok := s.filters[f.ID]; !ok {
+		evt = store.EventCreated
+	}
 	s.filters[f.ID] = f
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceMiddleware, ID: f.ID})
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceMiddleware, ID: f.ID})
 	return nil
 }
 
@@ -232,8 +244,12 @@ func (s *Store) SaveListener(_ context.Context, l model.Listener) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	evt := store.EventUpdated
+	if _, ok := s.listeners[l.ID]; !ok {
+		evt = store.EventCreated
+	}
 	s.listeners[l.ID] = l
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceListener, ID: l.ID})
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceListener, ID: l.ID})
 	return nil
 }
 
@@ -283,8 +299,12 @@ func (s *Store) SaveDestination(_ context.Context, d model.Destination) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	evt := store.EventUpdated
+	if _, ok := s.destinations[d.ID]; !ok {
+		evt = store.EventCreated
+	}
 	s.destinations[d.ID] = d
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceDestination, ID: d.ID})
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceDestination, ID: d.ID})
 	return nil
 }
 
@@ -394,8 +414,12 @@ func (s *Store) SaveSnapshot(_ context.Context, vs model.VersionedSnapshot) erro
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	evt := store.EventUpdated
+	if _, ok := s.snapshots[vs.ID]; !ok {
+		evt = store.EventCreated
+	}
 	s.snapshots[vs.ID] = vs
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceSnapshot, ID: vs.ID})
+	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceSnapshot, ID: vs.ID})
 	return nil
 }
 

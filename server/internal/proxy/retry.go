@@ -81,7 +81,6 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 					return nil, lastErr
 				}
 				rt.circuitBreaker.OnRetry()
-				defer rt.circuitBreaker.OnRetryComplete()
 			}
 			if rt.onRetry != nil {
 				rt.onRetry(req, attempt)
@@ -99,40 +98,49 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			attemptReq = req.WithContext(ctx)
 			resp, err := rt.inner.RoundTrip(attemptReq)
 			cancel()
+			if attempt > 0 && rt.circuitBreaker != nil {
+				rt.circuitBreaker.OnRetryComplete()
+			}
 			if err != nil {
 				lastErr = err
 				if attempt < maxAttempts-1 {
-					backoff := calcBackoff(baseBackoff, maxBackoff, attempt)
-					time.Sleep(backoff)
+					if !sleepWithContext(req.Context(), calcBackoff(baseBackoff, maxBackoff, attempt)) {
+						return nil, lastErr
+					}
 					continue
 				}
 				return nil, lastErr
 			}
 			if shouldRetry(resp.StatusCode, rt.retry) && attempt < maxAttempts-1 {
 				resp.Body.Close()
-				backoff := calcBackoff(baseBackoff, maxBackoff, attempt)
-				time.Sleep(backoff)
+				if !sleepWithContext(req.Context(), calcBackoff(baseBackoff, maxBackoff, attempt)) {
+					return nil, lastErr
+				}
 				continue
 			}
 			return resp, nil
 		}
 
 		resp, err := rt.inner.RoundTrip(attemptReq)
+		if attempt > 0 && rt.circuitBreaker != nil {
+			rt.circuitBreaker.OnRetryComplete()
+		}
 		if err != nil {
 			lastErr = err
 			if attempt < maxAttempts-1 {
-				backoff := calcBackoff(baseBackoff, maxBackoff, attempt)
-				time.Sleep(backoff)
+				if !sleepWithContext(req.Context(), calcBackoff(baseBackoff, maxBackoff, attempt)) {
+					return nil, lastErr
+				}
 				continue
 			}
 			return nil, lastErr
 		}
 
-		// Check if we should retry based on status code.
 		if shouldRetry(resp.StatusCode, rt.retry) && attempt < maxAttempts-1 {
 			resp.Body.Close()
-			backoff := calcBackoff(baseBackoff, maxBackoff, attempt)
-			time.Sleep(backoff)
+			if !sleepWithContext(req.Context(), calcBackoff(baseBackoff, maxBackoff, attempt)) {
+				return nil, lastErr
+			}
 			continue
 		}
 
@@ -181,4 +189,17 @@ func calcBackoff(base, max time.Duration, attempt int) time.Duration {
 	// Add jitter: 50-100% of the calculated backoff.
 	jitter := time.Duration(rand.Int63n(int64(backoff / 2)))
 	return backoff/2 + jitter
+}
+
+// sleepWithContext waits for the given duration or until the context is done.
+// Returns true if the sleep completed, false if the context was cancelled.
+func sleepWithContext(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-t.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }

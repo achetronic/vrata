@@ -193,6 +193,7 @@ func run() error {
 	var m *kcmetrics.Metrics
 	if cfg.Metrics.Enabled {
 		m = kcmetrics.New()
+		bat.SetOnSnapshot(func() { m.SnapshotsCreated.Inc() })
 		go func() {
 			mux := http.NewServeMux()
 			mux.Handle("/metrics", m.Handler())

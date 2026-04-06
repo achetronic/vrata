@@ -61,9 +61,10 @@ type MetricsCollector struct {
 	listenerTLSErrors   *prometheus.CounterVec
 
 	// Gauge scraper state.
-	mu    sync.Mutex
-	pools map[string]*DestinationPool
-	stop  chan struct{}
+	mu       sync.Mutex
+	stopOnce sync.Once
+	pools    map[string]*DestinationPool
+	stop     chan struct{}
 }
 
 // NewMetricsCollector creates a collector with metrics registered according
@@ -243,7 +244,7 @@ func (mc *MetricsCollector) Start() {
 
 // Stop terminates the background gauge scraper.
 func (mc *MetricsCollector) Stop() {
-	close(mc.stop)
+	mc.stopOnce.Do(func() { close(mc.stop) })
 }
 
 func (mc *MetricsCollector) scrapeGauges() {

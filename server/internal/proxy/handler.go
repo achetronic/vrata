@@ -265,7 +265,8 @@ func buildMiddleware(mw model.Middleware, ov *model.MiddlewareOverride, pools ma
 	case model.MiddlewareTypeHeaders:
 		return middlewares.HeadersMiddleware(effectiveMW.Headers), nil
 	case model.MiddlewareTypeExtAuthz:
-		return middlewares.ExtAuthzMiddleware(effectiveMW.ExtAuthz, services), nil
+		m, stop := middlewares.ExtAuthzMiddlewareWithStop(effectiveMW.ExtAuthz, services)
+		return m, stop
 	case model.MiddlewareTypeRateLimit:
 		m, stop := middlewares.RateLimitMiddlewareWithStop(effectiveMW.RateLimit)
 		return m, stop
@@ -776,7 +777,7 @@ func mirrorRequest(original *http.Request, mirror *model.RouteMirror, pools map[
 	var bodyBytes []byte
 	if original.Body != nil {
 		var err error
-		bodyBytes, err = io.ReadAll(original.Body)
+		bodyBytes, err = io.ReadAll(io.LimitReader(original.Body, 64*1024*1024))
 		if err != nil {
 			slog.Warn("mirror: failed to read request body", slog.String("error", err.Error()))
 			return

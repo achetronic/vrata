@@ -259,6 +259,12 @@ func MapHTTPRoute(input HTTPRouteInput) MappedEntities {
 				}
 				if mirrorFilter != nil {
 					fwd["mirror"] = mapMirrorFilter(mirrorFilter)
+					mirrorDK := DestinationKey{
+						Name:      mirrorFilter.MirrorServiceName,
+						Namespace: mirrorFilter.MirrorServiceNamespace,
+						Port:      mirrorFilter.MirrorPort,
+					}
+					allDests = append(allDests, mirrorDK)
 				}
 				if rule.Timeouts != nil {
 					fwd["timeouts"] = map[string]any{

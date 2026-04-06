@@ -7,6 +7,7 @@ package redis
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -25,7 +26,7 @@ func New(addr, password string, db int) (*Store, error) {
 		DB:       db,
 	})
 	if err := client.Ping(context.Background()).Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("pinging redis at %s: %w", addr, err)
 	}
 	return &Store{client: client}, nil
 }
@@ -40,16 +41,25 @@ func (s *Store) Get(ctx context.Context, sid, routeID string) (string, error) {
 	if err == goredis.Nil {
 		return "", nil
 	}
-	return val, err
+	if err != nil {
+		return "", fmt.Errorf("redis get %s: %w", key(sid, routeID), err)
+	}
+	return val, nil
 }
 
 // Set stores a value for the given session+route pair with a TTL.
 func (s *Store) Set(ctx context.Context, sid, routeID, value string, ttlSeconds int) error {
 	ttl := time.Duration(ttlSeconds) * time.Second
-	return s.client.Set(ctx, key(sid, routeID), value, ttl).Err()
+	if err := s.client.Set(ctx, key(sid, routeID), value, ttl).Err(); err != nil {
+		return fmt.Errorf("redis set %s: %w", key(sid, routeID), err)
+	}
+	return nil
 }
 
 // Close releases the Redis connection.
 func (s *Store) Close() error {
-	return s.client.Close()
+	if err := s.client.Close(); err != nil {
+		return fmt.Errorf("closing redis connection: %w", err)
+	}
+	return nil
 }

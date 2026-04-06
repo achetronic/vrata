@@ -212,6 +212,9 @@ func (vk verifierKey) verify(alg string, signedContent, signature []byte) bool {
 	case *rsa.PublicKey:
 		hash, hashFunc := rsaHashForAlg(alg)
 		h := hash(signedContent)
+		if strings.HasPrefix(alg, "PS") {
+			return rsa.VerifyPSS(k, hashFunc, h, signature, nil) == nil
+		}
 		return rsa.VerifyPKCS1v15(k, hashFunc, h, signature) == nil
 
 	case *ecdsa.PublicKey:
@@ -342,8 +345,15 @@ func (v *jwtValidator) validateClaims(claims map[string]interface{}) bool {
 	if !ok {
 		return false
 	}
-	if time.Now().Unix() > int64(exp) {
+	now := time.Now().Unix()
+	if now > int64(exp) {
 		return false
+	}
+
+	if nbf, ok := claims["nbf"].(float64); ok {
+		if now < int64(nbf) {
+			return false
+		}
 	}
 
 	return true

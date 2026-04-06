@@ -72,6 +72,7 @@ func CORSMiddleware(cfg *model.CORSConfig) Middleware {
 			}
 
 			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
 			if cfg.AllowCredentials {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}

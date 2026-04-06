@@ -210,6 +210,12 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 				return changes, fmt.Errorf("creating middleware %q: %w", mw.Name, err)
 			}
 			changes++
+		} else {
+			mw.ID = existing.ID
+			if err := r.client.UpdateMiddleware(ctx, existing.ID, mw); err != nil {
+				return changes, fmt.Errorf("updating middleware %q: %w", mw.Name, err)
+			}
+			changes++
 		}
 	}
 

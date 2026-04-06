@@ -4,6 +4,7 @@
 package middlewares
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -56,6 +57,8 @@ func parseTrustedProxies(cidrs []string) []*net.IPNet {
 		_, n, err := net.ParseCIDR(cidr)
 		if err == nil {
 			nets = append(nets, n)
+		} else {
+			slog.Warn("ratelimit: invalid trusted proxy CIDR, skipping", slog.String("cidr", cidr), slog.String("error", err.Error()))
 		}
 	}
 	return nets

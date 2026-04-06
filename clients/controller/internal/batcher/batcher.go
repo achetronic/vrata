@@ -18,10 +18,11 @@ import (
 // Batcher accumulates change signals and creates+activates a Vrata snapshot
 // when the batch is flushed.
 type Batcher struct {
-	client   *vrata.Client
-	debounce time.Duration
-	maxBatch int
-	logger   *slog.Logger
+	client     *vrata.Client
+	debounce   time.Duration
+	maxBatch   int
+	logger     *slog.Logger
+	onSnapshot func()
 
 	mu      sync.Mutex
 	pending int
@@ -37,6 +38,13 @@ func New(client *vrata.Client, debounce time.Duration, maxBatch int, logger *slo
 		maxBatch: maxBatch,
 		logger:   logger,
 	}
+}
+
+// SetOnSnapshot registers a callback invoked after a snapshot is activated.
+func (b *Batcher) SetOnSnapshot(fn func()) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.onSnapshot = fn
 }
 
 // Signal records that a change was applied. If the max batch size is reached,
@@ -118,6 +126,10 @@ func (b *Batcher) flushLocked(ctx context.Context) {
 		slog.String("name", name),
 		slog.Int("changes", b.pending),
 	)
+
+	if b.onSnapshot != nil {
+		b.onSnapshot()
+	}
 
 	b.pending = 0
 }

@@ -38,7 +38,7 @@ func (c *Checker) AllowedBackendRef(ctx context.Context, sourceNamespace, target
 	}
 
 	for _, grant := range grants.Items {
-		if matchesGrant(grant, sourceNamespace) {
+		if matchesGrant(grant, sourceNamespace, targetName) {
 			c.logger.Debug("cross-namespace ref allowed by ReferenceGrant",
 				slog.String("grant", grant.Name),
 				slog.String("from", sourceNamespace),
@@ -56,8 +56,8 @@ func (c *Checker) AllowedBackendRef(ctx context.Context, sourceNamespace, target
 }
 
 // matchesGrant checks if a ReferenceGrant allows references from the given
-// source namespace to Services in the grant's namespace.
-func matchesGrant(grant gwapiv1beta1.ReferenceGrant, sourceNamespace string) bool {
+// source namespace to the named Service in the grant's namespace.
+func matchesGrant(grant gwapiv1beta1.ReferenceGrant, sourceNamespace, targetName string) bool {
 	fromMatch := false
 	for _, from := range grant.Spec.From {
 		if from.Group == "gateway.networking.k8s.io" &&
@@ -73,7 +73,9 @@ func matchesGrant(grant gwapiv1beta1.ReferenceGrant, sourceNamespace string) boo
 
 	for _, to := range grant.Spec.To {
 		if to.Group == "" && to.Kind == "Service" {
-			return true
+			if to.Name == nil || string(*to.Name) == "" || string(*to.Name) == targetName {
+				return true
+			}
 		}
 	}
 	return false

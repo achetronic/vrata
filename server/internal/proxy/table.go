@@ -43,7 +43,12 @@ func BuildTable(
 	for _, d := range destinations {
 		pool, err := NewDestinationPool(d, sessStore)
 		if err != nil {
-			return nil, err
+			slog.Error("proxy: skipping destination with pool error",
+				slog.String("destination", d.Name),
+				slog.String("id", d.ID),
+				slog.String("error", err.Error()),
+			)
+			continue
 		}
 		pools[d.ID] = pool
 	}

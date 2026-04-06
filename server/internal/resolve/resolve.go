@@ -8,6 +8,7 @@ package resolve
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -82,10 +83,6 @@ func Secrets(ctx context.Context, st store.Store, data []byte) ([]byte, error) {
 // The replacement happens inside an already-quoted JSON value, so we need to
 // escape backslashes, quotes, and control characters.
 func escapeJSON(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	s = strings.ReplaceAll(s, "\n", `\n`)
-	s = strings.ReplaceAll(s, "\r", `\r`)
-	s = strings.ReplaceAll(s, "\t", `\t`)
-	return s
+	b, _ := json.Marshal(s)
+	return string(b[1 : len(b)-1])
 }

@@ -21,7 +21,7 @@ func TestMatchesGrant_Allowed(t *testing.T) {
 			},
 		},
 	}
-	if !matchesGrant(grant, "frontend") {
+	if !matchesGrant(grant, "frontend", "my-svc") {
 		t.Error("should allow frontend → Service")
 	}
 }
@@ -37,7 +37,7 @@ func TestMatchesGrant_WrongSourceNamespace(t *testing.T) {
 			},
 		},
 	}
-	if matchesGrant(grant, "attacker") {
+	if matchesGrant(grant, "attacker", "my-svc") {
 		t.Error("should not allow attacker namespace")
 	}
 }
@@ -53,7 +53,7 @@ func TestMatchesGrant_GRPCRouteKind(t *testing.T) {
 			},
 		},
 	}
-	if !matchesGrant(grant, "frontend") {
+	if !matchesGrant(grant, "frontend", "my-svc") {
 		t.Error("should match GRPCRoute kind")
 	}
 }
@@ -69,7 +69,7 @@ func TestMatchesGrant_WrongKind(t *testing.T) {
 			},
 		},
 	}
-	if matchesGrant(grant, "frontend") {
+	if matchesGrant(grant, "frontend", "my-svc") {
 		t.Error("should not match TCPRoute kind")
 	}
 }
@@ -85,7 +85,7 @@ func TestMatchesGrant_WrongToKind(t *testing.T) {
 			},
 		},
 	}
-	if matchesGrant(grant, "frontend") {
+	if matchesGrant(grant, "frontend", "my-svc") {
 		t.Error("should not match Secret target kind")
 	}
 }
@@ -102,7 +102,7 @@ func TestMatchesGrant_MultipleFrom(t *testing.T) {
 			},
 		},
 	}
-	if !matchesGrant(grant, "ns-b") {
+	if !matchesGrant(grant, "ns-b", "my-svc") {
 		t.Error("should allow ns-b from multiple From entries")
 	}
 }

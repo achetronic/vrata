@@ -22,14 +22,23 @@ import (
 // external authorization service before forwarding to the upstream.
 // Supports both HTTP and gRPC modes.
 func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, services map[string]Service) Middleware {
+	mw, _ := ExtAuthzMiddlewareWithStop(cfg, services)
+	return mw
+}
+
+// ExtAuthzMiddlewareWithStop creates an ExtAuthz middleware and returns a stop
+// function that closes the underlying gRPC connection (if any). The stop
+// function must be registered as a cleanup callback on the routing table.
+func ExtAuthzMiddlewareWithStop(cfg *model.ExtAuthzConfig, services map[string]Service) (Middleware, func()) {
+	noop := func() {}
 	if cfg == nil || cfg.DestinationID == "" {
-		return passthrough
+		return passthrough, noop
 	}
 
 	svc, ok := services[cfg.DestinationID]
 	if !ok {
 		slog.Error("extauthz: destination not found", slog.String("destinationId", cfg.DestinationID))
-		return passthrough
+		return passthrough, noop
 	}
 
 	timeout := 5 * time.Second
@@ -40,9 +49,10 @@ func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, services map[string]Service) 
 	}
 
 	if cfg.Mode == "grpc" {
-		return extAuthzGRPC(cfg, svc, timeout)
+		mw, stop := extAuthzGRPCWithStop(cfg, svc, timeout)
+		return mw, stop
 	}
-	return extAuthzHTTP(cfg, svc, timeout)
+	return extAuthzHTTP(cfg, svc, timeout), noop
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,7 +151,7 @@ func extAuthzHTTP(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 // gRPC mode
 // ─────────────────────────────────────────────────────────────────────────────
 
-func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration) Middleware {
+func extAuthzGRPCWithStop(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration) (Middleware, func()) {
 	forwardHeaders := map[string]bool{"host": true, "content-length": true}
 	if cfg.OnCheck != nil {
 		for _, h := range cfg.OnCheck.ForwardHeaders {
@@ -164,7 +174,12 @@ func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		slog.Error("extauthz: failed to create gRPC connection", slog.String("error", err.Error()))
-		return passthrough
+		return passthrough, func() {}
+	}
+	stop := func() {
+		if err := conn.Close(); err != nil {
+			slog.Warn("extauthz: failed to close gRPC connection", slog.String("error", err.Error()))
+		}
 	}
 
 	return func(next http.Handler) http.Handler {
@@ -240,7 +255,7 @@ func extAuthzGRPC(cfg *model.ExtAuthzConfig, svc Service, timeout time.Duration)
 				}
 			}
 		})
-	}
+	}, stop
 }
 
 func handleAuthzError(w http.ResponseWriter, r *http.Request, next http.Handler, allow bool, msg string) {

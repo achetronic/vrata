@@ -781,8 +781,10 @@ func (s *Store) SaveSnapshot(_ context.Context, vs model.VersionedSnapshot) erro
 		return fmt.Errorf("encrypting snapshot: %w", err)
 	}
 
+	var isUpdate bool
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketSnapshots))
+		isUpdate = b.Get([]byte(vs.ID)) != nil
 		if err := b.Put([]byte(vs.ID), encrypted); err != nil {
 			return fmt.Errorf("saving snapshot %q: %w", vs.ID, err)
 		}
@@ -791,7 +793,11 @@ func (s *Store) SaveSnapshot(_ context.Context, vs model.VersionedSnapshot) erro
 	if err != nil {
 		return err
 	}
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceSnapshot, ID: vs.ID})
+	evType := store.EventCreated
+	if isUpdate {
+		evType = store.EventUpdated
+	}
+	s.publish(store.StoreEvent{Type: evType, Resource: store.ResourceSnapshot, ID: vs.ID})
 	return nil
 }
 
@@ -1032,10 +1038,18 @@ func (s *Store) Restore(data []byte) error {
 					return err
 				}
 			}
-			// Clear existing data.
-			b.ForEach(func(k, _ []byte) error {
-				return b.Delete(k)
+			// Clear existing data — collect keys first to avoid
+			// deleting during ForEach iteration (undefined in bbolt).
+			var keysToDelete [][]byte
+			_ = b.ForEach(func(k, _ []byte) error {
+				keysToDelete = append(keysToDelete, append([]byte(nil), k...))
+				return nil
 			})
+			for _, k := range keysToDelete {
+				if err := b.Delete(k); err != nil {
+					return err
+				}
+			}
 			// Write new data.
 			for k, v := range entries {
 				if err := b.Put([]byte(k), v); err != nil {

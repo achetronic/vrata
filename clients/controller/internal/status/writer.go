@@ -249,37 +249,48 @@ func (w *Writer) SetGatewayClassAccepted(ctx context.Context, gc *gwapiv1.Gatewa
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 // setRouteCondition ensures a RouteParentStatus exists for our controller
-// and sets the condition. If the route has parentRefs, the first one is used
-// for the ParentRef field (correct per Gateway API spec).
+// for each parentRef and sets the condition on all of them.
 func setRouteCondition(parents *[]gwapiv1.RouteParentStatus, parentRefs []gwapiv1.ParentReference, cond metav1.Condition) {
-	parentRef := gwapiv1.ParentReference{
-		Name: "controller",
-	}
-	if len(parentRefs) > 0 {
-		parentRef = parentRefs[0]
+	refs := parentRefs
+	if len(refs) == 0 {
+		refs = []gwapiv1.ParentReference{{Name: "controller"}}
 	}
 
-	if len(*parents) == 0 {
-		*parents = []gwapiv1.RouteParentStatus{{
-			ParentRef:      parentRef,
-			ControllerName: ControllerName,
-			Conditions:     []metav1.Condition{cond},
-		}}
-		return
-	}
-
-	for i := range *parents {
-		if (*parents)[i].ControllerName == ControllerName {
-			setConditionInSlice(&(*parents)[i].Conditions, cond)
-			return
+	for _, parentRef := range refs {
+		found := false
+		for i := range *parents {
+			p := &(*parents)[i]
+			if p.ControllerName != ControllerName {
+				continue
+			}
+			refMatch := p.ParentRef.Name == parentRef.Name &&
+				ptrStringEq(p.ParentRef.SectionName, parentRef.SectionName)
+			controllerOnly := len(parentRefs) == 0 && p.ParentRef.Name == ""
+			if refMatch || controllerOnly {
+				setConditionInSlice(&p.Conditions, cond)
+				p.ParentRef = parentRef
+				found = true
+				break
+			}
+		}
+		if !found {
+			*parents = append(*parents, gwapiv1.RouteParentStatus{
+				ParentRef:      parentRef,
+				ControllerName: ControllerName,
+				Conditions:     []metav1.Condition{cond},
+			})
 		}
 	}
+}
 
-	*parents = append(*parents, gwapiv1.RouteParentStatus{
-		ParentRef:      parentRef,
-		ControllerName: ControllerName,
-		Conditions:     []metav1.Condition{cond},
-	})
+func ptrStringEq(a, b *gwapiv1.SectionName) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
 
 // setGatewayCondition sets or updates a condition in a flat condition slice.

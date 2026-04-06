@@ -280,6 +280,14 @@ func (c *Client) DeleteMiddleware(ctx context.Context, id string) error {
 	return nil
 }
 
+// UpdateMiddleware replaces a middleware by ID.
+func (c *Client) UpdateMiddleware(ctx context.Context, id string, m Middleware) error {
+	if err := c.put(ctx, "/api/v1/middlewares/"+id, m); err != nil {
+		return fmt.Errorf("updating middleware %q: %w", id, err)
+	}
+	return nil
+}
+
 // ─── Snapshots ──────────────────────────────────────────────────────────────
 
 // CreateSnapshot creates a versioned snapshot and returns it.

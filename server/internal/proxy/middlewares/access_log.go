@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -106,9 +107,14 @@ func (lw *logWriter) writeLine(fields map[string]string, useJSON bool) {
 			slog.Warn("accesslog: failed to write log entry", slog.String("error", err.Error()))
 		}
 	} else {
+		keys := make([]string, 0, len(fields))
+		for k := range fields {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
 		parts := make([]string, 0, len(fields))
-		for k, v := range fields {
-			parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+		for _, k := range keys {
+			parts = append(parts, fmt.Sprintf("%s=%s", k, fields[k]))
 		}
 		if _, err := fmt.Fprintf(lw.w, "%s\n", strings.Join(parts, " ")); err != nil {
 			slog.Warn("accesslog: failed to write log entry", slog.String("error", err.Error()))
