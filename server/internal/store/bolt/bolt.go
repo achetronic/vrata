@@ -1054,10 +1054,12 @@ func (s *Store) Restore(data []byte) error {
 			// Clear existing data — collect keys first to avoid
 			// deleting during ForEach iteration (undefined in bbolt).
 			var keysToDelete [][]byte
-			_ = b.ForEach(func(k, _ []byte) error {
+			if err := b.ForEach(func(k, _ []byte) error {
 				keysToDelete = append(keysToDelete, append([]byte(nil), k...))
 				return nil
-			})
+			}); err != nil {
+				return fmt.Errorf("collecting keys in bucket %q: %w", bucketName, err)
+			}
 			for _, k := range keysToDelete {
 				if err := b.Delete(k); err != nil {
 					return err

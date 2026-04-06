@@ -111,4 +111,33 @@ Full file-by-file audit verifying features, conventions, and fixing all issues f
 - **Controller `main.go`**: Added `_ =` to discarded `srv.Shutdown()` return value.
 
 ---
+
+## Audit 4: Full Feature Verification & Convention Compliance
+*Status: Completed*
+*Date: 2026-03-31*
+*Auditor: Claude Opus 4 via Crush*
+
+Full file-by-file audit verifying all features claimed in `SERVER_FEATURES.md` are implemented, all code follows `CONVENTIONS.md`, and all tests pass.
+
+### Scope
+- All packages in `server/internal/` and `server/cmd/vrata/`
+- All packages in `clients/controller/`
+- Full unit test suite execution (server + controller — all passing)
+
+### Feature Verification Result
+100% of features claimed in `SERVER_FEATURES.md` are fully implemented. All unit tests pass.
+
+### Bugs Found and Fixed
+1. **Bolt `Restore()` swallowed `ForEach` error** (`store/bolt/bolt.go`): `_ = b.ForEach(...)` when collecting keys to delete during Raft snapshot restore silently ignored iteration errors. A failure would leave old data mixed with new without any error signal. Fixed: error is now propagated with `fmt.Errorf("collecting keys in bucket %q: %w", ...)`.
+2. **Sync SSE handler swallowed store errors** (`api/handlers/sync.go`): When `sendActiveSnapshot` failed with a real store error (not `ErrNoActiveSnapshot`), the handler logged it but continued to the subscription loop. The proxy stayed connected without a snapshot, believing none was active yet. Fixed: handler now returns on real errors, forcing the proxy to reconnect cleanly.
+
+### Design Decision Documented
+- **Fault isolation: strict store, tolerant proxy** (`SERVER_DECISIONS.md`): Documented why bolt `List*` methods must fail-fast (to prevent creating snapshots with silently missing config) while the proxy routing table builder must skip-and-continue (to prevent one bad route from taking down all routing). The boundary is: store = data integrity guard, proxy = runtime availability guard.
+
+### Items Verified as Non-Issues
+- **Bolt `List*` fault isolation**: Initially identified as a medium finding (corrupted JSON aborts entire listing). After analysis, confirmed this is the correct behavior — `List*` feeds `buildSnapshot()` and skip-and-continue would create incomplete snapshots. Fault isolation is correctly placed in `proxy/table.go` instead.
+- **`regexCache` global `sync.Map`**: Append-only, never cleared. Documented with justification. Acceptable for long-running proxies.
+- **`celeval` `sync.Once` globals**: Immutable CEL environment singletons. Not a violation.
+
+---
 *Future audits will be appended to this document as new architectural phases are completed.*

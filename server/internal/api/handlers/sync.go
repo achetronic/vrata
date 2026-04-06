@@ -49,6 +49,7 @@ func (d *Dependencies) HandleSyncSnapshot(w http.ResponseWriter, r *http.Request
 			d.Logger.Error("sync: initial snapshot failed",
 				slog.String("error", err.Error()),
 			)
+			return
 		}
 	}
 

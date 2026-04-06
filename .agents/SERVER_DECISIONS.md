@@ -1332,3 +1332,51 @@ configured — Go handles HTTP/2 over TLS automatically and h2c would
 interfere. Do not use a custom `http2.Transport` directly — always
 configure the standard `http.Transport` via `http2.ConfigureTransport`
 so that HTTP/1.1 fallback remains available.
+
+---
+
+## Fault isolation: strict store, tolerant proxy
+
+**Date**: 2026-03-31
+**Status**: Decided
+
+Fault isolation operates at two distinct levels with opposite strategies:
+
+### Store layer — strict (fail-fast)
+
+The store (`internal/store`) is the source of truth. All `List*`, `Get*`,
+`Save*`, and `Delete*` methods fail immediately on any data integrity error
+(corrupt JSON, decryption failure, etc.). No entity is silently skipped.
+
+This is critical because the store feeds `buildSnapshot()` — the function
+that captures the current config into a versioned snapshot. If a corrupted
+entity were silently skipped, the snapshot would be created with missing
+config, and activating it would push an incomplete routing table to all
+proxies without any visible error. The operator would have no way to know
+that config was lost.
+
+A store read error during snapshot creation results in a clear HTTP 500
+to the operator. The snapshot is not created, the previous active snapshot
+stays in effect, and the error is logged with full context.
+
+### Proxy layer — tolerant (skip-and-continue)
+
+The proxy routing table builder (`internal/proxy/table.go`) receives
+already-deserialized entities from the snapshot. At this level, a compile
+error in one route (bad regex, missing destination, invalid CEL) must not
+prevent the rest from being compiled. The broken entity is skipped with a
+visible `slog.Error`, and the routing table is built with everything else.
+
+This applies to:
+- `NewDestinationPool` errors → destination skipped
+- `compileRoute` errors → route skipped
+- Middleware build errors → middleware skipped (passthrough)
+- CEL compile errors → expression skipped
+
+The distinction is: the store guards data integrity (nothing corrupt gets
+through), the proxy guards runtime availability (one bad route doesn't
+take down the proxy).
+
+**Do not**: add skip-and-continue logic to the store `List*` methods.
+Do not make the proxy routing table builder fail-fast on individual
+entity compile errors. The boundary is: store = strict, proxy = tolerant.
