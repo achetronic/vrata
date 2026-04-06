@@ -162,7 +162,7 @@ func classifyError(err error) model.ProxyErrorType {
 		return model.ProxyErrTimeout
 	}
 
-	return model.ProxyErrConnectionRefused
+	return model.ProxyErrUnknown
 }
 
 // statusForErrorType returns the default HTTP status code for a proxy error.

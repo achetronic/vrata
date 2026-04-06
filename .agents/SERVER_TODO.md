@@ -16,6 +16,10 @@ These features are conceptually large and have been deferred to avoid major arch
 ### Hardening
 - [ ] **Proxy mode has no admin HTTP server** — no readiness/liveness endpoint for load balancers. A health endpoint on a configurable admin port would be useful.
 - [ ] **No readiness gate on control plane startup** — the REST API starts listening before the gateway completes its first rebuild. Clients could hit the API before the routing table is populated.
+- [ ] **`HandleUpdateSecret` missing input validation** — PUT with `{"name":"","value":""}` succeeds. The Create handler validates but Update does not. Should return 400.
+- [ ] **Memory store `publish()` under lock** — `publish()` called while holding `s.mu.Lock()`. Potential deadlock if a subscriber synchronously calls a read method.
+- [ ] **K8s watcher `buildEndpoints` first-port bias** — Always takes the first port from an EndpointSlice, ignoring `destPort` matching for multi-port Services.
+- [ ] **Raft write-forwarding has no retry** — Single HTTP call to leader; fails without retry on leader election change.
 - [x] **Bolt `Restore()` does not restore the `meta` bucket** — Fixed: `bucketMeta` now included in `dataBuckets` list. Event type changed from `EventCreated` to `EventUpdated`.
 - [x] **Missing `yaml` struct tags on `destination.go` types** — Fixed: all types now have both `json` and `yaml` tags.
 
@@ -64,3 +68,8 @@ These features are conceptually large and have been deferred to avoid major arch
 - [x] **`err.Error()` leaked to client in API responses** — All 9 handlers that appended `err.Error()` to 400 messages now use static strings. The snapshot 500 now logs the error server-side and returns a generic message.
 - [x] **`DestinationLBPolicy` godoc fragment** — Fixed to proper `// DestinationLBPolicy controls...` format.
 - [x] **`SERVER_DECISIONS.md` Middleware → Listener reference** — Corrected: middlewares are referenced by Route and RouteGroup, not by Listener.
+
+### Audit 5 findings (2026-03-31)
+- [x] **h2c upstream was not real cleartext HTTP/2** — `http2.ConfigureTransport` does not enable h2c. Replaced with `http2.Transport{AllowHTTP: true, DialTLSContext: plaintext dialer}`. Added `RoundTripper` field to `Endpoint`.
+- [x] **`classifyError` fallback misclassified unknown errors** — Catch-all returned `connection_refused` instead of `unknown`. Added `ProxyErrUnknown` constant.
+- [x] **Proxy error types `no_route` and `request_headers_too_large` were string literals** — Added `ProxyErrNoRoute` and `ProxyErrRequestHeadersTooLarge` constants to model. Replaced inline strings.

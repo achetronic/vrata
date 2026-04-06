@@ -192,7 +192,7 @@ func (hc *HealthChecker) checkEndpoint(ctx context.Context, ep *Endpoint, d mode
 		return false
 	}
 
-	client := &http.Client{Transport: ep.Transport}
+	client := &http.Client{Transport: ep.RoundTripper}
 	resp, err := client.Do(req)
 	if err != nil {
 		return false

@@ -320,9 +320,9 @@ func poolsToServices(pools map[string]*DestinationPool) map[string]middlewares.S
 			d.Options.TLS.Mode != model.TLSModeNone && d.Options.TLS.Mode != "" {
 			scheme = "https"
 		}
-		var transport *http.Transport
+		var transport http.RoundTripper
 		if len(pool.Endpoints) > 0 {
-			transport = pool.Endpoints[0].Transport
+			transport = pool.Endpoints[0].RoundTripper
 		}
 		services[id] = middlewares.Service{
 			BaseURL:   fmt.Sprintf("%s://%s:%d", scheme, d.Host, d.Port),

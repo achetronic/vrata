@@ -186,7 +186,7 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 					}
 				}
 				if totalSize > int(l.MaxRequestHeadersKB)*1024 {
-					writeProxyError(w, r, &ProxyError{Type: "request_headers_too_large", Status: http.StatusRequestHeaderFieldsTooLarge, Message: "request headers too large"})
+					writeProxyError(w, r, &ProxyError{Type: model.ProxyErrRequestHeadersTooLarge, Status: http.StatusRequestHeaderFieldsTooLarge, Message: "request headers too large"})
 					return
 				}
 			}

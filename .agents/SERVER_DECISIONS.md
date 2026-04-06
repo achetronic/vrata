@@ -1302,9 +1302,13 @@ HTTP/2. The behavior depends on whether TLS is configured on the destination:
 
 - **With TLS**: `transport.ForceAttemptHTTP2 = true` + ALPN `"h2"` proto.
   Standard HTTP/2 over TLS.
-- **Without TLS**: `http2.ConfigureTransport(transport)` from `golang.org/x/net/http2`.
-  This registers the `h2` protocol on the transport so cleartext HTTP/2
-  connections work to upstream gRPC services.
+- **Without TLS**: An `http2.Transport{AllowHTTP: true}` with a custom
+  `DialTLSContext` that performs plaintext TCP dialing. This enables real
+  cleartext HTTP/2 (h2c) to upstream gRPC services. The `Endpoint` struct
+  carries both the base `*http.Transport` (for config introspection and
+  tests) and a `RoundTripper http.RoundTripper` (used by the reverse proxy
+  and health checker). For h2c, `RoundTripper` is the `*http2.Transport`;
+  for all other cases, `RoundTripper` defaults to the base `Transport`.
 
 ### Streaming flush
 
@@ -1329,9 +1333,9 @@ and the breakage from buffering is severe for streaming protocols.
 **Do not**: conditionally enable flush only for gRPC — streaming HTTP
 responses also benefit. Do not apply `h2c.NewHandler` when TLS is
 configured — Go handles HTTP/2 over TLS automatically and h2c would
-interfere. Do not use a custom `http2.Transport` directly — always
-configure the standard `http.Transport` via `http2.ConfigureTransport`
-so that HTTP/1.1 fallback remains available.
+interfere. Do not use `http2.ConfigureTransport` for h2c upstream — it
+does not enable cleartext HTTP/2; use `http2.Transport{AllowHTTP: true}`
+with a plaintext `DialTLSContext` instead.
 
 ---
 

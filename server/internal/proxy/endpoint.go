@@ -4,6 +4,7 @@
 package proxy
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -28,6 +29,7 @@ type Endpoint struct {
 	model.Endpoint
 	ID              string
 	Transport       *http.Transport
+	RoundTripper    http.RoundTripper
 	Healthy         bool
 	Consecutive5xx  atomic.Int64
 	OnResponse      func(destID, epID string, statusCode int)
@@ -85,22 +87,32 @@ func NewEndpoint(ep model.Endpoint, d model.Destination) (*Endpoint, error) {
 		transport.TLSClientConfig = tlsCfg
 	}
 
+	var roundTripper http.RoundTripper = transport
+
 	if d.Options != nil && d.Options.HTTP2 {
 		if transport.TLSClientConfig != nil {
 			transport.ForceAttemptHTTP2 = true
 			transport.TLSClientConfig.NextProtos = append(transport.TLSClientConfig.NextProtos, "h2")
 		} else {
-			// Best-effort h2c configuration — if it fails, the transport
-			// falls back to HTTP/1.1 which is acceptable.
-			_ = http2.ConfigureTransport(transport)
+			roundTripper = &http2.Transport{
+				AllowHTTP: true,
+				DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+					return (&net.Dialer{
+						Timeout:       connectTimeout,
+						FallbackDelay: fallbackDelay,
+						KeepAlive:     30 * time.Second,
+					}).DialContext(ctx, network, addr)
+				},
+			}
 		}
 	}
 
 	return &Endpoint{
-		Endpoint:  ep,
-		ID:        fmt.Sprintf("%s:%d", ep.Host, ep.Port),
-		Transport: transport,
-		Healthy:   true,
+		Endpoint:     ep,
+		ID:           fmt.Sprintf("%s:%d", ep.Host, ep.Port),
+		Transport:    transport,
+		RoundTripper: roundTripper,
+		Healthy:      true,
 	}, nil
 }
 

@@ -83,6 +83,15 @@ const (
 
 	// ProxyErrNoEndpoint — destination exists but all endpoints are down.
 	ProxyErrNoEndpoint ProxyErrorType = "no_endpoint"
+
+	// ProxyErrUnknown — error could not be classified into a known category.
+	ProxyErrUnknown ProxyErrorType = "unknown"
+
+	// ProxyErrNoRoute — no route matched the incoming request.
+	ProxyErrNoRoute ProxyErrorType = "no_route"
+
+	// ProxyErrRequestHeadersTooLarge — request headers exceeded the configured limit.
+	ProxyErrRequestHeadersTooLarge ProxyErrorType = "request_headers_too_large"
 )
 
 // DestinationLBPolicy controls which destination receives each request

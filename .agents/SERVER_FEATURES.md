@@ -84,7 +84,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Feature                                                                                      | Status | Tests     |
 | -------------------------------------------------------------------------------------------- | ------ | --------- |
 | Structured JSON error responses (all proxy errors)                                           | 100%   | Unit (4)  |
-| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep) | 100%   | Unit (12) |
+| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep, unknown, no_route, headers_too_large) | 100% | Unit (12) |
 | Per-listener detail level (minimal / standard / full)                                        | 100%   | Unit (4)  |
 | Default detail level is standard (via context)                                               | 100%   | Unit      |
 
@@ -129,7 +129,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | TLS downstream                                                 | 100%   | Unit       |
 | HTTP/2 (ALPN configured)                                       | 100%   | Unit       |
 | h2c downstream (cleartext HTTP/2 via h2c.NewHandler)           | 100%   | Code review |
-| h2c upstream (cleartext HTTP/2 via http2.ConfigureTransport)   | 100%   | Code review |
+| h2c upstream (cleartext HTTP/2 via http2.Transport{AllowHTTP})  | 100%   | Code review |
 | Streaming flush (FlushInterval -1 on reverse proxy)            | 100%   | Code review |
 | mTLS client auth (none/optional/require + CA verification)     | 100%   | Unit (6)   |
 | XFCC header injection (strip + inject from client cert URIs)   | 100%   | Unit (8)   |

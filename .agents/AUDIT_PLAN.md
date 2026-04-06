@@ -140,4 +140,52 @@ Full file-by-file audit verifying all features claimed in `SERVER_FEATURES.md` a
 - **`celeval` `sync.Once` globals**: Immutable CEL environment singletons. Not a violation.
 
 ---
+
+## Audit 5: Full Feature Verification & Convention Compliance
+*Status: Completed*
+*Date: 2026-03-31*
+*Auditor: Claude Opus 4 via Crush*
+
+Full file-by-file audit of every feature claimed in `SERVER_FEATURES.md` against actual source code, plus conventions compliance check against `CONVENTIONS.md`.
+
+### Scope
+- All packages in `server/internal/` (config, model, store, api, proxy, proxy/middlewares, proxy/celeval, gateway, raft, k8s, sync, session, tlsutil, resolve, encrypt)
+- `server/cmd/vrata/main.go`
+- Full unit + e2e test suite execution (all passing)
+
+### Feature Verification Result
+76 of ~80 claimed features fully implemented and correct. 4 had issues (3 real, 1 design note).
+
+### Bugs Found and Fixed
+1. **h2c upstream was not real cleartext HTTP/2** (`proxy/endpoint.go`): `http2.ConfigureTransport(transport)` only configures ALPN over TLS — it does NOT enable h2c. The proxy silently fell back to HTTP/1.1 for cleartext HTTP/2 upstreams. Fixed: replaced with `http2.Transport{AllowHTTP: true, DialTLSContext: plaintext dialer}`. Added `RoundTripper` field to `Endpoint` to carry the h2c-capable transport while preserving `Transport *http.Transport` for config introspection and tests. Updated `pool.go`, `health.go`, and `handler.go` to use `RoundTripper`.
+
+2. **`classifyError` fallback misclassified unknown errors as `connection_refused`** (`proxy/errors.go`): Any transport error that didn't match a known pattern was returned as `ProxyErrConnectionRefused`, which is semantically wrong. Fixed: added `ProxyErrUnknown = "unknown"` constant to `model/route.go` and changed the catch-all return to `ProxyErrUnknown`.
+
+3. **Proxy error types `"no_route"` and `"request_headers_too_large"` were string literals, not model constants** (`proxy/router.go`, `proxy/listener.go`): These broke the closed `ProxyErrorType` enum — they existed as inline strings but not as declared constants. Fixed: added `ProxyErrNoRoute` and `ProxyErrRequestHeadersTooLarge` constants to `model/route.go` and replaced the string literals.
+
+### Minor Findings (not fixed — documented for future reference)
+- **`HandleUpdateSecret` missing input validation**: PUT with `{"name":"","value":""}` succeeds. The Create handler validates but Update does not.
+- **Memory store `publish()` called under `s.mu.Lock()`**: Potential deadlock if a subscriber synchronously reads the store during event handling.
+- **K8s watcher `buildEndpoints` takes first port from EndpointSlice**: Ignores `destPort` matching for multi-port Services.
+- **XFCC simplified**: Only injects URI SANs, not full standard XFCC format (`By=`, `Hash=`, `Subject=`).
+- **Raft write-forwarding has no retry**: Single HTTP call to leader; fails without retry on election change.
+- **Auth → Logger ordering**: Auth middleware rejects before Logger, so 401 requests are not logged.
+
+### Test Gaps (not fixed — documented)
+- `no_endpoint` proxy error type has 0 test coverage.
+- `scrapeGauges` (metrics gauge scraper goroutine) has no unit test.
+- Size histograms (custom `SizeBuckets`) have no test.
+- Raft snapshot/restore not tested through full Raft FSM cycle (only bolt directly).
+
+### Conventions Compliance
+All 7 mandatory conventions verified and passing:
+- No manual ResponseWriter wrappers (httpsnoop everywhere)
+- No external router libraries (net/http only)
+- No leaked goroutines (all have stop/cleanup)
+- No global mutable state (1 justified `sync.Map`)
+- slog only (zero `fmt.Println`/`log.Printf`)
+- Error bubbling (all `_ =` have comments)
+- Dependency injection (Dependencies struct, no runtime env reads)
+
+---
 *Future audits will be appended to this document as new architectural phases are completed.*
