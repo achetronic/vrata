@@ -152,14 +152,26 @@ func (cb *CircuitBreaker) RecordFailure() {
 	}
 }
 
-// OnRequest increments active request count. Call OnComplete when done.
-func (cb *CircuitBreaker) OnRequest() {
+// OnRequest increments the active request and connection counters.
+// Returns true if the request is being tracked as pending (overflow).
+// Call OnComplete with the same return value when the request finishes.
+func (cb *CircuitBreaker) OnRequest() bool {
+	if cb.activeConnections.Load() >= int64(cb.maxConnections) {
+		cb.activePending.Add(1)
+		return true
+	}
 	cb.activeRequests.Add(1)
 	cb.activeConnections.Add(1)
+	return false
 }
 
-// OnComplete decrements active request count.
-func (cb *CircuitBreaker) OnComplete() {
+// OnComplete decrements the appropriate counters. Pass the value returned
+// by OnRequest so the correct counter (pending vs active) is decremented.
+func (cb *CircuitBreaker) OnComplete(pending bool) {
+	if pending {
+		cb.activePending.Add(-1)
+		return
+	}
 	cb.activeRequests.Add(-1)
 	cb.activeConnections.Add(-1)
 }

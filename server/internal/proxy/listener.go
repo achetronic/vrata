@@ -226,6 +226,22 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 		)
 	}
 
+	if mc != nil {
+		connSeen := &sync.Map{}
+		srv.ConnState = func(conn net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				connSeen.Store(conn, true)
+			case http.StateActive:
+				connSeen.Delete(conn)
+			case http.StateClosed:
+				if _, wasNew := connSeen.LoadAndDelete(conn); wasNew && l.TLS != nil {
+					mc.RecordTLSError(l.Name, bindAddr)
+				}
+			}
+		}
+	}
+
 	// h2c (cleartext HTTP/2) support for gRPC clients without TLS.
 	if l.HTTP2 && srv.TLSConfig == nil {
 		h2s := &http2.Server{}
@@ -255,6 +271,16 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 				slog.String("error", err.Error()),
 			)
 			return
+		}
+
+		if mc != nil {
+			ln = &connTrackingListener{
+				Listener:     ln,
+				mc:           mc,
+				listenerName: l.Name,
+				address:      bindAddr,
+				isTLS:        srv.TLSConfig != nil,
+			}
 		}
 
 		lm.logger.Info("proxy: listener started",
@@ -408,4 +434,44 @@ func parseDurationOrDefault[T any](cfg *T, accessor func(*T) string, fallback ti
 		return fallback
 	}
 	return d
+}
+
+// connTrackingListener wraps a net.Listener and records connection metrics
+// via the MetricsCollector. For TLS listeners, it also detects handshake
+// failures by inspecting whether the accepted connection completes TLS.
+type connTrackingListener struct {
+	net.Listener
+	mc           *MetricsCollector
+	listenerName string
+	address      string
+	isTLS        bool
+}
+
+// Accept waits for and returns the next connection, recording metrics.
+func (cl *connTrackingListener) Accept() (net.Conn, error) {
+	conn, err := cl.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	cl.mc.RecordListenerConnection(cl.listenerName, cl.address)
+	cl.mc.ListenerActiveInc(cl.listenerName, cl.address)
+	return &trackedConn{Conn: conn, cl: cl}, nil
+}
+
+// trackedConn wraps net.Conn to decrement the active gauge on close and
+// detect TLS handshake errors.
+type trackedConn struct {
+	net.Conn
+	cl     *connTrackingListener
+	closed bool
+}
+
+// Close decrements the active connections gauge and closes the underlying
+// connection.
+func (tc *trackedConn) Close() error {
+	if !tc.closed {
+		tc.closed = true
+		tc.cl.mc.ListenerActiveDec(tc.cl.listenerName, tc.cl.address)
+	}
+	return tc.Conn.Close()
 }

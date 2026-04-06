@@ -421,8 +421,8 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 			return
 		}
 		if pool.CircuitBreaker != nil {
-			pool.CircuitBreaker.OnRequest()
-			defer pool.CircuitBreaker.OnComplete()
+			pending := pool.CircuitBreaker.OnRequest()
+			defer pool.CircuitBreaker.OnComplete(pending)
 		}
 		if b, ok := pool.Balancer.(interface{ Done(string) }); ok {
 			defer b.Done(endpoint.ID)
