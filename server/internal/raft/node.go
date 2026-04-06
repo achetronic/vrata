@@ -69,8 +69,8 @@ func NewNode(ctx context.Context, cfg *config.RaftConfig, dataDir string, store 
 
 	snapshotStore, err := raft.NewFileSnapshotStore(dataDir, snapshotRetain, newSlogWriter(logger))
 	if err != nil {
-		logStore.Close()
-		stableStore.Close()
+		_ = logStore.Close()    // Best-effort cleanup
+		_ = stableStore.Close() // Best-effort cleanup
 		return nil, fmt.Errorf("creating raft snapshot store: %w", err)
 	}
 
@@ -78,8 +78,8 @@ func NewNode(ctx context.Context, cfg *config.RaftConfig, dataDir string, store 
 	if cfg.AdvertiseAddress != "" {
 		tcpAddr, err := net.ResolveTCPAddr("tcp", cfg.AdvertiseAddress)
 		if err != nil {
-			logStore.Close()
-			stableStore.Close()
+			_ = logStore.Close()    // Best-effort cleanup
+			_ = stableStore.Close() // Best-effort cleanup
 			return nil, fmt.Errorf("resolving advertise address %q: %w", cfg.AdvertiseAddress, err)
 		}
 		advertise = tcpAddr
@@ -87,16 +87,16 @@ func NewNode(ctx context.Context, cfg *config.RaftConfig, dataDir string, store 
 
 	transport, err := raft.NewTCPTransport(cfg.BindAddress, advertise, 3, raftTimeout, newSlogWriter(logger))
 	if err != nil {
-		logStore.Close()
-		stableStore.Close()
+		_ = logStore.Close()    // Best-effort cleanup
+		_ = stableStore.Close() // Best-effort cleanup
 		return nil, fmt.Errorf("creating raft transport on %s: %w", cfg.BindAddress, err)
 	}
 
 	hasState, err := raft.HasExistingState(logStore, stableStore, snapshotStore)
 	if err != nil {
-		logStore.Close()
-		stableStore.Close()
-		transport.Close()
+		_ = logStore.Close()    // Best-effort cleanup
+		_ = stableStore.Close() // Best-effort cleanup
+		_ = transport.Close()   // Best-effort cleanup
 		return nil, fmt.Errorf("checking existing raft state: %w", err)
 	}
 

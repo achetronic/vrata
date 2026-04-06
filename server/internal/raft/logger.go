@@ -31,7 +31,9 @@ func newSlogWriter(logger *slog.Logger) io.Writer {
 
 func (w *slogWriter) Write(p []byte) (int, error) {
 	msg := strings.TrimRight(string(p), "\n")
-	if strings.Contains(msg, "[ERROR]") || strings.Contains(msg, "[WARN]") {
+	if strings.Contains(msg, "[ERROR]") {
+		w.logger.Error(msg)
+	} else if strings.Contains(msg, "[WARN]") {
 		w.logger.Warn(msg)
 	} else {
 		w.logger.Debug(msg)

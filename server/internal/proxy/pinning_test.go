@@ -5,6 +5,7 @@ package proxy
 
 import (
 	"hash/crc32"
+	"strconv"
 	"testing"
 
 	"github.com/achetronic/vrata/internal/model"
@@ -36,7 +37,7 @@ func TestDestinationRingWeightDistribution(t *testing.T) {
 	counts := map[string]int{}
 	total := 10000
 	for i := 0; i < total; i++ {
-		key := crc32.ChecksumIEEE([]byte("sid-" + itoa(i) + ":route"))
+		key := crc32.ChecksumIEEE([]byte("sid-" + strconv.Itoa(i) + ":route"))
 		counts[ring.Pick(key)]++
 	}
 
@@ -113,7 +114,7 @@ func TestDestinationRingSingleBackend(t *testing.T) {
 	ring := buildDestinationRing([]model.DestinationRef{{DestinationID: "only", Weight: 100}})
 
 	for i := 0; i < 100; i++ {
-		key := crc32.ChecksumIEEE([]byte(itoa(i)))
+		key := crc32.ChecksumIEEE([]byte(strconv.Itoa(i)))
 		if got := ring.Pick(key); got != "only" {
 			t.Fatalf("expected 'only', got %s", got)
 		}
@@ -135,7 +136,7 @@ func TestDestinationRingStableOnWeightChange(t *testing.T) {
 	moved := 0
 	total := 10000
 	for i := 0; i < total; i++ {
-		key := crc32.ChecksumIEEE([]byte("user-" + itoa(i)))
+		key := crc32.ChecksumIEEE([]byte("user-" + strconv.Itoa(i)))
 		if ring1.Pick(key) != ring2.Pick(key) {
 			moved++
 		}

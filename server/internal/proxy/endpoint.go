@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -25,12 +26,13 @@ import (
 // and outlier detection callback.
 type Endpoint struct {
 	model.Endpoint
-	ID           string
-	Transport    *http.Transport
-	Healthy      bool
-	OnResponse   func(destID, epID string, statusCode int)
-	mu           sync.RWMutex
-	lastHealthAt time.Time
+	ID              string
+	Transport       *http.Transport
+	Healthy         bool
+	Consecutive5xx  atomic.Int64
+	OnResponse      func(destID, epID string, statusCode int)
+	mu              sync.RWMutex
+	lastHealthAt    time.Time
 }
 
 func (u *Endpoint) lastHealthCheck() time.Time {

@@ -87,8 +87,15 @@ func TestCircuitBreakerMaxConnections(t *testing.T) {
 	cb := NewCircuitBreaker(2, 1024, 1024, 3, 0, "")
 	cb.OnRequest()
 	cb.OnRequest()
-	if cb.Allow() {
-		t.Error("should reject when at maxConnections")
+	if !cb.Allow() {
+		t.Error("should allow to pending queue when at maxConnections but pending has capacity")
+	}
+
+	cb2 := NewCircuitBreaker(1, 1, 1024, 3, 0, "")
+	cb2.OnRequest()
+	cb2.activePending.Store(1)
+	if cb2.Allow() {
+		t.Error("should reject when at maxConnections and pending queue full")
 	}
 }
 

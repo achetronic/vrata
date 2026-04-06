@@ -110,10 +110,7 @@ func (cb *CircuitBreaker) Allow() bool {
 	}
 
 	if cb.activeConnections.Load() >= int64(cb.maxConnections) {
-		if cb.activePending.Load() >= int64(cb.maxPendingRequests) {
-			return false
-		}
-		return false
+		return cb.activePending.Load() < int64(cb.maxPendingRequests)
 	}
 	if cb.activeRequests.Load() >= int64(cb.maxRequests) {
 		return false

@@ -29,13 +29,18 @@ import (
 // Store wraps a bolt store with Raft consensus. All writes go through the
 // Raft log; reads are served from the local bolt database.
 type Store struct {
-	local *boltstore.Store
-	node  *rft.Node
+	local      *boltstore.Store
+	node       *rft.Node
+	httpClient *http.Client
 }
 
 // New creates a Raft-backed Store.
 func New(local *boltstore.Store, node *rft.Node) *Store {
-	return &Store{local: local, node: node}
+	return &Store{
+		local:      local,
+		node:       node,
+		httpClient: &http.Client{Timeout: 10 * time.Second},
+	}
 }
 
 // ─── Reads — served from local bolt ─────────────────────────────────────────
@@ -203,14 +208,14 @@ func (s *Store) forwardToLeader(data []byte) error {
 	}
 
 	url := fmt.Sprintf("http://%s/api/v1/sync/raft", leaderHTTP)
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(url, "application/json", bytes.NewReader(data))
+	resp, err := s.httpClient.Post(url, "application/json", bytes.NewReader(data))
 	if err != nil {
 		return fmt.Errorf("forwarding to leader %s: %w", leaderHTTP, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		// Best-effort body read for error context — not critical if it fails.
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("leader returned %d: %s", resp.StatusCode, string(body))
 	}

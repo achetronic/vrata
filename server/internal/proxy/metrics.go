@@ -273,6 +273,9 @@ func (mc *MetricsCollector) scrapeGauges() {
 					}
 					mc.epHealthy.WithLabelValues(destID, epID).Set(val)
 				}
+				if mc.epConsecutive5xx != nil {
+					mc.epConsecutive5xx.WithLabelValues(destID, epID).Set(float64(ep.Consecutive5xx.Load()))
+				}
 			}
 		}
 	}

@@ -184,6 +184,7 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 			if err != nil {
 				return changes, fmt.Errorf("creating destination %q: %w", name, err)
 			}
+			destByName[name] = *created
 			r.logger.Info("reconciler: created destination", slog.String("name", name), slog.String("id", created.ID))
 			changes++
 		} else {
@@ -198,17 +199,23 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 		}
 	}
 
-	// 2. Create/update middlewares.
+	// 2. Create/update middlewares — pre-fetch once.
+	allMws, err := r.client.ListMiddlewares(ctx)
+	if err != nil {
+		return changes, fmt.Errorf("listing middlewares: %w", err)
+	}
+	mwByName := make(map[string]vrata.Middleware)
+	for _, m := range allMws {
+		mwByName[m.Name] = m
+	}
+
 	for _, mw := range mapped.Middlewares {
-		existing, err := r.findByName(ctx, "middlewares", mw.Name)
-		if err != nil {
-			return changes, fmt.Errorf("checking middleware %q: %w", mw.Name, err)
-		}
-		if existing == nil {
-			_, err := r.client.CreateMiddleware(ctx, mw)
+		if existing, ok := mwByName[mw.Name]; !ok {
+			created, err := r.client.CreateMiddleware(ctx, mw)
 			if err != nil {
 				return changes, fmt.Errorf("creating middleware %q: %w", mw.Name, err)
 			}
+			mwByName[mw.Name] = *created
 			changes++
 		} else {
 			mw.ID = existing.ID
@@ -220,23 +227,39 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 	}
 
 	// 3. Create/update routes (resolve destinationId from name → Vrata ID).
-	destIDs, err := r.resolveDestinationIDs(ctx, mapped.Destinations)
-	if err != nil {
-		return changes, fmt.Errorf("resolving destination IDs: %w", err)
+	destIDs := make(map[string]string, len(destByName))
+	for name, d := range destByName {
+		destIDs[name] = d.ID
 	}
-	mwIDs, err := r.resolveMiddlewareIDs(ctx, mapped.Middlewares)
+	mwIDs := make(map[string]string, len(mwByName))
+	for name, m := range mwByName {
+		mwIDs[name] = m.ID
+	}
+
+	// Pre-fetch routes for name→ID lookup.
+	allRoutes, err := r.client.ListRoutes(ctx)
 	if err != nil {
-		return changes, fmt.Errorf("resolving middleware IDs: %w", err)
+		return changes, fmt.Errorf("listing routes: %w", err)
+	}
+	routeByName := make(map[string]vrata.Route)
+	for _, rt := range allRoutes {
+		routeByName[rt.Name] = rt
+	}
+
+	// Pre-fetch groups for name→ID lookup.
+	allGroups, err := r.client.ListGroups(ctx)
+	if err != nil {
+		return changes, fmt.Errorf("listing groups: %w", err)
+	}
+	groupByName := make(map[string]vrata.RouteGroup)
+	for _, g := range allGroups {
+		groupByName[g.Name] = g
 	}
 
 	var routeVrataIDs []string
 	for _, route := range mapped.Routes {
 		resolved := resolveRouteRefs(route, destIDs, mwIDs)
-		existing, err := r.findByName(ctx, "routes", route.Name)
-		if err != nil {
-			return changes, fmt.Errorf("checking route %q: %w", route.Name, err)
-		}
-		if existing == nil {
+		if existing, ok := routeByName[route.Name]; !ok {
 			created, err := r.client.CreateRoute(ctx, resolved)
 			if err != nil {
 				return changes, fmt.Errorf("creating route %q: %w", route.Name, err)
@@ -261,11 +284,7 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 	// 4. Create/update group.
 	group := mapped.Group
 	group.RouteIDs = routeVrataIDs
-	existingGroup, err := r.findByName(ctx, "groups", group.Name)
-	if err != nil {
-		return changes, fmt.Errorf("checking group %q: %w", group.Name, err)
-	}
-	if existingGroup == nil {
+	if existingGroup, ok := groupByName[group.Name]; !ok {
 		_, err := r.client.CreateGroup(ctx, group)
 		if err != nil {
 			return changes, fmt.Errorf("creating group %q: %w", group.Name, err)
@@ -286,7 +305,7 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 	for _, route := range mapped.Routes {
 		desiredRouteNames[route.Name] = true
 	}
-	allRoutes, err := r.client.ListRoutes(ctx)
+	allRoutes, err = r.client.ListRoutes(ctx)
 	if err != nil {
 		return changes, fmt.Errorf("listing routes for intra-group GC: %w", err)
 	}
@@ -490,100 +509,6 @@ func (r *Reconciler) OwnedListenerNames(ctx context.Context) ([]string, error) {
 		}
 	}
 	return names, nil
-}
-
-// findByName searches for an owned entity by name in the given resource type.
-// Returns (id, nil) if found, (nil, nil) if not found, or (nil, error).
-func (r *Reconciler) findByName(ctx context.Context, resource, name string) (*vrata.Entity, error) {
-	switch resource {
-	case "routes":
-		routes, err := r.client.ListRoutes(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, route := range routes {
-			if route.Name == name {
-				return &vrata.Entity{ID: route.ID, Name: route.Name}, nil
-			}
-		}
-	case "groups":
-		groups, err := r.client.ListGroups(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, g := range groups {
-			if g.Name == name {
-				return &vrata.Entity{ID: g.ID, Name: g.Name}, nil
-			}
-		}
-	case "destinations":
-		dests, err := r.client.ListDestinations(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, d := range dests {
-			if d.Name == name {
-				return &vrata.Entity{ID: d.ID, Name: d.Name}, nil
-			}
-		}
-	case "middlewares":
-		mws, err := r.client.ListMiddlewares(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, m := range mws {
-			if m.Name == name {
-				return &vrata.Entity{ID: m.ID, Name: m.Name}, nil
-			}
-		}
-	}
-	return nil, nil
-}
-
-// resolveDestinationIDs maps destination names to their Vrata IDs.
-func (r *Reconciler) resolveDestinationIDs(ctx context.Context, dks []mapper.DestinationKey) (map[string]string, error) {
-	dests, err := r.client.ListDestinations(ctx)
-	if err != nil {
-		return nil, err
-	}
-	byName := make(map[string]string)
-	for _, d := range dests {
-		byName[d.Name] = d.ID
-	}
-	result := make(map[string]string)
-	for _, dk := range dks {
-		name := dk.DestinationName()
-		id, ok := byName[name]
-		if !ok {
-			return nil, fmt.Errorf("destination %q not found in Vrata", name)
-		}
-		result[name] = id
-	}
-	return result, nil
-}
-
-// resolveMiddlewareIDs maps middleware names to their Vrata IDs.
-func (r *Reconciler) resolveMiddlewareIDs(ctx context.Context, mws []vrata.Middleware) (map[string]string, error) {
-	if len(mws) == 0 {
-		return nil, nil
-	}
-	all, err := r.client.ListMiddlewares(ctx)
-	if err != nil {
-		return nil, err
-	}
-	byName := make(map[string]string)
-	for _, m := range all {
-		byName[m.Name] = m.ID
-	}
-	result := make(map[string]string)
-	for _, mw := range mws {
-		id, ok := byName[mw.Name]
-		if !ok {
-			return nil, fmt.Errorf("middleware %q not found in Vrata", mw.Name)
-		}
-		result[mw.Name] = id
-	}
-	return result, nil
 }
 
 // resolveRouteRefs replaces name-based references in a Route with Vrata IDs.

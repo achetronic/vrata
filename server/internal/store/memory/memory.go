@@ -11,6 +11,7 @@ package memory
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 
 	"github.com/achetronic/vrata/internal/model"
@@ -506,7 +507,10 @@ func (s *Store) publish(ev store.StoreEvent) {
 		select {
 		case ch <- ev:
 		default:
-			// Subscriber too slow; drop the event rather than blocking.
+			slog.Debug("store: subscriber too slow, dropping event",
+				slog.String("type", string(ev.Type)),
+				slog.String("resource", string(ev.Resource)),
+			)
 		}
 	}
 }

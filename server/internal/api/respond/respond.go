@@ -17,7 +17,8 @@ type ErrorBody struct {
 }
 
 // JSON encodes v as JSON and writes it to w with the given status code.
-// If encoding fails, a plain 500 is written instead.
+// If encoding fails, the error is logged. Because WriteHeader has already
+// been called, the status code cannot be changed at that point.
 func JSON(w http.ResponseWriter, status int, v any, logger *slog.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

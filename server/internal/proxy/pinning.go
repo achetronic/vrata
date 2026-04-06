@@ -6,6 +6,7 @@ package proxy
 import (
 	"hash/crc32"
 	"sort"
+	"strconv"
 
 	"github.com/achetronic/vrata/internal/model"
 )
@@ -45,7 +46,7 @@ func buildDestinationRing(dests []model.DestinationRef) *destinationRing {
 			vnodes = 1
 		}
 		for i := 0; i < vnodes; i++ {
-			key := []byte(b.DestinationID + ":" + itoa(i))
+			key := []byte(b.DestinationID + ":" + strconv.Itoa(i))
 			entries = append(entries, ringNode{
 				hash:   crc32.ChecksumIEEE(key),
 				destID: b.DestinationID,
@@ -101,17 +102,3 @@ func (dr *destinationRing) PickValid(hashKey uint32, valid map[string]bool) stri
 	return ""
 }
 
-func itoa(n int) string {
-	if n < 10 {
-		return string(rune('0' + n))
-	}
-	buf := make([]byte, 0, 10)
-	for n > 0 {
-		buf = append(buf, byte('0'+n%10))
-		n /= 10
-	}
-	for i, j := 0, len(buf)-1; i < j; i, j = i+1, j-1 {
-		buf[i], buf[j] = buf[j], buf[i]
-	}
-	return string(buf)
-}

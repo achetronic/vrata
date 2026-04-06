@@ -257,6 +257,9 @@ func run() error {
 				detector.Reset()
 			}
 
+			// Clear knownSingles so deleted-and-recreated routes are re-enqueued.
+			clear(knownSingles)
+
 			// --- Phase 0: GatewayClass claim ---
 
 			claimGatewayClass(ctx, informerCache, statusWriter, logger)

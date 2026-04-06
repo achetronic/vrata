@@ -16,10 +16,11 @@ import (
 // OutlierDetector tracks error rates per endpoint and ejects those
 // that exceed the configured thresholds.
 type OutlierDetector struct {
-	mu       sync.Mutex
-	trackers map[string]*outlierTracker
-	logger   *slog.Logger
-	cancel   context.CancelFunc
+	mu         sync.Mutex
+	trackers   map[string]*outlierTracker
+	logger     *slog.Logger
+	cancel     context.CancelFunc
+	updateCh   chan struct{}
 }
 
 type outlierTracker struct {
@@ -37,6 +38,7 @@ func NewOutlierDetector(logger *slog.Logger) *OutlierDetector {
 	return &OutlierDetector{
 		trackers: make(map[string]*outlierTracker),
 		logger:   logger,
+		updateCh: make(chan struct{}, 1),
 	}
 }
 
@@ -65,6 +67,11 @@ func (od *OutlierDetector) Update(pools map[string]*DestinationPool) {
 		}
 	}
 	od.trackers = newTrackers
+
+	select {
+	case od.updateCh <- struct{}{}:
+	default:
+	}
 }
 
 // RecordResponse records the response status for outlier detection.
@@ -80,12 +87,14 @@ func (od *OutlierDetector) RecordResponse(destID, epID string, statusCode int) {
 
 	if statusCode >= 500 {
 		t.consecutive5xx.Add(1)
+		t.endpoint.Consecutive5xx.Store(t.consecutive5xx.Load())
 		if statusCode == 502 || statusCode == 503 || statusCode == 504 {
 			t.consecutiveGateway.Add(1)
 		}
 	} else {
 		t.consecutive5xx.Store(0)
 		t.consecutiveGateway.Store(0)
+		t.endpoint.Consecutive5xx.Store(0)
 	}
 
 	threshold5xx := int64(5)
@@ -170,6 +179,12 @@ func (od *OutlierDetector) Start(ctx context.Context) {
 				return
 			case <-ticker.C:
 				od.checkEjections()
+			case <-od.updateCh:
+				newInterval := od.resolveInterval()
+				if newInterval != interval {
+					interval = newInterval
+					ticker.Reset(interval)
+				}
 			}
 		}
 	}()

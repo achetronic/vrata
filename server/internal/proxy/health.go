@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/achetronic/vrata/internal/model"
@@ -26,8 +27,8 @@ type HealthChecker struct {
 }
 
 type healthCounter struct {
-	successes uint32
-	failures  uint32
+	successes atomic.Uint32
+	failures  atomic.Uint32
 }
 
 // NewHealthChecker creates a HealthChecker.
@@ -147,9 +148,9 @@ func (hc *HealthChecker) checkAll(ctx context.Context) {
 			ep.mu.RUnlock()
 
 			if passed {
-				counter.failures = 0
-				counter.successes++
-				if !wasHealthy && counter.successes >= healthyThreshold {
+				counter.failures.Store(0)
+				counter.successes.Add(1)
+				if !wasHealthy && counter.successes.Load() >= healthyThreshold {
 					ep.mu.Lock()
 					ep.Healthy = true
 					ep.mu.Unlock()
@@ -159,9 +160,9 @@ func (hc *HealthChecker) checkAll(ctx context.Context) {
 					)
 				}
 			} else {
-				counter.successes = 0
-				counter.failures++
-				if wasHealthy && counter.failures >= unhealthyThreshold {
+				counter.successes.Store(0)
+				counter.failures.Add(1)
+				if wasHealthy && counter.failures.Load() >= unhealthyThreshold {
 					ep.mu.Lock()
 					ep.Healthy = false
 					ep.mu.Unlock()

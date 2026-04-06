@@ -4,6 +4,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -16,13 +17,8 @@ import (
 // the configured API keys. When keys is nil or empty, the middleware is a
 // no-op (dev mode). Clients must send "Authorization: Bearer <key>".
 func Auth(keys []config.APIKeyEntry, logger *slog.Logger) func(http.Handler) http.Handler {
-	lookup := make(map[string]string, len(keys))
-	for _, k := range keys {
-		lookup[k.Key] = k.Name
-	}
-
 	return func(next http.Handler) http.Handler {
-		if len(lookup) == 0 {
+		if len(keys) == 0 {
 			return next
 		}
 
@@ -39,14 +35,20 @@ func Auth(keys []config.APIKeyEntry, logger *slog.Logger) func(http.Handler) htt
 				return
 			}
 
-			entry, valid := lookup[token]
-			if !valid {
+			var matched string
+			for _, k := range keys {
+				if subtle.ConstantTimeCompare([]byte(token), []byte(k.Key)) == 1 {
+					matched = k.Name
+					break
+				}
+			}
+			if matched == "" {
 				respond.Error(w, http.StatusUnauthorized, "invalid API key", logger)
 				return
 			}
 
 			logger.Debug("authenticated",
-				slog.String("keyName", entry),
+				slog.String("keyName", matched),
 			)
 
 			next.ServeHTTP(w, r)
