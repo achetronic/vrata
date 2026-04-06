@@ -24,31 +24,31 @@ func (d *Dependencies) HandleGetConfigDump(w http.ResponseWriter, r *http.Reques
 
 	listeners, err := d.Store.ListListeners(ctx)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "listeners", d.Logger)
 		return
 	}
 
 	destinations, err := d.Store.ListDestinations(ctx)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "destinations", d.Logger)
 		return
 	}
 
 	routes, err := d.Store.ListRoutes(ctx)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "routes", d.Logger)
 		return
 	}
 
 	groups, err := d.Store.ListGroups(ctx)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "groups", d.Logger)
 		return
 	}
 
 	middlewares, err := d.Store.ListMiddlewares(ctx)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "middlewares", d.Logger)
 		return
 	}
 

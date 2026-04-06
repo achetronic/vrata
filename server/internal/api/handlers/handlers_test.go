@@ -346,13 +346,13 @@ func TestMiddlewareCRUD(t *testing.T) {
 	d, _ := newDeps(t)
 
 	w := httptest.NewRecorder()
-	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, model.Middleware{Name: "cors", Type: model.MiddlewareTypeCORS})))
+	d.HandleCreateMiddleware(w, httptest.NewRequest("POST", "/", jsonBody(t, model.Middleware{Name: "cors", Type: model.MiddlewareTypeCORS, CORS: &model.CORSConfig{}})))
 	if w.Code != 201 {
 		t.Fatalf("create: %d", w.Code)
 	}
 	created := decode[model.Middleware](t, w)
 
-	req := httptest.NewRequest("PUT", "/", jsonBody(t, model.Middleware{Name: "updated", Type: model.MiddlewareTypeCORS}))
+	req := httptest.NewRequest("PUT", "/", jsonBody(t, model.Middleware{Name: "updated", Type: model.MiddlewareTypeCORS, CORS: &model.CORSConfig{}}))
 	req.SetPathValue("middlewareId", created.ID)
 	w = httptest.NewRecorder()
 	d.HandleUpdateMiddleware(w, req)

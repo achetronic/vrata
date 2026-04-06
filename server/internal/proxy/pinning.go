@@ -61,22 +61,6 @@ func buildDestinationRing(dests []model.DestinationRef) *destinationRing {
 	return &destinationRing{entries: entries}
 }
 
-// Pick returns the destination ID for the given hash key. Returns empty
-// string if the ring is empty.
-func (dr *destinationRing) Pick(hashKey uint32) string {
-	if len(dr.entries) == 0 {
-		return ""
-	}
-
-	idx := sort.Search(len(dr.entries), func(i int) bool {
-		return dr.entries[i].hash >= hashKey
-	})
-	if idx >= len(dr.entries) {
-		idx = 0
-	}
-	return dr.entries[idx].destID
-}
-
 // PickValid returns the destination ID for the given hash key, skipping
 // destinations not present in the valid set. Returns empty string if no
 // valid destination is found.

@@ -157,6 +157,9 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		logger.Warn("session store unavailable, STICKY will fall back to WEIGHTED_CONSISTENT_HASH",
 			slog.String("error", err.Error()))
 	}
+	if sessStore != nil {
+		defer closeSessionStore(sessStore, logger)
+	}
 
 	var apiKeys []config.APIKeyEntry
 	if cfg.ControlPlane.Auth != nil {
@@ -197,7 +200,7 @@ func runControlPlane(cfg *config.Config, logger *slog.Logger) error {
 		SessionStore:     sessStore,
 		EndpointProvider: epProvider,
 		Logger:           logger,
-		CELBodyMaxSize:   cfg.Proxy.CELBodyMaxSize,
+		CELBodyMaxSize:   cfg.CELBodyMaxSize,
 	})
 
 	if epProvider != nil {
@@ -274,6 +277,9 @@ func runProxy(cfg *config.Config, logger *slog.Logger) error {
 		logger.Warn("session store unavailable, STICKY will fall back to WEIGHTED_CONSISTENT_HASH",
 			slog.String("error", err.Error()))
 	}
+	if sessStore != nil {
+		defer closeSessionStore(sessStore, logger)
+	}
 
 	transport, err := tlsutil.ClientTransport(cfg.Proxy.TLS)
 	if err != nil {
@@ -293,7 +299,7 @@ func runProxy(cfg *config.Config, logger *slog.Logger) error {
 		OutlierDetector:   outlierDetector,
 		SessionStore:      sessStore,
 		Logger:            logger,
-		CELBodyMaxSize:    cfg.Proxy.CELBodyMaxSize,
+		CELBodyMaxSize:    cfg.CELBodyMaxSize,
 		HTTPClient:        httpClient,
 		APIKey:            cfg.Proxy.APIKey,
 	})
@@ -411,5 +417,17 @@ func buildK8sClient(logger *slog.Logger) (kubernetes.Interface, error) {
 	}
 	logger.Info("k8s client created from kubeconfig", slog.String("path", kubeconfig))
 	return client, nil
+}
+
+// closeSessionStore closes the session store if it implements io.Closer.
+func closeSessionStore(s proxy.SessionStore, logger *slog.Logger) {
+	type closer interface {
+		Close() error
+	}
+	if c, ok := s.(closer); ok {
+		if err := c.Close(); err != nil {
+			logger.Error("closing session store", slog.String("error", err.Error()))
+		}
+	}
 }
 

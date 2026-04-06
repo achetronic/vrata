@@ -119,22 +119,6 @@ func (cb *CircuitBreaker) Allow() bool {
 	return true
 }
 
-// AllowPending checks if a pending (queued) request should be allowed.
-// Returns true if the pending queue is not full.
-func (cb *CircuitBreaker) AllowPending() bool {
-	return cb.activePending.Load() < int64(cb.maxPendingRequests)
-}
-
-// OnPending increments the pending request count.
-func (cb *CircuitBreaker) OnPending() {
-	cb.activePending.Add(1)
-}
-
-// OnPendingComplete decrements the pending request count.
-func (cb *CircuitBreaker) OnPendingComplete() {
-	cb.activePending.Add(-1)
-}
-
 // AllowRetry checks if a retry attempt should be allowed based on
 // the maxRetries concurrency limit.
 func (cb *CircuitBreaker) AllowRetry() bool {
@@ -183,14 +167,4 @@ func (cb *CircuitBreaker) OnComplete() {
 // State returns the current circuit state.
 func (cb *CircuitBreaker) State() CircuitState {
 	return CircuitState(cb.state.Load())
-}
-
-// ActiveRetries returns the current active retry count for metrics.
-func (cb *CircuitBreaker) ActiveRetries() int64 {
-	return cb.activeRetries.Load()
-}
-
-// ActivePending returns the current pending request count for metrics.
-func (cb *CircuitBreaker) ActivePending() int64 {
-	return cb.activePending.Load()
 }

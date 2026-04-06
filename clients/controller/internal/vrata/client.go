@@ -329,28 +329,6 @@ func (c *Client) ActivateSnapshot(ctx context.Context, id string) error {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-// Owned returns the subset of entities whose Name starts with "k8s:".
-func Owned[T interface{ GetName() string }](entities []T) []T {
-	var out []T
-	for _, e := range entities {
-		if strings.HasPrefix(e.GetName(), "k8s:") {
-			out = append(out, e)
-		}
-	}
-	return out
-}
-
-// GetName returns the entity name for ownership filtering.
-func (r Route) GetName() string       { return r.Name }
-// GetName returns the entity name for ownership filtering.
-func (g RouteGroup) GetName() string   { return g.Name }
-// GetName returns the entity name for ownership filtering.
-func (d Destination) GetName() string  { return d.Name }
-// GetName returns the entity name for ownership filtering.
-func (l Listener) GetName() string     { return l.Name }
-// GetName returns the entity name for ownership filtering.
-func (m Middleware) GetName() string    { return m.Name }
-
 // APIError is returned when Vrata responds with a non-2xx status.
 type APIError struct {
 	StatusCode int

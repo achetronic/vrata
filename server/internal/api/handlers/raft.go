@@ -48,7 +48,8 @@ func (d *Dependencies) HandleRaftApply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := d.Raft.ApplyRaw(data); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		respond.Error(w, http.StatusInternalServerError, "applying raft command", d.Logger)
+		d.Logger.Error("raft apply failed", "error", err)
 		return
 	}
 

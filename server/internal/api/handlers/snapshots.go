@@ -6,7 +6,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -29,7 +28,7 @@ import (
 func (d *Dependencies) HandleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	summaries, err := d.Store.ListSnapshots(r.Context())
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "snapshots", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, summaries, d.Logger)
@@ -82,7 +81,7 @@ func (d *Dependencies) HandleCreateSnapshot(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := d.Store.SaveSnapshot(ctx, vs); err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "snapshot", d.Logger)
 		return
 	}
 
@@ -105,11 +104,7 @@ func (d *Dependencies) HandleGetSnapshot(w http.ResponseWriter, r *http.Request)
 
 	vs, err := d.Store.GetSnapshot(r.Context(), snapshotID)
 	if err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
-			return
-		}
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "snapshot", d.Logger)
 		return
 	}
 	respond.JSON(w, http.StatusOK, vs, d.Logger)
@@ -132,11 +127,7 @@ func (d *Dependencies) HandleDeleteSnapshot(w http.ResponseWriter, r *http.Reque
 	snapshotID := r.PathValue("snapshotId")
 
 	if err := d.Store.DeleteSnapshot(r.Context(), snapshotID); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
-			return
-		}
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "snapshot", d.Logger)
 		return
 	}
 
@@ -161,17 +152,13 @@ func (d *Dependencies) HandleActivateSnapshot(w http.ResponseWriter, r *http.Req
 	ctx := r.Context()
 
 	if err := d.Store.ActivateSnapshot(ctx, snapshotID); err != nil {
-		if errors.Is(err, model.ErrNotFound) {
-			respond.Error(w, http.StatusNotFound, err.Error(), d.Logger)
-			return
-		}
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "snapshot", d.Logger)
 		return
 	}
 
 	vs, err := d.Store.GetSnapshot(ctx, snapshotID)
 	if err != nil {
-		respond.Error(w, http.StatusInternalServerError, err.Error(), d.Logger)
+		storeError(w, err, "snapshot", d.Logger)
 		return
 	}
 

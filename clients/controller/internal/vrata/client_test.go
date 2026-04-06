@@ -132,18 +132,6 @@ func TestCreateAndActivateSnapshot(t *testing.T) {
 	}
 }
 
-func TestOwned(t *testing.T) {
-	routes := []Route{
-		{Name: "k8s:default/test/rule-0/match-0"},
-		{Name: "manual-route"},
-		{Name: "k8s:prod/api/rule-1/match-0"},
-	}
-	owned := Owned(routes)
-	if len(owned) != 2 {
-		t.Errorf("expected 2 owned, got %d", len(owned))
-	}
-}
-
 func TestAPIKeySentInRequests(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

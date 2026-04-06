@@ -277,6 +277,27 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 				return changes, fmt.Errorf("updating route %q: %w", route.Name, err)
 			}
 			routeVrataIDs = append(routeVrataIDs, existing.ID)
+			newDestNames := destinationNamesForRoute(mapped.Destinations)
+			oldDestNames := r.routeDestMap[route.Name]
+			oldSet := make(map[string]bool, len(oldDestNames))
+			for _, dn := range oldDestNames {
+				oldSet[dn] = true
+			}
+			newSet := make(map[string]bool, len(newDestNames))
+			for _, dn := range newDestNames {
+				newSet[dn] = true
+			}
+			for _, dn := range oldDestNames {
+				if !newSet[dn] {
+					r.refCount.Decrement(dn)
+				}
+			}
+			for _, dn := range newDestNames {
+				if !oldSet[dn] {
+					r.refCount.Increment(dn)
+				}
+			}
+			r.routeDestMap[route.Name] = newDestNames
 			changes++
 		}
 	}

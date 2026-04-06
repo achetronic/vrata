@@ -114,19 +114,3 @@ func TestCircuitBreakerAllowRetry(t *testing.T) {
 		t.Error("should allow retry after one completes")
 	}
 }
-
-func TestCircuitBreakerAllowPending(t *testing.T) {
-	cb := NewCircuitBreaker(10, 2, 10, 3, 0, "")
-	if !cb.AllowPending() {
-		t.Error("should allow pending initially")
-	}
-	cb.OnPending()
-	cb.OnPending()
-	if cb.AllowPending() {
-		t.Error("should reject pending when at maxPendingRequests=2")
-	}
-	cb.OnPendingComplete()
-	if !cb.AllowPending() {
-		t.Error("should allow pending after one completes")
-	}
-}

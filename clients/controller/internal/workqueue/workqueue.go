@@ -98,11 +98,6 @@ func (bg *BatchGroup) IsReady(idleTimeout time.Duration) bool {
 	return time.Since(bg.lastSeen) >= idleTimeout
 }
 
-// MarkReady forces the group into the ready state (used for failsafe logging).
-func (bg *BatchGroup) MarkReady() {
-	bg.ready = true
-}
-
 // IsIncomplete returns true when the group has a known expected size but has
 // not received all members before becoming ready via idle timeout.
 func (bg *BatchGroup) IsIncomplete() bool {

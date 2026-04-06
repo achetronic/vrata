@@ -264,20 +264,6 @@ func TestParseSize_Empty(t *testing.T) {
 	}
 }
 
-func TestBatchGroup_MarkReady(t *testing.T) {
-	bg := &BatchGroup{
-		Name:     "test",
-		lastSeen: time.Now(),
-	}
-	if bg.IsReady(10 * time.Second) {
-		t.Error("should not be ready before MarkReady")
-	}
-	bg.MarkReady()
-	if !bg.IsReady(10 * time.Second) {
-		t.Error("should be ready after MarkReady")
-	}
-}
-
 func TestQueue_InconsistentBatchSize(t *testing.T) {
 	q := New(testLogger())
 	known := make(map[string]bool)

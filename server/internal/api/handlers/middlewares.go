@@ -212,6 +212,35 @@ func validateMiddleware(mw model.Middleware) error {
 		if mw.ExtProc.DestinationID == "" {
 			return fmt.Errorf("extProc.destinationId is required")
 		}
+
+	case model.MiddlewareTypeCORS:
+		if mw.CORS == nil {
+			return fmt.Errorf("cors config is required when type is %q", mw.Type)
+		}
+
+	case model.MiddlewareTypeHeaders:
+		if mw.Headers == nil {
+			return fmt.Errorf("headers config is required when type is %q", mw.Type)
+		}
+
+	case model.MiddlewareTypeAccessLog:
+		if mw.AccessLog == nil {
+			return fmt.Errorf("accessLog config is required when type is %q", mw.Type)
+		}
+		if mw.AccessLog.Path == "" {
+			return fmt.Errorf("accessLog.path is required")
+		}
+
+	case model.MiddlewareTypeRateLimit:
+		if mw.RateLimit == nil {
+			return fmt.Errorf("rateLimit config is required when type is %q", mw.Type)
+		}
+
+	case "":
+		return fmt.Errorf("type is required")
+
+	default:
+		return fmt.Errorf("unknown middleware type %q", mw.Type)
 	}
 
 	return nil

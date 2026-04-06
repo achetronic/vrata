@@ -19,9 +19,10 @@ func TestDestinationRingDeterministic(t *testing.T) {
 	ring := buildDestinationRing(backends)
 
 	key := crc32.ChecksumIEEE([]byte("session-1:route-1"))
-	first := ring.Pick(key)
+	valid := map[string]bool{"a": true, "b": true}
+	first := ring.PickValid(key, valid)
 	for i := 0; i < 100; i++ {
-		if got := ring.Pick(key); got != first {
+		if got := ring.PickValid(key, valid); got != first {
 			t.Fatalf("non-deterministic: first=%s, got=%s on iteration %d", first, got, i)
 		}
 	}
@@ -38,7 +39,7 @@ func TestDestinationRingWeightDistribution(t *testing.T) {
 	total := 10000
 	for i := 0; i < total; i++ {
 		key := crc32.ChecksumIEEE([]byte("sid-" + strconv.Itoa(i) + ":route"))
-		counts[ring.Pick(key)]++
+		counts[ring.PickValid(key, map[string]bool{"heavy": true, "light": true})]++
 	}
 
 	heavyPct := float64(counts["heavy"]) / float64(total)
@@ -55,7 +56,7 @@ func TestDestinationRingPickValid(t *testing.T) {
 	ring := buildDestinationRing(backends)
 
 	key := crc32.ChecksumIEEE([]byte("test-session:test-route"))
-	original := ring.Pick(key)
+	original := ring.PickValid(key, map[string]bool{"a": true, "b": true})
 
 	valid := map[string]bool{"a": true, "b": true}
 	got := ring.PickValid(key, valid)
@@ -86,7 +87,7 @@ func TestDestinationRingDestinationRemoved(t *testing.T) {
 	ring := buildDestinationRing(backends)
 
 	key := crc32.ChecksumIEEE([]byte("sticky-user:route-1"))
-	original := ring.Pick(key)
+	original := ring.PickValid(key, map[string]bool{"a": true, "b": true})
 
 	valid := map[string]bool{"a": true, "b": true}
 	delete(valid, original)
@@ -102,7 +103,7 @@ func TestDestinationRingDestinationRemoved(t *testing.T) {
 
 func TestDestinationRingEmpty(t *testing.T) {
 	ring := buildDestinationRing(nil)
-	if got := ring.Pick(12345); got != "" {
+	if got := ring.PickValid(12345, map[string]bool{}); got != "" {
 		t.Errorf("expected empty, got %s", got)
 	}
 	if got := ring.PickValid(12345, map[string]bool{"a": true}); got != "" {
@@ -115,7 +116,7 @@ func TestDestinationRingSingleBackend(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		key := crc32.ChecksumIEEE([]byte(strconv.Itoa(i)))
-		if got := ring.Pick(key); got != "only" {
+		if got := ring.PickValid(key, map[string]bool{"only": true}); got != "only" {
 			t.Fatalf("expected 'only', got %s", got)
 		}
 	}
@@ -137,7 +138,7 @@ func TestDestinationRingStableOnWeightChange(t *testing.T) {
 	total := 10000
 	for i := 0; i < total; i++ {
 		key := crc32.ChecksumIEEE([]byte("user-" + strconv.Itoa(i)))
-		if ring1.Pick(key) != ring2.Pick(key) {
+		if ring1.PickValid(key, map[string]bool{"a": true, "b": true}) != ring2.PickValid(key, map[string]bool{"a": true, "b": true}) {
 			moved++
 		}
 	}

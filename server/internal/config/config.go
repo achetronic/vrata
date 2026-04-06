@@ -48,6 +48,13 @@ type Config struct {
 	// STICKY destination balancing algorithm. When absent, STICKY falls
 	// back to WEIGHTED_CONSISTENT_HASH with a warning.
 	SessionStore *SessionStoreConfig `yaml:"sessionStore,omitempty"`
+
+	// CELBodyMaxSize is the maximum request body size (in bytes) buffered
+	// for CEL expressions that reference request.body. Bodies exceeding
+	// this limit are truncated in request.body.raw and request.body.json
+	// is not populated. Set to 0 to disable body access in CEL.
+	// Default: 65536 (64KB).
+	CELBodyMaxSize int `yaml:"celBodyMaxSize"`
 }
 
 // ControlPlaneConfig holds settings for the control plane process.
@@ -143,13 +150,6 @@ type ProxyConfig struct {
 	// ReconnectInterval is how long to wait before reconnecting after a
 	// stream disconnection. Accepts Go duration strings. Default: "5s".
 	ReconnectInterval string `yaml:"reconnectInterval"`
-
-	// CELBodyMaxSize is the maximum request body size (in bytes) buffered
-	// for CEL expressions that reference request.body. Bodies exceeding
-	// this limit are truncated in request.body.raw and request.body.json
-	// is not populated. Set to 0 to disable body access in CEL.
-	// Default: 65536 (64KB).
-	CELBodyMaxSize int `yaml:"celBodyMaxSize"`
 
 	// TLS configures the TLS client used to connect to the control plane.
 	// Cert and Key enable mutual TLS (the proxy presents a client cert).
@@ -287,8 +287,8 @@ func applyDefaults(cfg *Config) {
 	if cfg.Log.Level == "" {
 		cfg.Log.Level = "info"
 	}
-	if cfg.Proxy.CELBodyMaxSize == 0 {
-		cfg.Proxy.CELBodyMaxSize = 65536
+	if cfg.CELBodyMaxSize == 0 {
+		cfg.CELBodyMaxSize = 65536
 	}
 }
 

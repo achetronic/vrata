@@ -4,7 +4,6 @@
 package proxy
 
 import (
-	cryptorand "crypto/rand"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -190,8 +189,8 @@ func (dp *DestinationPool) pickStickyEndpoint(r *http.Request, w http.ResponseWr
 
 	isNew := sid == ""
 	if isNew {
-		sid = generateEPSessionID()
-		ttl := parseEPTTL(ttlStr, time.Hour)
+		sid = generateSessionID()
+		ttl := parseTTL(ttlStr, time.Hour)
 		http.SetCookie(w, &http.Cookie{
 			Name:     cookieName,
 			Value:    sid,
@@ -219,30 +218,11 @@ func (dp *DestinationPool) pickStickyEndpoint(r *http.Request, w http.ResponseWr
 	}
 
 	ep := healthy[rand.Intn(len(healthy))]
-	ttlSec := int(parseEPTTL(ttlStr, time.Hour).Seconds())
+	ttlSec := int(parseTTL(ttlStr, time.Hour).Seconds())
 	if err := dp.SessionStore.Set(r.Context(), storeKey, "ep", ep.ID, ttlSec); err != nil {
 		slog.Warn("sticky endpoint: failed to persist session", slog.String("error", err.Error()))
 	}
 	return ep
 }
 
-func generateEPSessionID() string {
-	b := make([]byte, 16)
-	if _, err := cryptorand.Read(b); err != nil {
-		for i := range b {
-			b[i] = byte(rand.Intn(256))
-		}
-	}
-	return fmt.Sprintf("%x", b)
-}
 
-func parseEPTTL(s string, fallback time.Duration) time.Duration {
-	if s == "" {
-		return fallback
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return fallback
-	}
-	return d
-}

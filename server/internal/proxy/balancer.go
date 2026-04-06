@@ -4,7 +4,6 @@
 package proxy
 
 import (
-	cryptorand "crypto/rand"
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
@@ -30,14 +29,6 @@ type Balancer interface {
 type HashBalancer interface {
 	Balancer
 	PickByHash(h uint32, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint
-}
-
-// WeightedRandomBalancer picks by weighted random.
-type WeightedRandomBalancer struct{}
-
-// Pick selects a random endpoint.
-func (WeightedRandomBalancer) Pick(_ *http.Request, dests []model.DestinationRef, endpoints map[string]*Endpoint) *Endpoint {
-	return pickRandomEndpoint(endpoints)
 }
 
 // RoundRobinBalancer cycles through dests in order.
@@ -328,7 +319,7 @@ func hashRequestWithPolicy(r *http.Request, w http.ResponseWriter, policies []mo
 			if c, err := r.Cookie(cookieName); err == nil {
 				return crc32.ChecksumIEEE([]byte(c.Value + ":" + destID))
 			}
-			sid := generateEndpointSessionID()
+			sid := generateSessionID()
 			ttl := parseTTL(hp.Cookie.TTL, time.Hour)
 			http.SetCookie(w, &http.Cookie{
 				Name:     cookieName,
@@ -346,17 +337,6 @@ func hashRequestWithPolicy(r *http.Request, w http.ResponseWriter, policies []mo
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return crc32.ChecksumIEEE([]byte(host + ":" + destID))
-}
-
-// generateEndpointSessionID creates a random session identifier for endpoint pinning.
-func generateEndpointSessionID() string {
-	b := make([]byte, 16)
-	if _, err := cryptorand.Read(b); err != nil {
-		for i := range b {
-			b[i] = byte(rand.Intn(256))
-		}
-	}
-	return fmt.Sprintf("%x", b)
 }
 
 // pickRandomEndpoint picks a random endpoint from the map. Used as fallback
