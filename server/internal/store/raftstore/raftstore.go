@@ -119,70 +119,70 @@ func (s *Store) Subscribe(ctx context.Context) (<-chan store.StoreEvent, error) 
 
 // SaveRoute creates or replaces a route via the Raft log.
 func (s *Store) SaveRoute(ctx context.Context, v model.Route) error {
-	return s.apply(rft.CmdSaveRoute, v.ID, v)
+	return s.apply(ctx, rft.CmdSaveRoute, v.ID, v)
 }
 // DeleteRoute removes a route via the Raft log.
 func (s *Store) DeleteRoute(ctx context.Context, id string) error {
-	return s.apply(rft.CmdDeleteRoute, id, nil)
+	return s.apply(ctx, rft.CmdDeleteRoute, id, nil)
 }
 // SaveGroup creates or replaces a group via the Raft log.
 func (s *Store) SaveGroup(ctx context.Context, v model.RouteGroup) error {
-	return s.apply(rft.CmdSaveGroup, v.ID, v)
+	return s.apply(ctx, rft.CmdSaveGroup, v.ID, v)
 }
 // DeleteGroup removes a group via the Raft log.
 func (s *Store) DeleteGroup(ctx context.Context, id string) error {
-	return s.apply(rft.CmdDeleteGroup, id, nil)
+	return s.apply(ctx, rft.CmdDeleteGroup, id, nil)
 }
 // SaveMiddleware creates or replaces a middleware via the Raft log.
 func (s *Store) SaveMiddleware(ctx context.Context, v model.Middleware) error {
-	return s.apply(rft.CmdSaveMiddleware, v.ID, v)
+	return s.apply(ctx, rft.CmdSaveMiddleware, v.ID, v)
 }
 // DeleteMiddleware removes a middleware via the Raft log.
 func (s *Store) DeleteMiddleware(ctx context.Context, id string) error {
-	return s.apply(rft.CmdDeleteMiddleware, id, nil)
+	return s.apply(ctx, rft.CmdDeleteMiddleware, id, nil)
 }
 // SaveListener creates or replaces a listener via the Raft log.
 func (s *Store) SaveListener(ctx context.Context, v model.Listener) error {
-	return s.apply(rft.CmdSaveListener, v.ID, v)
+	return s.apply(ctx, rft.CmdSaveListener, v.ID, v)
 }
 // DeleteListener removes a listener via the Raft log.
 func (s *Store) DeleteListener(ctx context.Context, id string) error {
-	return s.apply(rft.CmdDeleteListener, id, nil)
+	return s.apply(ctx, rft.CmdDeleteListener, id, nil)
 }
 // SaveDestination creates or replaces a destination via the Raft log.
 func (s *Store) SaveDestination(ctx context.Context, v model.Destination) error {
-	return s.apply(rft.CmdSaveDestination, v.ID, v)
+	return s.apply(ctx, rft.CmdSaveDestination, v.ID, v)
 }
 // DeleteDestination removes a destination via the Raft log.
 func (s *Store) DeleteDestination(ctx context.Context, id string) error {
-	return s.apply(rft.CmdDeleteDestination, id, nil)
+	return s.apply(ctx, rft.CmdDeleteDestination, id, nil)
 }
 // SaveSecret creates or replaces a secret via the Raft log.
 func (s *Store) SaveSecret(ctx context.Context, v model.Secret) error {
-	return s.apply(rft.CmdSaveSecret, v.ID, v)
+	return s.apply(ctx, rft.CmdSaveSecret, v.ID, v)
 }
 // DeleteSecret removes a secret via the Raft log.
 func (s *Store) DeleteSecret(ctx context.Context, id string) error {
-	return s.apply(rft.CmdDeleteSecret, id, nil)
+	return s.apply(ctx, rft.CmdDeleteSecret, id, nil)
 }
 // SaveSnapshot creates or replaces a versioned snapshot via the Raft log.
 func (s *Store) SaveSnapshot(ctx context.Context, v model.VersionedSnapshot) error {
-	return s.apply(rft.CmdSaveSnapshot, v.ID, v)
+	return s.apply(ctx, rft.CmdSaveSnapshot, v.ID, v)
 }
 // DeleteSnapshot removes a versioned snapshot via the Raft log.
 func (s *Store) DeleteSnapshot(ctx context.Context, id string) error {
-	return s.apply(rft.CmdDeleteSnapshot, id, nil)
+	return s.apply(ctx, rft.CmdDeleteSnapshot, id, nil)
 }
 // ActivateSnapshot sets the active snapshot via the Raft log.
 func (s *Store) ActivateSnapshot(ctx context.Context, id string) error {
-	return s.apply(rft.CmdActivateSnapshot, id, nil)
+	return s.apply(ctx, rft.CmdActivateSnapshot, id, nil)
 }
 
 // ─── apply: forward to leader or commit locally ──────────────────────────────
 
 // apply encodes a command and applies it through the Raft log. If this node
 // is not the leader, it forwards the command to the leader transparently.
-func (s *Store) apply(cmdType string, id string, payload interface{}) error {
+func (s *Store) apply(ctx context.Context, cmdType string, id string, payload interface{}) error {
 	var rawPayload json.RawMessage
 	if payload != nil {
 		data, err := json.Marshal(payload)
@@ -202,11 +202,11 @@ func (s *Store) apply(cmdType string, id string, payload interface{}) error {
 	if s.node.IsLeader() {
 		return s.node.ApplyRaw(data)
 	}
-	return s.forwardToLeader(data)
+	return s.forwardToLeader(ctx, data)
 }
 
 // forwardToLeader forwards a command to the current Raft leader over HTTP.
-func (s *Store) forwardToLeader(data []byte) error {
+func (s *Store) forwardToLeader(ctx context.Context, data []byte) error {
 	leaderHTTP := s.node.LeaderHTTPAddr()
 	if leaderHTTP == "" {
 		return fmt.Errorf("no raft leader available")
@@ -219,7 +219,12 @@ func (s *Store) forwardToLeader(data []byte) error {
 		}
 	}
 	url := fmt.Sprintf("%s://%s/api/v1/sync/raft", scheme, leaderHTTP)
-	resp, err := s.httpClient.Post(url, "application/json", bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("building forward request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("forwarding to leader %s: %w", leaderHTTP, err)
 	}

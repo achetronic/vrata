@@ -658,7 +658,10 @@ func (s *Store) GetSecret(_ context.Context, id string) (model.Secret, error) {
 		}
 		return json.Unmarshal(plain, &sec)
 	})
-	return sec, err
+	if err != nil {
+		return model.Secret{}, err
+	}
+	return sec, nil
 }
 
 // SaveSecret creates or replaces the secret identified by s.ID.
@@ -671,18 +674,18 @@ func (s *Store) SaveSecret(_ context.Context, sec model.Secret) error {
 	if err != nil {
 		return fmt.Errorf("encrypting secret: %w", err)
 	}
-	isNew := false
+	isUpdate := false
 	err = s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketSecrets))
-		isNew = b.Get([]byte(sec.ID)) == nil
+		isUpdate = b.Get([]byte(sec.ID)) != nil
 		return b.Put([]byte(sec.ID), encrypted)
 	})
 	if err != nil {
 		return err
 	}
-	evt := store.EventUpdated
-	if isNew {
-		evt = store.EventCreated
+	evt := store.EventCreated
+	if isUpdate {
+		evt = store.EventUpdated
 	}
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceSecret, ID: sec.ID})
 	return nil
@@ -1036,7 +1039,7 @@ func (s *Store) Restore(data []byte) error {
 		return fmt.Errorf("decoding snapshot: %w", err)
 	}
 
-	dataBuckets := []string{bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners, bucketDestinations, bucketSecrets, bucketSnapshots}
+	dataBuckets := []string{bucketRoutes, bucketGroups, bucketMiddlewares, bucketListeners, bucketDestinations, bucketSecrets, bucketSnapshots, bucketMeta}
 
 	err := s.db.Update(func(tx *bolt.Tx) error {
 		for _, bucketName := range dataBuckets {
@@ -1076,6 +1079,6 @@ func (s *Store) Restore(data []byte) error {
 	if err != nil {
 		return err
 	}
-	s.publish(store.StoreEvent{Type: store.EventCreated, Resource: store.ResourceSnapshot, ID: "restore"})
+	s.publish(store.StoreEvent{Type: store.EventUpdated, Resource: store.ResourceSnapshot, ID: "restore"})
 	return nil
 }

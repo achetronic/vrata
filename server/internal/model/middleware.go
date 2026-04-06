@@ -22,13 +22,11 @@ const (
 	// (external processing).
 	MiddlewareTypeExtProc MiddlewareType = "extProc"
 
-	// MiddlewareTypeRateLimit configures rate limiting
-	// provides embedded rate limiting.
+	// MiddlewareTypeRateLimit configures embedded rate limiting.
 	MiddlewareTypeRateLimit MiddlewareType = "rateLimit"
 
-	// MiddlewareTypeHeaders configures header manipulation
-	// Adds or removes request/response
-	// headers as a middleware, consistent with the middleware pattern.
+	// MiddlewareTypeHeaders configures header manipulation. Adds or removes
+	// request/response headers as a middleware.
 	MiddlewareTypeHeaders MiddlewareType = "headers"
 
 	// MiddlewareTypeAccessLog configures access logging per route/group.

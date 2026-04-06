@@ -70,7 +70,8 @@ func (d *Dependencies) HandleCreateSnapshot(w http.ResponseWriter, r *http.Reque
 
 	resolvedSnap, err := resolveSecrets(ctx, d, snap)
 	if err != nil {
-		respond.Error(w, http.StatusBadRequest, "resolving secrets: "+err.Error(), d.Logger)
+		d.Logger.Error("resolving secrets failed", "error", err)
+		respond.Error(w, http.StatusBadRequest, "failed to resolve secret references in snapshot", d.Logger)
 		return
 	}
 

@@ -202,7 +202,7 @@ func run() error {
 				<-ctx.Done()
 				shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer shutCancel()
-				srv.Shutdown(shutCtx)
+				_ = srv.Shutdown(shutCtx)
 			}()
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				logger.Error("metrics server failed", slog.String("error", err.Error()))

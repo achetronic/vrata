@@ -16,8 +16,8 @@ These features are conceptually large and have been deferred to avoid major arch
 ### Hardening
 - [ ] **Proxy mode has no admin HTTP server** — no readiness/liveness endpoint for load balancers. A health endpoint on a configurable admin port would be useful.
 - [ ] **No readiness gate on control plane startup** — the REST API starts listening before the gateway completes its first rebuild. Clients could hit the API before the routing table is populated.
-- [ ] **Bolt `Restore()` does not restore the `meta` bucket** — the `active_snapshot_id` and `encrypted` marker are not restored from the Raft snapshot. After a Raft restore, the active snapshot pointer may be stale.
-- [ ] **Missing `yaml` struct tags on `destination.go` types** — `DestinationOptions`, `DestinationTimeouts`, `TLSOptions`, `CircuitBreakerOptions`, `HealthCheckOptions`, `OutlierDetectionOptions`, `DestinationDiscovery`, `DestinationRef`, `Endpoint`, `Destination` all lack `yaml` tags, inconsistent with route.go/listener.go which have both `json` and `yaml` tags.
+- [x] **Bolt `Restore()` does not restore the `meta` bucket** — Fixed: `bucketMeta` now included in `dataBuckets` list. Event type changed from `EventCreated` to `EventUpdated`.
+- [x] **Missing `yaml` struct tags on `destination.go` types** — Fixed: all types now have both `json` and `yaml` tags.
 
 ## Done
 

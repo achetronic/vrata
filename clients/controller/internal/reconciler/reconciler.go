@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/achetronic/vrata/clients/controller/internal/mapper"
 	"github.com/achetronic/vrata/clients/controller/internal/vrata"
@@ -332,7 +333,7 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 	}
 	var destsToCheck []string
 	for _, route := range allRoutes {
-		if !mapper.IsOwned(route.Name) || !hasPrefix(route.Name, prefix) {
+		if !mapper.IsOwned(route.Name) || !strings.HasPrefix(route.Name, prefix) {
 			continue
 		}
 		if desiredRouteNames[route.Name] {
@@ -362,7 +363,7 @@ func (r *Reconciler) ApplyHTTPRoute(ctx context.Context, mapped mapper.MappedEnt
 		return changes, fmt.Errorf("listing middlewares for intra-group GC: %w", err)
 	}
 	for _, mw := range allMWs {
-		if !mapper.IsOwned(mw.Name) || !hasPrefix(mw.Name, prefix) {
+		if !mapper.IsOwned(mw.Name) || !strings.HasPrefix(mw.Name, prefix) {
 			continue
 		}
 		if desiredMWNames[mw.Name] {
@@ -429,7 +430,7 @@ func (r *Reconciler) DeleteRouteGroup(ctx context.Context, namespace, name strin
 	}
 	var destsToCheck []string
 	for _, route := range routes {
-		if !mapper.IsOwned(route.Name) || !hasPrefix(route.Name, prefix+"/") {
+		if !mapper.IsOwned(route.Name) || !strings.HasPrefix(route.Name, prefix+"/") {
 			continue
 		}
 		// Use the routeDestMap for reliable name-based refcount.
@@ -451,7 +452,7 @@ func (r *Reconciler) DeleteRouteGroup(ctx context.Context, namespace, name strin
 		return changes, fmt.Errorf("listing middlewares: %w", err)
 	}
 	for _, mw := range middlewares {
-		if mapper.IsOwned(mw.Name) && hasPrefix(mw.Name, prefix+"/") {
+		if mapper.IsOwned(mw.Name) && strings.HasPrefix(mw.Name, prefix+"/") {
 			if err := r.client.DeleteMiddleware(ctx, mw.ID); err != nil {
 				return changes, fmt.Errorf("deleting middleware %q: %w", mw.Name, err)
 			}
@@ -597,11 +598,6 @@ func destinationNamesForRoute(route vrata.Route) []string {
 		}
 	}
 	return names
-}
-
-// hasPrefix returns true if s starts with prefix.
-func hasPrefix(s, prefix string) bool {
-	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
 
 // unique returns the deduplicated slice preserving order.

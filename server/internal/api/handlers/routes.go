@@ -53,7 +53,7 @@ func (d *Dependencies) HandleCreateRoute(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := validateRouteAction(route); err != nil {
-		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
 		return
 	}
 
@@ -121,7 +121,7 @@ func (d *Dependencies) HandleUpdateRoute(w http.ResponseWriter, r *http.Request)
 	route.ID = routeID
 
 	if err := validateRouteAction(route); err != nil {
-		respond.Error(w, http.StatusBadRequest, err.Error(), d.Logger)
+		respond.Error(w, http.StatusBadRequest, "validation failed: "+err.Error(), d.Logger)
 		return
 	}
 

@@ -247,7 +247,8 @@ func BufferBody(r *http.Request, maxSize int) (*http.Request, *BodyData) {
 	data := &BodyData{}
 
 	if r.Body != nil && r.Body != http.NoBody {
-		raw, err := io.ReadAll(r.Body)
+		limited := io.LimitReader(r.Body, int64(maxSize)+1)
+		raw, err := io.ReadAll(limited)
 		if err != nil {
 			slog.Warn("failed to read request body for CEL evaluation", "error", err)
 			r.Body = io.NopCloser(bytes.NewReader(nil))
@@ -272,7 +273,15 @@ func BufferBody(r *http.Request, maxSize int) (*http.Request, *BodyData) {
 			}
 			data.Raw = string(celRaw)
 
-			r.Body = io.NopCloser(bytes.NewReader(raw))
+			remainder, _ := io.ReadAll(r.Body)
+			if len(remainder) > 0 {
+				full := make([]byte, len(raw)+len(remainder))
+				copy(full, raw)
+				copy(full[len(raw):], remainder)
+				r.Body = io.NopCloser(bytes.NewReader(full))
+			} else {
+				r.Body = io.NopCloser(bytes.NewReader(raw))
+			}
 		}
 	}
 
@@ -302,8 +311,9 @@ func buildRequestMap(r *http.Request) map[string]any {
 		}
 	}
 
-	queryParams := make(map[string]any, len(r.URL.Query()))
-	for k, v := range r.URL.Query() {
+	query := r.URL.Query()
+	queryParams := make(map[string]any, len(query))
+	for k, v := range query {
 		if len(v) == 1 {
 			queryParams[k] = v[0]
 		} else if len(v) > 1 {
@@ -316,8 +326,8 @@ func buildRequestMap(r *http.Request) map[string]any {
 	}
 
 	host := r.Host
-	if idx := strings.Index(host, ":"); idx != -1 {
-		host = host[:idx]
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
 	}
 
 	scheme := "http"

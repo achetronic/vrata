@@ -79,4 +79,36 @@ Full file-by-file audit verifying that every feature claimed in `SERVER_FEATURES
 - **Listener `MiddlewareIDs`**: Not a missing field — middlewares are intentionally attached at Route/RouteGroup level, not Listener. The documentation was wrong, not the code.
 
 ---
+
+## Audit 3: Full Feature Verification & Convention Compliance
+*Status: Completed*
+*Date: 2026-03-31*
+*Auditor: Claude Opus 4 via Crush*
+
+Full file-by-file audit verifying features, conventions, and fixing all issues found.
+
+### Scope
+- All packages in `server/internal/` and `server/cmd/vrata/`
+- All packages in `clients/controller/`
+- Full unit test suite execution (all passing)
+
+### Bugs Found and Fixed
+1. **CEL `BufferBody` OOM** (`celeval/cel.go`): `io.ReadAll(r.Body)` read the entire body into memory before truncating to `celBodyMaxSize`. A multi-GB POST would OOM the proxy. Fixed: uses `io.LimitReader` to cap allocation at `maxSize+1`, then reads remainder separately to reconstruct full body for upstream.
+2. **CEL IPv6 host stripping** (`celeval/cel.go`): Naive `strings.Index(host, ":")` broke on IPv6 literals like `[::1]:8080`. Fixed: uses `net.SplitHostPort`.
+3. **Bolt `Restore()` excluded `bucketMeta`** (`store/bolt/bolt.go`): Active snapshot pointer and encryption marker were lost on Raft snapshot restore. Fixed: added `bucketMeta` to `dataBuckets` list. Changed restore event from `EventCreated` to `EventUpdated`.
+4. **Raftstore context silently dropped** (`store/raftstore/raftstore.go`): All write methods accepted `ctx` but never passed it through to `apply()` or `forwardToLeader()`. Fixed: `apply()` now accepts and propagates context. `forwardToLeader()` uses `http.NewRequestWithContext`.
+5. **Snapshot handler leaked `err.Error()`** (`api/handlers/snapshots.go`): `resolveSecrets()` error was concatenated into the client-facing 400 response, potentially exposing internal paths. Fixed: uses static message, logs error server-side.
+6. **Validation `err.Error()` in 5 handlers**: Create handlers for routes, groups, destinations, listeners, and middlewares passed validation error directly to client. Fixed: prefixed with `"validation failed: "` for consistency.
+7. **Bolt `GetSecret` partial struct on error** (`store/bolt/bolt.go`): Unlike other `Get*` methods, returned partially-populated struct on unmarshal error. Fixed: returns `model.Secret{}` on error.
+8. **Bolt `SaveSecret` inconsistent flag naming**: Used `isNew` flag vs `isUpdate` in all other Save methods. Fixed: renamed to `isUpdate` with inverted logic for consistency.
+
+### Style Fixes
+- **`destination.go`**: Added `yaml` struct tags to all 10+ types missing them.
+- **`middleware.go`**: Fixed 2 fragmented godoc comments on `MiddlewareTypeRateLimit` and `MiddlewareTypeHeaders`.
+- **`celeval/cel.go`**: Eliminated double `r.URL.Query()` parse.
+- **`router_test.go`**: Removed duplicate license header.
+- **Controller `reconciler.go`**: Replaced custom `hasPrefix` with `strings.HasPrefix`.
+- **Controller `main.go`**: Added `_ =` to discarded `srv.Shutdown()` return value.
+
+---
 *Future audits will be appended to this document as new architectural phases are completed.*
