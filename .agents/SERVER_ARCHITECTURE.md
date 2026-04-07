@@ -37,7 +37,7 @@ Pure domain types. No business logic, no I/O. Key types:
 - **RouteGroup** — a named collection of routes with shared matchers.
 - **Destination** — an upstream target with endpoints, timeouts, TLS, balancing, circuit breaker, health checks, outlier detection.
 - **Listener** — a network entry point with optional TLS, HTTP/2, metrics, proxy error formatting, timeouts.
-- **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz.
+- **Middleware** — CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz, ClientIP.
 - **Snapshot** — immutable point-in-time capture of all configuration.
 
 ### internal/store
@@ -156,7 +156,7 @@ server/
 │   ├── store/                  # Store interface + bolt + memory + raftstore
 │   ├── api/                    # REST API (handlers, middleware, respond, router)
 │   ├── proxy/                  # Native HTTP proxy
-│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz
+│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz, ClientIP
 │   │   └── celeval/            # CEL expression evaluation
 │   ├── gateway/gateway.go      # Store → proxy bridge
 │   ├── raft/                   # Raft consensus (FSM, node, peer discovery)

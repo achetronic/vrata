@@ -12,12 +12,14 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
 	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy/celeval"
 )
 
 // ListenerManager manages HTTP listeners that serve proxied traffic.
@@ -36,6 +38,13 @@ type managedServer struct {
 	metrics  *MetricsCollector
 	cancel   context.CancelFunc
 	done     chan struct{}
+
+	// preProcessor holds an atomically-swappable request pre-processor that
+	// runs before the router on every request. This allows hot-reloading
+	// configuration (e.g. client IP resolution) without restarting the
+	// listener's http.Server. The pointer is updated by Reconcile when a
+	// listener's soft config changes while sameListener() returns true.
+	preProcessor atomic.Pointer[requestPreProcessor]
 }
 
 // NewListenerManager creates a ListenerManager.
@@ -47,9 +56,33 @@ func NewListenerManager(router *Router, logger *slog.Logger) *ListenerManager {
 	}
 }
 
+// requestPreProcessor transforms an incoming request before the router sees
+// it. It runs inside the listener handler (before route matching) and can
+// store data in the request context. Pre-processors are hot-swappable via
+// an atomic pointer — changing the configuration does not restart the
+// listener.
+//
+// Current pre-processors:
+//   - Client IP resolution (clientIp on Listener)
+//
+// Future candidates (add here when implemented):
+//   - Request ID injection
+//   - Trusted proxy header stripping
+type requestPreProcessor struct {
+	clientIPResolver clientIPResolver
+}
+
+// buildPreProcessor creates a pre-processor from the listener config.
+func buildPreProcessor(l model.Listener) *requestPreProcessor {
+	return &requestPreProcessor{
+		clientIPResolver: BuildClientIPResolver(l.ClientIP),
+	}
+}
+
 // Reconcile updates listeners to match the desired state. New listeners are
 // started, removed listeners are gracefully shut down, and changed listeners
-// are restarted.
+// are restarted. Soft config changes (e.g. clientIp) are hot-swapped via
+// the pre-processor atomic pointer without restarting the http.Server.
 func (lm *ListenerManager) Reconcile(listeners []model.Listener) {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
@@ -79,6 +112,10 @@ func (lm *ListenerManager) Reconcile(listeners []model.Listener) {
 	for id, l := range desired {
 		existing, ok := lm.servers[id]
 		if ok && sameListener(existing.listener, l) {
+			// Server config unchanged — hot-swap pre-processor only.
+			pp := buildPreProcessor(l)
+			existing.preProcessor.Store(pp)
+			existing.listener = l
 			continue
 		}
 
@@ -252,12 +289,36 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 
 	done := make(chan struct{})
 
-	lm.servers[l.ID] = &managedServer{
+	ms := &managedServer{
 		listener: l,
 		server:   srv,
 		metrics:  mc,
 		cancel:   cancel,
 		done:     done,
+	}
+	pp := buildPreProcessor(l)
+	ms.preProcessor.Store(pp)
+	lm.servers[l.ID] = ms
+
+	// Pre-processor wrapper: reads the atomic pre-processor pointer on every
+	// request, runs it before the rest of the handler chain. This is the
+	// outermost layer (except h2c which wraps at the transport level).
+	// Because it reads from an atomic pointer, updating the pre-processor
+	// in Reconcile takes effect immediately without restarting the listener.
+	{
+		original := srv.Handler
+		srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if current := ms.preProcessor.Load(); current != nil {
+				if current.clientIPResolver != nil {
+					r = r.WithContext(context.WithValue(
+						r.Context(),
+						celeval.ClientIPCtxKey{},
+						current.clientIPResolver(r),
+					))
+				}
+			}
+			original.ServeHTTP(w, r)
+		})
 	}
 
 	go func() {

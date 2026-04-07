@@ -31,7 +31,7 @@ server/
 │   ├── store/                  # Persistence: bolt (prod), memory (test), raftstore (HA)
 │   ├── model/                  # Domain types: Route, Group, Destination, Listener, Middleware, Snapshot
 │   ├── proxy/                  # Native reverse proxy: router, balancers, circuit breaker, health, outlier, metrics
-│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz
+│   │   ├── middlewares/        # CORS, JWT, ExtAuthz, ExtProc, RateLimit, Headers, AccessLog, InlineAuthz, ClientIP
 │   │   └── celeval/            # CEL compiler + evaluator (request matching, body access, TLS cert access)
 │   ├── gateway/                # Watches store, rebuilds routing table, reconciles listeners
 │   ├── raft/                   # Embedded Raft HA (hashicorp/raft)

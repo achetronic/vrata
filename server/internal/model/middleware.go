@@ -36,6 +36,7 @@ const (
 	// Symmetric pair of extAuthz: evaluates authorization locally instead of
 	// delegating to an external service.
 	MiddlewareTypeInlineAuthz MiddlewareType = "inlineAuthz"
+
 )
 
 // Middleware is an independent first-class entity that holds the configuration for a
@@ -82,6 +83,7 @@ type Middleware struct {
 	// InlineAuthz holds the inline authorization configuration.
 	// Set when Type == "inlineAuthz".
 	InlineAuthz *InlineAuthzConfig `json:"inlineAuthz,omitempty" yaml:"inlineAuthz,omitempty"`
+
 }
 
 // ────────────────────────────────────────────────────────────────────────────

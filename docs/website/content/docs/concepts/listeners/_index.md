@@ -11,8 +11,9 @@ A Listener is the entry point to Vrata's proxy. It opens a TCP port, accepts HTT
 2. **Terminates TLS** — optionally handles HTTPS so backends receive plaintext
 3. **Negotiates protocol** — HTTP/1.1 by default, HTTP/2 if enabled (required for gRPC)
 4. **Enforces limits** — max header size, connection timeouts, idle timeouts
-5. **Serves metrics** — optionally exposes a Prometheus scrape endpoint on this listener's port
-6. **Formats proxy errors** — controls how much detail Vrata includes in its own error responses
+5. **Resolves the real client IP** — determines the true client IP from XFF, a custom header, or the direct connection — before route matching
+6. **Serves metrics** — optionally exposes a Prometheus scrape endpoint on this listener's port
+7. **Formats proxy errors** — controls how much detail Vrata includes in its own error responses
 
 Each listener is independent. You can run multiple listeners on different ports with different configurations — for example one for public HTTPS and another for internal plaintext.
 
@@ -53,7 +54,8 @@ This creates a plaintext HTTP/1.1 listener on `0.0.0.0:3000` with default timeou
   "maxRequestHeadersKB": 64,
   "timeouts": { ... },
   "metrics": { ... },
-  "proxyErrors": { "detail": "standard" }
+  "proxyErrors": { "detail": "standard" },
+  "clientIp": { "source": "xff", "trustedCidrs": ["10.0.0.0/8"] }
 }
 ```
 
@@ -71,6 +73,7 @@ This creates a plaintext HTTP/1.1 listener on `0.0.0.0:3000` with default timeou
 | `timeouts` | object | — | Client connection timeouts | [Listener Timeouts]({{< relref "timeouts" >}}) |
 | `metrics` | object | — | Prometheus metrics config | [Listener Metrics]({{< relref "metrics" >}}) |
 | `proxyErrors` | object | — | Proxy error response format | [Proxy Error Responses]({{< relref "proxy-errors" >}}) |
+| `clientIp` | object | — | Real client IP resolution (hot-reloadable) | [Client IP Resolution]({{< relref "client-ip" >}}) |
 
 ## Multiple listeners
 

@@ -227,6 +227,20 @@ func (p *ClaimsStringProgram) Eval(claims map[string]any) string {
 	return fmt.Sprintf("%v", out.Value())
 }
 
+// ClientIPCtxKey is the context key for the resolved client IP. The clientIp
+// middleware stores the resolved IP under this key; buildRequestMap reads it.
+// Exported so the middleware package can use the same key without import cycles.
+type ClientIPCtxKey struct{}
+
+// ResolvedClientIP reads the client IP set by the clientIp middleware.
+// Returns empty string if the middleware was not active.
+func ResolvedClientIP(ctx context.Context) string {
+	if v, ok := ctx.Value(ClientIPCtxKey{}).(string); ok {
+		return v
+	}
+	return ""
+}
+
 // bodyCtxKey is the context key for cached body data.
 type bodyCtxKey struct{}
 
@@ -335,15 +349,18 @@ func buildRequestMap(r *http.Request) map[string]any {
 		scheme = "https"
 	}
 
-	clientIP := r.RemoteAddr
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if idx := strings.Index(xff, ","); idx != -1 {
-			clientIP = strings.TrimSpace(xff[:idx])
-		} else {
-			clientIP = strings.TrimSpace(xff)
+	clientIP := ResolvedClientIP(r.Context())
+	if clientIP == "" {
+		clientIP = r.RemoteAddr
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			if idx := strings.Index(xff, ","); idx != -1 {
+				clientIP = strings.TrimSpace(xff[:idx])
+			} else {
+				clientIP = strings.TrimSpace(xff)
+			}
+		} else if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			clientIP = h
 		}
-	} else if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		clientIP = h
 	}
 
 	m := map[string]any{

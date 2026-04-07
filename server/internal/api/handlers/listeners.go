@@ -184,5 +184,23 @@ func validateListener(l model.Listener) error {
 			return fmt.Errorf("unknown clientAuth.mode %q: must be \"none\", \"optional\", or \"require\"", ca.Mode)
 		}
 	}
+
+	if l.ClientIP != nil {
+		cfg := l.ClientIP
+		switch cfg.Source {
+		case model.ClientIPSourceDirect, model.ClientIPSourceXFF, model.ClientIPSourceHeader:
+		case "":
+			return fmt.Errorf("clientIp.source is required")
+		default:
+			return fmt.Errorf("clientIp.source must be \"direct\", \"xff\", or \"header\", got %q", cfg.Source)
+		}
+		if cfg.Source == model.ClientIPSourceHeader && cfg.Header == "" {
+			return fmt.Errorf("clientIp.header is required when source is \"header\"")
+		}
+		if cfg.Source == model.ClientIPSourceXFF && len(cfg.TrustedCidrs) > 0 && cfg.NumTrustedHops > 0 {
+			return fmt.Errorf("clientIp.trustedCidrs and clientIp.numTrustedHops are mutually exclusive")
+		}
+	}
+
 	return nil
 }

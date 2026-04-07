@@ -88,6 +88,7 @@ With TLS:
 | `maxRequestHeadersKB` | number | Max header size in KB            |
 | `metrics`             | object | Prometheus metrics config        |
 | `timeouts`            | object | Client connection timeouts       |
+| `clientIp`            | object | Client IP resolution config      |
 
 ### Listener Timeouts
 
@@ -108,6 +109,26 @@ With TLS:
 | `clientRequest` | `60s` | Time to receive the complete request (headers + body) |
 | `clientResponse` | `60s` | Time to send the complete response to the client |
 | `idleBetweenRequests` | `120s` | How long a keep-alive connection stays open between requests |
+
+### Client IP Resolution
+
+Configures how the listener determines the real client IP. Runs before route matching — the resolved IP is available in CEL, access logs, and authorization middlewares. Changes are hot-reloaded without restarting the listener.
+
+```json
+{
+  "clientIp": {
+    "source": "xff",
+    "trustedCidrs": ["10.0.0.0/8", "172.16.0.0/12"]
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `source` | string | `"direct"`, `"xff"`, or `"header"` |
+| `trustedCidrs` | string[] | CIDRs to skip in XFF (only with `xff`) |
+| `numTrustedHops` | int | Rightmost XFF entries to skip (only with `xff`) |
+| `header` | string | Header name (only with `header`) |
 
 ---
 

@@ -49,6 +49,17 @@ type Listener struct {
 	// (infrastructure failures, no matching route, etc.). When nil,
 	// "standard" detail level is used.
 	ProxyErrors *ProxyErrors `json:"proxyErrors,omitempty" yaml:"proxyErrors,omitempty"`
+
+	// ClientIP configures how the listener determines the real client IP
+	// from incoming requests. The resolved IP is stored in the request
+	// context before route matching, making it available to CEL expressions
+	// (request.clientIp), access logging (${request.clientIp}), and
+	// authorization middlewares.
+	//
+	// Changes to this field are hot-reloaded without restarting the
+	// listener — the resolver is swapped atomically on each Reconcile.
+	// When nil, the legacy behaviour applies (XFF leftmost → RemoteAddr).
+	ClientIP *ClientIPConfig `json:"clientIp,omitempty" yaml:"clientIp,omitempty"`
 }
 
 // ListenerTimeouts configures timeout durations for client connections.

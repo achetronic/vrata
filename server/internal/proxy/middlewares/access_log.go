@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/achetronic/vrata/internal/model"
+	"github.com/achetronic/vrata/internal/proxy/celeval"
 )
 
 // AccessLogMiddleware creates a middleware that logs request and response
@@ -221,6 +222,9 @@ func reqHost(r *http.Request) string {
 }
 
 func clientIPFromRequest(r *http.Request) string {
+	if resolved := celeval.ResolvedClientIP(r.Context()); resolved != "" {
+		return resolved
+	}
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if idx := strings.Index(xff, ","); idx != -1 {
 			return strings.TrimSpace(xff[:idx])

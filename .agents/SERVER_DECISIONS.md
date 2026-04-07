@@ -1384,3 +1384,73 @@ take down the proxy).
 **Do not**: add skip-and-continue logic to the store `List*` methods.
 Do not make the proxy routing table builder fail-fast on individual
 entity compile errors. The boundary is: store = strict, proxy = tolerant.
+
+---
+
+## Client IP resolution: `clientIp` middleware with trust chain
+
+**Date**: 2026-03-31
+**Status**: Implemented
+
+### Problem
+
+CEL's `request.clientIp`, access log `${request.clientIp}`, and any IP-based
+authorization all need the real client IP. Without a trust chain, XFF is
+trusted unconditionally — any client can spoof it. This is a security risk
+in production where IP-based access control or rate limiting depends on a
+correct client IP.
+
+### Solution
+
+A `clientIp` field on the `Listener` entity that resolves the real client IP
+and stores it in the request context **before** route matching. Three
+resolution strategies:
+
+| `source` | Behaviour |
+|---|---|
+| `direct` | Always `r.RemoteAddr`. Ignores XFF. Safest when no reverse proxy sits in front. |
+| `xff` | Walks X-Forwarded-For from right to left, skipping trusted entries. Two modes: `trustedCidrs` (skip entries matching CIDRs) or `numTrustedHops` (skip N entries from the right). Mutually exclusive. When neither is set, uses the leftmost entry (legacy unsafe behaviour). |
+| `header` | Reads a single named header (`X-Real-IP`, `CF-Connecting-IP`, etc.). Falls back to `r.RemoteAddr` if absent. |
+
+### Listener with hot-swap, not middleware
+
+The resolution logic lives on the `Listener` entity but uses an
+`atomic.Pointer[requestPreProcessor]` pattern so that changing the trust
+chain configuration triggers only an atomic pointer swap — not a listener
+restart. The `sameListener()` function intentionally ignores the `ClientIP`
+field, so config changes flow through `Reconcile` → `preProcessor.Store()` →
+immediate effect on the next request, without releasing the TCP port.
+
+This gives us both: the IP is resolved before the router (available for
+`match.cel`, `inlineAuthz`, access log), AND the config is hot-reloadable
+without downtime.
+
+### Pre-processor architecture
+
+The `requestPreProcessor` struct is a generic extensibility point. It runs
+inside the listener's outermost HTTP handler (before the router) and can
+transform the request context. Current fields:
+
+- `clientIPResolver` — resolves the real client IP
+
+Future candidates can be added to the same struct (e.g. request ID injection,
+trusted proxy header stripping) without changing the listener lifecycle.
+
+### Context key
+
+The resolved IP is stored in the request context under `celeval.ClientIPCtxKey`.
+The key lives in `celeval` (the leaf package) to avoid circular imports.
+Consumers read it via `celeval.ResolvedClientIP(ctx)`.
+
+When no `clientIp` is configured on the listener, consumers fall back to the
+legacy behaviour (XFF leftmost or RemoteAddr).
+
+### What it does NOT affect
+
+- **Rate limiter**: Keeps its own `trustedProxies` field — it may want a
+  different policy than the listener-wide clientIp resolution.
+
+**Do not**: model clientIp as a middleware type — it must run before route
+matching. Do not make `sameListener()` compare `ClientIP` — config changes
+must not restart the listener. Do not remove the rate limiter's own
+`trustedProxies` — per-middleware trust config is intentional.

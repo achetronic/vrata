@@ -11,7 +11,7 @@ These features are conceptually large and have been deferred to avoid major arch
 ## Open
 
 ### Security
-- [ ] **`clientIp` trusts `X-Forwarded-For` unconditionally** — CEL's `request.clientIp` uses the first XFF entry without trusted-proxy validation. Clients can spoof their IP in CEL expressions used for access control.
+- [x] **`clientIp` trusts `X-Forwarded-For` unconditionally** — Fixed: `clientIp` field on `Listener` with `source` (direct/xff/header), `trustedCidrs`, `numTrustedHops`, and `header` fields. Resolved IP stored in context via atomic pre-processor (hot-swap, no listener restart). Available to CEL route matching, inlineAuthz, access log. Unit tests (20) + e2e tests (7 scenarios including hot-reload and validation).
 
 ### Hardening
 - [ ] **Proxy mode has no admin HTTP server** — no readiness/liveness endpoint for load balancers. A health endpoint on a configurable admin port would be useful.

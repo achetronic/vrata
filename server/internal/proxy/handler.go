@@ -61,7 +61,6 @@ func buildRouteHandler(
 			continue
 		}
 
-		// Resolve override: route wins over group.
 		ov := resolveOverride(mwID, route, group)
 
 		if ov != nil && ov.Disabled {
@@ -76,7 +75,6 @@ func buildRouteHandler(
 			onCleanup(cleanup)
 		}
 
-		// Wrap with skipWhen/onlyWhen if configured.
 		if ov != nil {
 			m = wrapWithConditions(m, ov, celBodyMaxSize)
 		}
