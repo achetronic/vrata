@@ -120,6 +120,10 @@ Resolves `{{secret:value/env/file}}` patterns in serialized JSON. Used by `build
 
 AES-256-GCM encryption for at-rest protection of secrets and snapshots in bbolt. The `Cipher` type provides `Seal` and `Open` methods. Integrated into the bolt store via `encryptValue`/`decryptValue` — no-ops when no cipher is configured.
 
+### internal/validate
+
+Structural and compilation validation for snapshots. Runs 18 validators (regex compilation, CEL compilation, TLS certificate parsing, referential integrity) against the assembled snapshot at creation time. Returns `[]Warning` — non-blocking, informational. Pure functions, no I/O. New validators are added by appending to the `validators` slice.
+
 ## Data Flow
 
 ```

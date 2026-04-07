@@ -1516,3 +1516,47 @@ in `startListener` before the `connTrackingListener` (metrics) and before
 that requires socket re-bind. Do not allow `proxyProtocol` without
 `trustedCidrs` — this would be an open spoofing vector. Do not implement
 custom PP parsing — `go-proxyproto` handles v1/v2 correctly.
+
+---
+
+## Snapshot structural validation (warnings, not errors)
+
+**Date**: 2026-03-31
+**Status**: Implemented
+
+When a snapshot is created via `POST /api/v1/snapshots`, the control plane
+runs structural and compilation checks on the captured configuration before
+persisting it. Checks include: regex compilation (paths, headers, query
+params, rewrites, CORS origins), CEL compilation (route match, middleware
+overrides skipWhen/onlyWhen, JWT assertClaims/claimToHeaders), TLS
+certificate parsing (listener cert/key, client CA, destination mTLS
+cert/key, destination CA), and referential integrity (routes → destinations,
+routes → middlewares, groups → routes, groups → middlewares, middlewares →
+destinations, mirrors → destinations).
+
+Validation results are returned as a `warnings` array in the response
+alongside the created snapshot. Warnings are **non-blocking** — the
+snapshot is always created and can be activated. This is intentional:
+the proxy is already tolerant (skip-and-continue) and the operator may
+deliberately include entities that reference future config. Warnings
+serve as early feedback so operators know what will be skipped at proxy
+apply time.
+
+Validators are registered in a `[]Validator` slice in
+`internal/validate/validate.go`. Adding a new check requires only writing
+a function with signature `func(*model.Snapshot) []Warning` and appending
+it to the slice — no other wiring.
+
+**Reasoning**: Before this, the control plane was a "dumb snapshot dump" —
+it would happily distribute a snapshot with broken regexes, invalid TLS
+certs, or dangling references. The proxy's fault isolation handled it
+(skip broken entities, log error), but operators had no early signal that
+their config was broken. They would only find out by reading proxy logs
+after activation. Structural validation closes this feedback gap at the
+cheapest possible point: snapshot creation.
+
+**Do not**: Make warnings block snapshot creation. Do not add runtime checks
+(DNS resolution, upstream reachability, port availability) — those are
+environment-dependent and cannot be validated from the control plane. Do not
+validate inside individual CRUD handlers — entity-level validation stays
+where it is; snapshot validation operates on the assembled whole.

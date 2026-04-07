@@ -308,6 +308,85 @@ func TestActivateSnapshot(t *testing.T) {
 	}
 }
 
+// ── Snapshot Validation Warnings ─────────────────────────────────────────────
+
+func TestCreateSnapshotReturnsWarnings(t *testing.T) {
+	deps, st := snapshotDeps(t)
+	ctx := context.Background()
+
+	st.SaveListener(ctx, model.Listener{ID: "l1", Name: "main", Address: "0.0.0.0", Port: 3000})
+	st.SaveRoute(ctx, model.Route{
+		ID: "r1", Name: "bad-regex",
+		Match:          model.MatchRule{PathRegex: "([invalid"},
+		DirectResponse: &model.RouteDirectResponse{Status: 200, Body: "ok"},
+	})
+	st.SaveRoute(ctx, model.Route{
+		ID: "r2", Name: "dangling-dest",
+		Forward: &model.ForwardAction{Destinations: []model.DestinationRef{{DestinationID: "nonexistent", Weight: 100}}},
+	})
+
+	body, _ := json.Marshal(SnapshotCreateRequest{Name: "warn-test"})
+	req := httptest.NewRequest("POST", "/api/v1/snapshots", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	deps.HandleCreateSnapshot(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SnapshotCreateResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Name != "warn-test" {
+		t.Errorf("expected name %q, got %q", "warn-test", resp.Name)
+	}
+	if len(resp.Warnings) < 2 {
+		t.Errorf("expected at least 2 warnings, got %d: %v", len(resp.Warnings), resp.Warnings)
+	}
+
+	foundRegex := false
+	foundRef := false
+	for _, w := range resp.Warnings {
+		if w.ID == "r1" && w.Entity == "route" {
+			foundRegex = true
+		}
+		if w.ID == "r2" && w.Entity == "route" {
+			foundRef = true
+		}
+	}
+	if !foundRegex {
+		t.Error("expected warning for bad regex route r1")
+	}
+	if !foundRef {
+		t.Error("expected warning for dangling destination ref route r2")
+	}
+}
+
+func TestCreateSnapshotCleanReturnsEmptyWarnings(t *testing.T) {
+	deps, st := snapshotDeps(t)
+	seedLiveConfig(t, st)
+
+	body, _ := json.Marshal(SnapshotCreateRequest{Name: "clean"})
+	req := httptest.NewRequest("POST", "/api/v1/snapshots", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	deps.HandleCreateSnapshot(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp SnapshotCreateResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Warnings) != 0 {
+		t.Errorf("expected 0 warnings for clean snapshot, got %d: %v", len(resp.Warnings), resp.Warnings)
+	}
+}
+
 func TestActivateSnapshotNotFound(t *testing.T) {
 	deps, _ := snapshotDeps(t)
 

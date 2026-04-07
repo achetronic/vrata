@@ -13,6 +13,7 @@ import (
 	"github.com/achetronic/vrata/internal/api/respond"
 	"github.com/achetronic/vrata/internal/model"
 	"github.com/achetronic/vrata/internal/resolve"
+	"github.com/achetronic/vrata/internal/validate"
 	"github.com/google/uuid"
 )
 
@@ -75,6 +76,16 @@ func (d *Dependencies) HandleCreateSnapshot(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	warnings := validate.Snapshot(resolvedSnap)
+	for _, w := range warnings {
+		d.Logger.Warn("snapshot validation warning",
+			"entity", w.Entity,
+			"id", w.ID,
+			"name", w.Name,
+			"message", w.Message,
+		)
+	}
+
 	vs := model.VersionedSnapshot{
 		ID:        uuid.NewString(),
 		Name:      req.Name,
@@ -87,7 +98,10 @@ func (d *Dependencies) HandleCreateSnapshot(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	respond.JSON(w, http.StatusCreated, vs, d.Logger)
+	respond.JSON(w, http.StatusCreated, SnapshotCreateResponse{
+		VersionedSnapshot: vs,
+		Warnings:          warnings,
+	}, d.Logger)
 }
 
 // GetSnapshot returns the versioned snapshot with the given ID.
@@ -176,6 +190,20 @@ func (d *Dependencies) HandleActivateSnapshot(w http.ResponseWriter, r *http.Req
 type SnapshotCreateRequest struct {
 	// Name is a human-readable label for the snapshot (e.g. "v1.0", "pre-deploy").
 	Name string `json:"name" example:"v1.0"`
+}
+
+// SnapshotCreateResponse is the response body for POST /snapshots. It wraps
+// the versioned snapshot with any structural or compilation warnings found
+// during validation. The snapshot is always created (warnings are non-fatal)
+// because the proxy is tolerant and skips broken entities.
+type SnapshotCreateResponse struct {
+	// Snapshot is the created versioned snapshot.
+	model.VersionedSnapshot
+
+	// Warnings lists structural or compilation issues found in the snapshot.
+	// Each warning identifies a specific entity that will be skipped by the
+	// proxy at apply time. An empty list means the snapshot is clean.
+	Warnings []validate.Warning `json:"warnings"`
 }
 
 // resolveSecrets serializes the snapshot to JSON, resolves all

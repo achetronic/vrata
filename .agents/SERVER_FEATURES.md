@@ -31,6 +31,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | SSE pushes on activate     | 100%   | Unit       |
 | No event without active    | 100%   | Unit + E2E |
 | Proxy reconnects           | 100%   | Unit       |
+| Structural validation (warnings) | 100% | Unit (29) + Integration (2) |
 
 ## Proxy Routing
 
