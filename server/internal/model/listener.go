@@ -60,6 +60,18 @@ type Listener struct {
 	// listener — the resolver is swapped atomically on each Reconcile.
 	// When nil, the legacy behaviour applies (XFF leftmost → RemoteAddr).
 	ClientIP *ClientIPConfig `json:"clientIp,omitempty" yaml:"clientIp,omitempty"`
+
+	// ProxyProtocol enables PROXY protocol (v1/v2) parsing on this listener.
+	// When enabled, the listener reads the PROXY protocol header from the
+	// first bytes of each TCP connection to extract the real client address
+	// injected by the upstream load balancer. r.RemoteAddr reflects the
+	// real client, not the LB.
+	//
+	// Changes to this field trigger a listener restart because PROXY
+	// protocol operates at the TCP transport layer — it cannot be
+	// hot-swapped without closing the socket.
+	// When nil, PROXY protocol is disabled.
+	ProxyProtocol *ProxyProtocolConfig `json:"proxyProtocol,omitempty" yaml:"proxyProtocol,omitempty"`
 }
 
 // ListenerTimeouts configures timeout durations for client connections.
@@ -270,4 +282,20 @@ func (pe *ProxyErrors) ResolvedDetail() ProxyErrorDetail {
 		return ProxyErrorDetailStandard
 	}
 	return pe.Detail
+}
+
+// ProxyProtocolConfig enables PROXY protocol (v1 text and v2 binary) on a
+// Listener. The load balancer in front of Vrata sends a PROXY protocol
+// header as the first bytes of each TCP connection, carrying the real
+// client address. Vrata parses it and replaces r.RemoteAddr so the entire
+// stack (clientIp resolver, CEL, access log, middlewares) sees the true
+// client without any application-layer changes.
+type ProxyProtocolConfig struct {
+	// TrustedCidrs restricts which source IPs are allowed to send PROXY
+	// protocol headers. Connections from IPs outside these ranges are
+	// rejected if they send a PP header, or accepted as plain TCP if they
+	// don't (depending on the policy).
+	// Required — without trusted CIDRs any client could spoof its IP.
+	// Example: ["10.0.0.0/8", "172.16.0.0/12"]
+	TrustedCidrs []string `json:"trustedCidrs" yaml:"trustedCidrs"`
 }

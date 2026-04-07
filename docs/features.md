@@ -89,6 +89,7 @@ With TLS:
 | `metrics`             | object | Prometheus metrics config        |
 | `timeouts`            | object | Client connection timeouts       |
 | `clientIp`            | object | Client IP resolution config      |
+| `proxyProtocol`       | object | PROXY protocol v1/v2 support     |
 
 ### Listener Timeouts
 

@@ -202,5 +202,11 @@ func validateListener(l model.Listener) error {
 		}
 	}
 
+	if l.ProxyProtocol != nil {
+		if len(l.ProxyProtocol.TrustedCidrs) == 0 {
+			return fmt.Errorf("proxyProtocol.trustedCidrs is required when proxyProtocol is configured")
+		}
+	}
+
 	return nil
 }

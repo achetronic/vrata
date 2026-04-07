@@ -134,6 +134,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | mTLS client auth (none/optional/require + CA verification)     | 100%   | Unit (6)   |
 | XFCC header injection (strip + inject from client cert URIs)   | 100%   | Unit (8)   |
 | Client IP resolution (direct/xff/header, hot-swap on listener) | 100%  | Unit (20) + E2E (7) |
+| PROXY protocol v1/v2 (trusted CIDRs, USE/IGNORE policy)       | 100%  | Unit (7) + E2E (2)  |
 
 ## Timeouts
 

@@ -1454,3 +1454,65 @@ legacy behaviour (XFF leftmost or RemoteAddr).
 matching. Do not make `sameListener()` compare `ClientIP` — config changes
 must not restart the listener. Do not remove the rate limiter's own
 `trustedProxies` — per-middleware trust config is intentional.
+
+---
+
+## PROXY protocol support on Listener
+
+**Date**: 2026-03-31
+**Status**: Implemented
+
+`Listener.ProxyProtocol` enables PROXY protocol (v1 text and v2 binary)
+parsing on a listener. When enabled, Vrata reads the PROXY protocol header
+from the first bytes of each TCP connection to extract the real client
+address injected by the upstream load balancer.
+
+### Configuration
+
+```yaml
+listener:
+  proxyProtocol:
+    trustedCidrs: ["10.0.0.0/8", "172.16.0.0/12"]
+```
+
+`trustedCidrs` is **required** — without it, any client could send a PROXY
+protocol header and spoof its IP. The trust policy works as follows:
+
+- Connection from a trusted CIDR with PP header → **USE** (parse and apply)
+- Connection from a trusted CIDR without PP header → **USE** (wait for header)
+- Connection from an untrusted CIDR → **IGNORE** (treat as plain TCP)
+
+This means untrusted clients can still connect normally — they just cannot
+inject a PROXY protocol header to spoof their address.
+
+### Listener restart required
+
+Unlike `clientIp` (which is hot-swappable), changing `proxyProtocol`
+triggers a listener restart because it operates at the TCP transport layer.
+The PROXY protocol wrapper goes on the `net.Listener` — there is no way to
+swap it without closing the socket. `sameListener()` compares
+`ProxyProtocol` and returns false on any change.
+
+### Integration with clientIp
+
+PROXY protocol rewrites `r.RemoteAddr` to the real client IP at the TCP
+level. The `clientIp` resolver (if configured) then runs on top of the
+rewritten `RemoteAddr`. This means:
+
+- `proxyProtocol` + `clientIp.source: "direct"` → `r.RemoteAddr` is the
+  real client (from PP), and "direct" uses it as-is. Correct.
+- `proxyProtocol` + `clientIp.source: "xff"` → `r.RemoteAddr` is the real
+  client (from PP), and XFF is walked from that starting point. Also correct
+  for multi-layer proxy setups (LB → CDN → Vrata).
+
+### Implementation
+
+Uses `github.com/pires/go-proxyproto` which wraps `net.Listener` and
+transparently rewrites `net.Conn.RemoteAddr()`. The wrapper is applied
+in `startListener` before the `connTrackingListener` (metrics) and before
+`srv.Serve()`.
+
+**Do not**: make PROXY protocol hot-swappable — it is a TCP-level concern
+that requires socket re-bind. Do not allow `proxyProtocol` without
+`trustedCidrs` — this would be an open spoofing vector. Do not implement
+custom PP parsing — `go-proxyproto` handles v1/v2 correctly.

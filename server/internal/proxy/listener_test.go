@@ -61,6 +61,97 @@ func TestSameListener_TimeoutNilToSet(t *testing.T) {
 	}
 }
 
+func TestSameProxyProtocol_BothNil(t *testing.T) {
+	if !sameProxyProtocol(nil, nil) {
+		t.Error("nil == nil should be true")
+	}
+}
+
+func TestSameProxyProtocol_OneNil(t *testing.T) {
+	a := &model.ProxyProtocolConfig{TrustedCidrs: []string{"10.0.0.0/8"}}
+	if sameProxyProtocol(a, nil) {
+		t.Error("non-nil != nil")
+	}
+	if sameProxyProtocol(nil, a) {
+		t.Error("nil != non-nil")
+	}
+}
+
+func TestSameProxyProtocol_Equal(t *testing.T) {
+	a := &model.ProxyProtocolConfig{TrustedCidrs: []string{"10.0.0.0/8", "172.16.0.0/12"}}
+	b := &model.ProxyProtocolConfig{TrustedCidrs: []string{"10.0.0.0/8", "172.16.0.0/12"}}
+	if !sameProxyProtocol(a, b) {
+		t.Error("identical configs should be equal")
+	}
+}
+
+func TestSameProxyProtocol_Different(t *testing.T) {
+	a := &model.ProxyProtocolConfig{TrustedCidrs: []string{"10.0.0.0/8"}}
+	b := &model.ProxyProtocolConfig{TrustedCidrs: []string{"172.16.0.0/12"}}
+	if sameProxyProtocol(a, b) {
+		t.Error("different cidrs should not be equal")
+	}
+}
+
+func TestSameListener_ProxyProtocolChange(t *testing.T) {
+	a := model.Listener{Port: 80}
+	b := model.Listener{Port: 80, ProxyProtocol: &model.ProxyProtocolConfig{
+		TrustedCidrs: []string{"10.0.0.0/8"},
+	}}
+	if sameListener(a, b) {
+		t.Error("adding proxyProtocol should trigger restart")
+	}
+}
+
+func TestSameListener_ProxyProtocolCidrChange(t *testing.T) {
+	a := model.Listener{Port: 80, ProxyProtocol: &model.ProxyProtocolConfig{
+		TrustedCidrs: []string{"10.0.0.0/8"},
+	}}
+	b := model.Listener{Port: 80, ProxyProtocol: &model.ProxyProtocolConfig{
+		TrustedCidrs: []string{"10.0.0.0/8", "172.16.0.0/12"},
+	}}
+	if sameListener(a, b) {
+		t.Error("changing proxyProtocol cidrs should trigger restart")
+	}
+}
+
+func TestSameListener_ClientIPChangeNoRestart(t *testing.T) {
+	a := model.Listener{Port: 80, ClientIP: &model.ClientIPConfig{
+		Source: model.ClientIPSourceDirect,
+	}}
+	b := model.Listener{Port: 80, ClientIP: &model.ClientIPConfig{
+		Source:       model.ClientIPSourceXFF,
+		TrustedCidrs: []string{"10.0.0.0/8"},
+	}}
+	if !sameListener(a, b) {
+		t.Error("changing clientIp should NOT trigger restart")
+	}
+}
+
+func TestSameListener_ServerNameChangeNoRestart(t *testing.T) {
+	a := model.Listener{Port: 80, ServerName: "vrata"}
+	b := model.Listener{Port: 80, ServerName: "vrata-v2"}
+	if !sameListener(a, b) {
+		t.Error("changing serverName should NOT trigger restart")
+	}
+}
+
+func TestSameListener_MaxHeadersChangeNoRestart(t *testing.T) {
+	a := model.Listener{Port: 80, MaxRequestHeadersKB: 64}
+	b := model.Listener{Port: 80, MaxRequestHeadersKB: 128}
+	if !sameListener(a, b) {
+		t.Error("changing maxRequestHeadersKB should NOT trigger restart")
+	}
+}
+
+func TestSameListener_ProxyErrorsChangeNoRestart(t *testing.T) {
+	a := model.Listener{Port: 80, ProxyErrors: &model.ProxyErrors{Detail: model.ProxyErrorDetailMinimal}}
+	b := model.Listener{Port: 80, ProxyErrors: &model.ProxyErrors{Detail: model.ProxyErrorDetailFull}}
+	if !sameListener(a, b) {
+		t.Error("changing proxyErrors.detail should NOT trigger restart")
+	}
+}
+
 func TestConnTrackingListener_RecordsMetrics(t *testing.T) {
 	cfg := &model.ListenerMetrics{Path: "/metrics"}
 	mc := NewMetricsCollector(cfg)

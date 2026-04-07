@@ -18,6 +18,8 @@ import (
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 
+	proxyproto "github.com/pires/go-proxyproto"
+
 	"github.com/achetronic/vrata/internal/model"
 	"github.com/achetronic/vrata/internal/proxy/celeval"
 )
@@ -58,24 +60,27 @@ func NewListenerManager(router *Router, logger *slog.Logger) *ListenerManager {
 
 // requestPreProcessor transforms an incoming request before the router sees
 // it. It runs inside the listener handler (before route matching) and can
-// store data in the request context. Pre-processors are hot-swappable via
-// an atomic pointer — changing the configuration does not restart the
-// listener.
-//
-// Current pre-processors:
-//   - Client IP resolution (clientIp on Listener)
-//
-// Future candidates (add here when implemented):
-//   - Request ID injection
-//   - Trusted proxy header stripping
+// inject context values, set response headers, or reject requests. Pre-
+// processors are hot-swappable via an atomic pointer — changing the
+// configuration does not restart the listener.
 type requestPreProcessor struct {
-	clientIPResolver clientIPResolver
+	clientIPResolver   clientIPResolver
+	serverName         string
+	maxHeaderBytes     int
+	proxyErrorDetail   model.ProxyErrorDetail
 }
 
 // buildPreProcessor creates a pre-processor from the listener config.
 func buildPreProcessor(l model.Listener) *requestPreProcessor {
+	var maxHdr int
+	if l.MaxRequestHeadersKB > 0 {
+		maxHdr = int(l.MaxRequestHeadersKB) * 1024
+	}
 	return &requestPreProcessor{
 		clientIPResolver: BuildClientIPResolver(l.ClientIP),
+		serverName:       l.ServerName,
+		maxHeaderBytes:   maxHdr,
+		proxyErrorDetail: l.ProxyErrors.ResolvedDetail(),
 	}
 }
 
@@ -207,40 +212,6 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 		}
 	}
 
-	// Server name via response header middleware.
-	if l.ServerName != "" || l.MaxRequestHeadersKB > 0 {
-		original := srv.Handler
-		srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if l.ServerName != "" {
-				w.Header().Set("Server", l.ServerName)
-			}
-			if l.MaxRequestHeadersKB > 0 {
-				// Check total header size (approximate).
-				totalSize := 0
-				for k, values := range r.Header {
-					for _, v := range values {
-						totalSize += len(k) + len(v)
-					}
-				}
-				if totalSize > int(l.MaxRequestHeadersKB)*1024 {
-					writeProxyError(w, r, &ProxyError{Type: model.ProxyErrRequestHeadersTooLarge, Status: http.StatusRequestHeaderFieldsTooLarge, Message: "request headers too large"})
-					return
-				}
-			}
-			original.ServeHTTP(w, r)
-		})
-	}
-
-	// Inject proxy error detail level into request context.
-	{
-		detail := l.ProxyErrors.ResolvedDetail()
-		original := srv.Handler
-		srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := withProxyErrorDetail(r.Context(), detail)
-			original.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-
 	// Metrics collector.
 	var mc *MetricsCollector
 	if l.Metrics != nil {
@@ -305,19 +276,45 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 	// outermost layer (except h2c which wraps at the transport level).
 	// Because it reads from an atomic pointer, updating the pre-processor
 	// in Reconcile takes effect immediately without restarting the listener.
+	//
+	// Hot-swappable fields: clientIp, serverName, maxRequestHeadersKB,
+	// proxyErrors.detail.
 	{
 		original := srv.Handler
 		srv.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if current := ms.preProcessor.Load(); current != nil {
-				if current.clientIPResolver != nil {
-					r = r.WithContext(context.WithValue(
-						r.Context(),
-						celeval.ClientIPCtxKey{},
-						current.clientIPResolver(r),
-					))
+			current := ms.preProcessor.Load()
+			if current == nil {
+				original.ServeHTTP(w, r)
+				return
+			}
+
+			if current.clientIPResolver != nil {
+				r = r.WithContext(context.WithValue(
+					r.Context(),
+					celeval.ClientIPCtxKey{},
+					current.clientIPResolver(r),
+				))
+			}
+
+			if current.serverName != "" {
+				w.Header().Set("Server", current.serverName)
+			}
+
+			if current.maxHeaderBytes > 0 {
+				totalSize := 0
+				for k, values := range r.Header {
+					for _, v := range values {
+						totalSize += len(k) + len(v)
+					}
+				}
+				if totalSize > current.maxHeaderBytes {
+					writeProxyError(w, r, &ProxyError{Type: model.ProxyErrRequestHeadersTooLarge, Status: http.StatusRequestHeaderFieldsTooLarge, Message: "request headers too large"})
+					return
 				}
 			}
-			original.ServeHTTP(w, r)
+
+			ctx := withProxyErrorDetail(r.Context(), current.proxyErrorDetail)
+			original.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 
@@ -331,6 +328,33 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 				slog.String("error", err.Error()),
 			)
 			return
+		}
+
+		if l.ProxyProtocol != nil {
+			ppLn := &proxyproto.Listener{Listener: ln}
+			if len(l.ProxyProtocol.TrustedCidrs) > 0 {
+				nets := parseProxyProtocolCIDRs(l.ProxyProtocol.TrustedCidrs)
+				ppLn.Policy = func(upstream net.Addr) (proxyproto.Policy, error) {
+					host, _, err := net.SplitHostPort(upstream.String())
+					if err != nil {
+						return proxyproto.REJECT, nil
+					}
+					ip := net.ParseIP(host)
+					if ip == nil {
+						return proxyproto.REJECT, nil
+					}
+					for _, n := range nets {
+						if n.Contains(ip) {
+							return proxyproto.USE, nil
+						}
+					}
+					return proxyproto.IGNORE, nil
+				}
+			}
+			ln = ppLn
+			lm.logger.Info("proxy: PROXY protocol enabled",
+				slog.String("id", l.ID),
+			)
 		}
 
 		if mc != nil {
@@ -397,11 +421,12 @@ func (lm *ListenerManager) Shutdown() {
 	}
 }
 
-// sameListener checks if two listener configs are identical (no restart needed).
+// sameListener checks if two listener configs require the same http.Server.
+// Fields that are hot-swappable via the pre-processor (clientIp, serverName,
+// maxRequestHeadersKB, proxyErrors) are intentionally excluded — they are
+// updated atomically without restarting the listener.
 func sameListener(a, b model.Listener) bool {
-	if a.Address != b.Address || a.Port != b.Port ||
-		a.ServerName != b.ServerName || a.HTTP2 != b.HTTP2 ||
-		a.MaxRequestHeadersKB != b.MaxRequestHeadersKB {
+	if a.Address != b.Address || a.Port != b.Port || a.HTTP2 != b.HTTP2 {
 		return false
 	}
 	if !sameTLS(a.TLS, b.TLS) {
@@ -410,7 +435,7 @@ func sameListener(a, b model.Listener) bool {
 	if !sameTimeouts(a.Timeouts, b.Timeouts) {
 		return false
 	}
-	if a.ProxyErrors.ResolvedDetail() != b.ProxyErrors.ResolvedDetail() {
+	if !sameProxyProtocol(a.ProxyProtocol, b.ProxyProtocol) {
 		return false
 	}
 	return sameMetrics(a.Metrics, b.Metrics)
@@ -580,4 +605,45 @@ func (tc *trackedConn) Close() error {
 		tc.cl.mc.ListenerActiveDec(tc.cl.listenerName, tc.cl.address)
 	}
 	return tc.Conn.Close()
+}
+
+// sameProxyProtocol compares two PROXY protocol configs for equality.
+// A change triggers listener restart.
+func sameProxyProtocol(a, b *model.ProxyProtocolConfig) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return sameStringSlice(a.TrustedCidrs, b.TrustedCidrs)
+}
+
+func sameStringSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// parseProxyProtocolCIDRs parses CIDR strings for PROXY protocol trust policy.
+func parseProxyProtocolCIDRs(cidrs []string) []*net.IPNet {
+	var nets []*net.IPNet
+	for _, cidr := range cidrs {
+		_, n, err := net.ParseCIDR(cidr)
+		if err != nil {
+			slog.Warn("proxyProtocol: invalid trustedCidr, skipping",
+				slog.String("cidr", cidr),
+				slog.String("error", err.Error()),
+			)
+			continue
+		}
+		nets = append(nets, n)
+	}
+	return nets
 }

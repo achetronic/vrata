@@ -114,6 +114,7 @@ make deps           # Install dev tools
 | `github.com/google/cel-go`            | CEL expressions              |
 | `github.com/prometheus/client_golang` | Metrics                      |
 | `github.com/felixge/httpsnoop`        | ResponseWriter interception  |
+| `github.com/pires/go-proxyproto`     | PROXY protocol v1/v2 parsing |
 | `github.com/redis/go-redis/v9`        | Sticky sessions              |
 | `github.com/swaggo/swag/v2`           | OpenAPI spec generation      |
 | `sigs.k8s.io/controller-runtime`      | Controller informers + cache |
