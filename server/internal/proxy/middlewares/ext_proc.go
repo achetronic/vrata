@@ -292,10 +292,12 @@ func (ep *extProc) onError(w http.ResponseWriter) bool {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(ep.statusOnError)
-	json.NewEncoder(w).Encode(map[string]any{
+	if err := json.NewEncoder(w).Encode(map[string]any{
 		"error":  "ext_proc_error",
 		"status": ep.statusOnError,
-	})
+	}); err != nil {
+		slog.Warn("ext_proc: failed to write error response", slog.String("error", err.Error()))
+	}
 	return false
 }
 

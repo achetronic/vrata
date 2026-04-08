@@ -1134,6 +1134,7 @@ both configured in `config.yaml` via `os.ExpandEnv`:
 struct shape on both sides: `cert`, `key`, `ca`, and `clientAuth` (server only).
 
 `clientAuth` modes:
+
 - `none` (default) — TLS only, no client certs.
 - `optional` — request client cert, allow without. Mixed clients (proxies
   with certs + operators without).
@@ -1156,15 +1157,16 @@ key can do) is not implemented — it may be added later if needed.
 
 ### Three deployment modes (config-driven, no code changes)
 
-| Mode | CP config | Proxy config | Security |
-| --- | --- | --- | --- |
-| Dev local | no `tls`, no `auth` | `http://` URL | None |
-| TLS + API key | `tls` (cert+key), `auth` | `tls` (ca), `apiKey` | Encrypted + identified |
+| Mode                | CP config                               | Proxy config                  | Security                                |
+| ------------------- | --------------------------------------- | ----------------------------- | --------------------------------------- |
+| Dev local           | no `tls`, no `auth`                     | `http://` URL                 | None                                    |
+| TLS + API key       | `tls` (cert+key), `auth`                | `tls` (ca), `apiKey`          | Encrypted + identified                  |
 | Full mTLS + API key | `tls` (cert+key+ca, clientAuth), `auth` | `tls` (cert+key+ca), `apiKey` | Encrypted + transport-auth + identified |
 
 ### Helm chart TLS options
 
 Three cert provisioning modes in `values.yaml`:
+
 - **cert-manager**: full chain (SelfSigned Issuer → CA cert → CA Issuer →
   three leaf certs: server, proxy, controller). Each with dedicated
   `extendedKeyUsage` (serverAuth vs clientAuth).
@@ -1200,6 +1202,7 @@ keys, tokens — and are referenced in any string field of any entity via
 the `{{secret:<source>:<ref>}}` pattern.
 
 Three sources, all resolved by the control plane at snapshot build time:
+
 - `{{secret:value:<id>}}` — looks up the Secret by ID in the store
 - `{{secret:env:<var>}}` — reads `os.Getenv(var)` on the CP
 - `{{secret:file:<path>}}` — reads `os.ReadFile(path)` on the CP
@@ -1210,6 +1213,7 @@ replacement on the serialized JSON. If any reference fails to resolve,
 the entire snapshot creation fails with a clear error.
 
 Model field renames (breaking API change):
+
 - `ListenerTLS.CertPath` → `Cert`, `KeyPath` → `Key` (JSON: `cert`, `key`)
 - `ListenerClientAuth.CAFile` → `CA` (JSON: `ca`)
 - `TLSOptions.CertFile` → `Cert`, `KeyFile` → `Key`, `CAFile` → `CA`
@@ -1249,6 +1253,7 @@ Secrets and snapshots in bbolt are encrypted with AES-256-GCM when
 
 On startup, the store checks a marker in the `meta` bucket (`encrypted:
 "true"`) and compares with the config:
+
 - No key + plaintext data → dev mode, operates normally.
 - No key + encrypted data → error, exit.
 - Key + encrypted data → production mode, operates normally.
@@ -1372,6 +1377,7 @@ prevent the rest from being compiled. The broken entity is skipped with a
 visible `slog.Error`, and the routing table is built with everything else.
 
 This applies to:
+
 - `NewDestinationPool` errors → destination skipped
 - `compileRoute` errors → route skipped
 - Middleware build errors → middleware skipped (passthrough)
@@ -1406,11 +1412,11 @@ A `clientIp` field on the `Listener` entity that resolves the real client IP
 and stores it in the request context **before** route matching. Three
 resolution strategies:
 
-| `source` | Behaviour |
-|---|---|
-| `direct` | Always `r.RemoteAddr`. Ignores XFF. Safest when no reverse proxy sits in front. |
-| `xff` | Walks X-Forwarded-For from right to left, skipping trusted entries. Two modes: `trustedCidrs` (skip entries matching CIDRs) or `numTrustedHops` (skip N entries from the right). Mutually exclusive. When neither is set, uses the leftmost entry (legacy unsafe behaviour). |
-| `header` | Reads a single named header (`X-Real-IP`, `CF-Connecting-IP`, etc.). Falls back to `r.RemoteAddr` if absent. |
+| `source` | Behaviour                                                                                                                                                                                                                                                                    |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `direct` | Always `r.RemoteAddr`. Ignores XFF. Safest when no reverse proxy sits in front.                                                                                                                                                                                              |
+| `xff`    | Walks X-Forwarded-For from right to left, skipping trusted entries. Two modes: `trustedCidrs` (skip entries matching CIDRs) or `numTrustedHops` (skip N entries from the right). Mutually exclusive. When neither is set, uses the leftmost entry (legacy unsafe behaviour). |
+| `header` | Reads a single named header (`X-Real-IP`, `CF-Connecting-IP`, etc.). Falls back to `r.RemoteAddr` if absent.                                                                                                                                                                 |
 
 ### Listener with hot-swap, not middleware
 

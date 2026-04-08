@@ -127,7 +127,7 @@ func (p *Program) Eval(r *http.Request) bool {
 
 	out, _, err := p.program.Eval(vars)
 	if err != nil {
-		slog.Debug("CEL eval error in request match", "error", err)
+		slog.Warn("CEL eval error in request match", "error", err)
 		return false
 	}
 
@@ -173,7 +173,7 @@ func (p *ClaimsProgram) Eval(claims map[string]any) bool {
 
 	out, _, err := p.program.Eval(vars)
 	if err != nil {
-		slog.Debug("CEL eval error in claims assertion", "error", err)
+		slog.Warn("CEL eval error in claims assertion", "error", err)
 		return false
 	}
 
@@ -217,7 +217,7 @@ func (p *ClaimsStringProgram) Eval(claims map[string]any) string {
 
 	out, _, err := p.program.Eval(vars)
 	if err != nil {
-		slog.Debug("CEL eval error in claims string extraction", "error", err)
+		slog.Warn("CEL eval error in claims string extraction", "error", err)
 		return ""
 	}
 

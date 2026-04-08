@@ -233,6 +233,7 @@ Only Gateways referencing a matching `gatewayClassName` (default: `"vrata"`,
 configurable via `watch.gatewayClassName`) are reconciled.
 
 The controller writes status conditions on Gateways:
+
 - `Accepted` + `Programmed` at the Gateway level
 - `Accepted` + `Programmed` per listener
 - Unsupported protocols (`TCP`, `UDP`) produce `Accepted: False` with
