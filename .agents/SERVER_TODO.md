@@ -16,7 +16,7 @@ These features are conceptually large and have been deferred to avoid major arch
 ### Hardening
 - [ ] **Proxy mode has no admin HTTP server** — no readiness/liveness endpoint for load balancers. A health endpoint on a configurable admin port would be useful.
 - [ ] **No readiness gate on control plane startup** — the REST API starts listening before the gateway completes its first rebuild. Clients could hit the API before the routing table is populated.
-- [ ] **`HandleUpdateSecret` missing input validation** — PUT with `{"name":"","value":""}` succeeds. The Create handler validates but Update does not. Should return 400.
+- [x] **`HandleUpdateSecret` missing input validation** — Fixed: added name/value validation to `HandleUpdateSecret`, matching `HandleCreateSecret` checks.
 - [ ] **Memory store `publish()` under lock** — `publish()` called while holding `s.mu.Lock()`. Potential deadlock if a subscriber synchronously calls a read method.
 - [ ] **K8s watcher `buildEndpoints` first-port bias** — Always takes the first port from an EndpointSlice, ignoring `destPort` matching for multi-port Services.
 - [ ] **Raft write-forwarding has no retry** — Single HTTP call to leader; fails without retry on leader election change.

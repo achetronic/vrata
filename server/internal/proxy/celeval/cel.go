@@ -224,6 +224,9 @@ func (p *ClaimsStringProgram) Eval(claims map[string]any) string {
 	if out.Value() == nil {
 		return ""
 	}
+	if out.Type() == cel.NullType {
+		return ""
+	}
 	return fmt.Sprintf("%v", out.Value())
 }
 
@@ -287,12 +290,8 @@ func BufferBody(r *http.Request, maxSize int) (*http.Request, *BodyData) {
 			}
 			data.Raw = string(celRaw)
 
-			remainder, _ := io.ReadAll(r.Body)
-			if len(remainder) > 0 {
-				full := make([]byte, len(raw)+len(remainder))
-				copy(full, raw)
-				copy(full[len(raw):], remainder)
-				r.Body = io.NopCloser(bytes.NewReader(full))
+			if len(raw) > maxSize {
+				r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(raw), r.Body))
 			} else {
 				r.Body = io.NopCloser(bytes.NewReader(raw))
 			}

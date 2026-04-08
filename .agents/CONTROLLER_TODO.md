@@ -18,6 +18,11 @@ These features are conceptually large and have been deferred to avoid major arch
 
 ## Done
 
+### Audit 7 findings (2026-03-31)
+- [x] **SuperHTTPRoute status never written** — Fixed: `reconcileHTTPRoute` now tracks the `*SuperHTTPRoute` object alongside `*HTTPRoute` and calls `SetSuperHTTPRouteAccepted`/`SetSuperHTTPRouteResolvedRefs` at all status-writing points.
+- [x] **SuperHTTPRoute ReferenceGrant skipped** — Fixed: ReferenceGrant enforcement is now applied to both HTTPRoute and SuperHTTPRoute paths. The check was moved outside the `else` branch.
+- [x] **Bare `slog.Warn()` in GRPCRoute path** — Fixed: replaced with injected `logger.Warn()`.
+
 ### Gateway API gaps
 - [x] **TLS gap / Gateway TLS certificateRefs** — Implemented. Gateway listener status now populates `tls` configuration using Vrata secrets resolution.
 - [x] **Gateway addresses** — Implemented. Status writer now adds a placeholder `127.0.0.1` address to `GatewayStatus.Addresses` to satisfy conformance.

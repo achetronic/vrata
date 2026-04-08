@@ -127,6 +127,15 @@ func (d *Dependencies) HandleUpdateSecret(w http.ResponseWriter, r *http.Request
 	}
 	sec.ID = secretID
 
+	if sec.Name == "" {
+		respond.Error(w, http.StatusBadRequest, "name is required", d.Logger)
+		return
+	}
+	if sec.Value == "" {
+		respond.Error(w, http.StatusBadRequest, "value is required", d.Logger)
+		return
+	}
+
 	if _, err := d.Store.GetSecret(r.Context(), secretID); err != nil {
 		if errors.Is(err, model.ErrNotFound) {
 			respond.Error(w, http.StatusNotFound, "secret not found", d.Logger)

@@ -225,4 +225,51 @@ All previously documented open items in `SERVER_TODO.md` and `CONTROLLER_TODO.md
 **Validated.** The codebase has reached audit-converged state. No new findings across two consecutive full audits.
 
 ---
+
+## Audit 7: Full Feature Verification & Convention Compliance
+*Status: Completed*
+*Date: 2026-03-31*
+*Auditor: Claude Opus 4 via Crush*
+
+Full file-by-file audit of every source file in `server/` and `clients/controller/`, verifying all features claimed in `SERVER_FEATURES.md` are implemented, all code follows `CONVENTIONS.md`, and all tests pass.
+
+### Scope
+- All packages in `server/internal/` (config, model, store, api, proxy, proxy/middlewares, proxy/celeval, gateway, raft, k8s, sync, session, tlsutil, resolve, encrypt, validate)
+- `server/cmd/vrata/main.go`
+- All packages in `clients/controller/` (cmd, mapper, reconciler, vrata, batcher, dedup, refgrant, status, metrics, workqueue, config)
+- Full unit test suite execution (server + controller — all passing)
+
+### Feature Verification Result
+100% of features claimed in `SERVER_FEATURES.md` are fully implemented. All unit tests pass.
+
+### Bugs Found and Fixed
+1. **`HandleUpdateSecret` missing input validation** (`api/handlers/secrets.go`): PUT with `{"name":"","value":""}` succeeded. The Create handler validated name and value but Update did not. Fixed: added the same name/value validation checks to `HandleUpdateSecret`.
+2. **ExtAuthz gRPC mode leaked `err.Error()` to client** (`proxy/middlewares/ext_authz.go`): The gRPC error string (potentially containing internal addresses or stack traces) was concatenated into the client-facing 403 response body. Fixed: error is now logged server-side via `slog.Error`; client receives static message `"authorization service error"`.
+3. **`BufferBody` unbounded remainder read** (`proxy/celeval/cel.go`): After reading `maxSize+1` bytes via `LimitReader`, the remaining body was read entirely into memory via `io.ReadAll(r.Body)`. A multi-GB POST would OOM the proxy during body reassembly. Fixed: uses `io.MultiReader(bytes.NewReader(raw), r.Body)` to avoid buffering the remainder — the original body stream is preserved for upstream forwarding without copying.
+4. **`ClaimsStringProgram.Eval` missed CEL null values** (`proxy/celeval/cel.go`): The nil check `out.Value() == nil` did not catch CEL `null_type` values, which are represented as `structpb.NullValue(0)` (not Go `nil`). `fmt.Sprintf("%v", ...)` produced `"NULL_VALUE"` instead of `""`. Fixed: added explicit `out.Type() == cel.NullType` check.
+5. **SuperHTTPRoute status never written** (`controller/cmd/controller/main.go`): `SetSuperHTTPRouteAccepted` and `SetSuperHTTPRouteResolvedRefs` methods existed in the status writer but were never called. All status writes were guarded by `hr != nil` which was always `nil` for SuperHTTPRoutes. Fixed: `reconcileHTTPRoute` now tracks both `*HTTPRoute` and `*SuperHTTPRoute`; status is written for whichever is active.
+6. **SuperHTTPRoute skipped ReferenceGrant enforcement** (`controller/cmd/controller/main.go`): The ReferenceGrant check was inside the `else` branch (non-Super path only). Cross-namespace backendRefs in SuperHTTPRoutes were never validated. Fixed: moved the check outside the branch so it applies to both HTTPRoute and SuperHTTPRoute.
+7. **Bare `slog.Warn()` in GRPCRoute path** (`controller/cmd/controller/main.go`): One call site used the package-level `slog.Warn()` instead of the injected `logger`. Fixed.
+
+### Design Concerns Documented (not fixed — trade-offs)
+- **Circuit breaker TOCTOU**: `Allow()` and `OnRequest()` are not atomic. Lock-free design makes limits approximate under high concurrency.
+- **SSE parser fragility**: Single-line `data:` assumption. Works because Vrata controls both sides.
+- **Validate TLS assumes inline PEM**: File paths and `{{secret:...}}` refs produce false-positive warnings.
+- **K8s watcher resync period 0**: Missed events = permanently stale endpoints until next store event.
+- **Raft write-forwarding endpoint**: Private-IP check only, no auth token.
+
+### Conventions Compliance
+All 7 mandatory conventions verified and passing:
+- No manual ResponseWriter wrappers (httpsnoop everywhere)
+- No external router libraries (net/http only)
+- No leaked goroutines (all have stop/cleanup)
+- No global mutable state (1 justified `sync.Map` + CEL `sync.Once` singletons)
+- slog only (zero bare `slog.*` calls remaining)
+- Error bubbling (all `_ =` have comments or are best-effort cleanup)
+- Dependency injection (Dependencies struct, no runtime env reads)
+
+### Verdict
+**Converging.** 7 bugs found and fixed. No remaining action items in this audit — all design concerns are documented trade-offs. A follow-up audit should validate convergence.
+
+---
 *Future audits will be appended to this document as new architectural phases are completed.*

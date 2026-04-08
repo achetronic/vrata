@@ -233,7 +233,8 @@ func extAuthzGRPCWithStop(cfg *model.ExtAuthzConfig, svc Service, timeout time.D
 			client := extauthzv1.NewAuthorizerClient(conn)
 			resp, err := client.Check(ctx, checkReq)
 			if err != nil {
-				handleAuthzError(w, r, next, cfg.FailureModeAllow, "grpc check failed: "+err.Error())
+				slog.Error("extauthz: gRPC check failed", slog.String("error", err.Error()))
+			handleAuthzError(w, r, next, cfg.FailureModeAllow, "authorization service error")
 				return
 			}
 

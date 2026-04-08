@@ -688,13 +688,17 @@ func reconcileSingleRoute(ctx context.Context, c cache.Cache, rec *reconciler.Re
 func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reconciler, bat *batcher.Batcher, sw *status.Writer, detector *dedup.Detector, dupMode config.DuplicateMode, rgc *refgrant.Checker, m *kcmetrics.Metrics, logger *slog.Logger, ref *workqueue.RouteRef, groupName string) (int, string, error) {
 	var input mapper.HTTPRouteInput
 	var hr *gwapiv1.HTTPRoute
+	var shr *vrataapiv1.SuperHTTPRoute
+	var routeNamespace string
 
 	if ref.Super {
-		var shr vrataapiv1.SuperHTTPRoute
-		if err := c.Get(ctx, runtimeclient.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, &shr); err != nil {
+		var fetched vrataapiv1.SuperHTTPRoute
+		if err := c.Get(ctx, runtimeclient.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, &fetched); err != nil {
 			return 0, groupName, fmt.Errorf("getting SuperHTTPRoute %s/%s: %w", ref.Namespace, ref.Name, err)
 		}
-		input = superHTTPRouteToInput(&shr)
+		shr = &fetched
+		input = superHTTPRouteToInput(shr)
+		routeNamespace = shr.Namespace
 	} else {
 		var fetched gwapiv1.HTTPRoute
 		if err := c.Get(ctx, runtimeclient.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, &fetched); err != nil {
@@ -702,44 +706,51 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 		}
 		hr = &fetched
 		input = gatewayHTTPRouteToInput(hr)
+		routeNamespace = hr.Namespace
+	}
 
-		if rgc != nil {
-			denied := false
-			for _, rule := range input.Rules {
-				for _, br := range rule.BackendRefs {
-					if br.ServiceNamespace != hr.Namespace {
-						allowed, err := rgc.AllowedBackendRef(ctx, hr.Namespace, br.ServiceNamespace, br.ServiceName)
-						if err != nil {
-							logger.Error("checking ReferenceGrant",
-								slog.String("namespace", hr.Namespace),
-								slog.String("name", hr.Name),
-								slog.String("error", err.Error()),
-							)
+	if rgc != nil {
+		denied := false
+		for _, rule := range input.Rules {
+			for _, br := range rule.BackendRefs {
+				if br.ServiceNamespace != routeNamespace {
+					allowed, err := rgc.AllowedBackendRef(ctx, routeNamespace, br.ServiceNamespace, br.ServiceName)
+					if err != nil {
+						logger.Error("checking ReferenceGrant",
+							slog.String("namespace", routeNamespace),
+							slog.String("name", ref.Name),
+							slog.String("error", err.Error()),
+						)
+					}
+					if !allowed {
+						denied = true
+						if m != nil {
+							m.RefGrantDenied.Inc()
 						}
-						if !allowed {
-							denied = true
-							if m != nil {
-								m.RefGrantDenied.Inc()
-							}
-							if sw != nil {
-								if err := sw.SetResolvedRefs(ctx, hr, false, fmt.Sprintf(
-									"cross-namespace backendRef %s/%s denied: no matching ReferenceGrant",
-									br.ServiceNamespace, br.ServiceName,
-								)); err != nil {
-									slog.Warn("failed to write ResolvedRefs status", slog.String("error", err.Error()))
+						if sw != nil {
+							msg := fmt.Sprintf("cross-namespace backendRef %s/%s denied: no matching ReferenceGrant",
+								br.ServiceNamespace, br.ServiceName)
+							if hr != nil {
+								if err := sw.SetResolvedRefs(ctx, hr, false, msg); err != nil {
+									logger.Warn("failed to write ResolvedRefs status", slog.String("error", err.Error()))
 								}
 							}
-							break
+							if shr != nil {
+								if err := sw.SetSuperHTTPRouteResolvedRefs(ctx, shr, false, msg); err != nil {
+									logger.Warn("failed to write SuperHTTPRoute ResolvedRefs status", slog.String("error", err.Error()))
+								}
+							}
 						}
+						break
 					}
-				}
-				if denied {
-					break
 				}
 			}
 			if denied {
-				return 0, groupName, nil
+				break
 			}
+		}
+		if denied {
+			return 0, groupName, nil
 		}
 	}
 
@@ -761,7 +772,12 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 				)
 				if sw != nil && hr != nil {
 					if err := sw.SetAccepted(ctx, hr, false, "OverlappingRoute", msg); err != nil {
-						slog.Warn("failed to write Accepted status", slog.String("error", err.Error()))
+						logger.Warn("failed to write Accepted status", slog.String("error", err.Error()))
+					}
+				}
+				if sw != nil && shr != nil {
+					if err := sw.SetSuperHTTPRouteAccepted(ctx, shr, false, "OverlappingRoute", msg); err != nil {
+						logger.Warn("failed to write SuperHTTPRoute Accepted status", slog.String("error", err.Error()))
 					}
 				}
 				return 0, groupName, nil
@@ -774,7 +790,12 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 	if err != nil {
 		if sw != nil && hr != nil {
 			if sErr := sw.SetAccepted(ctx, hr, false, "SyncFailed", err.Error()); sErr != nil {
-				slog.Warn("failed to write Accepted status", slog.String("error", sErr.Error()))
+				logger.Warn("failed to write Accepted status", slog.String("error", sErr.Error()))
+			}
+		}
+		if sw != nil && shr != nil {
+			if sErr := sw.SetSuperHTTPRouteAccepted(ctx, shr, false, "SyncFailed", err.Error()); sErr != nil {
+				logger.Warn("failed to write SuperHTTPRoute Accepted status", slog.String("error", sErr.Error()))
 			}
 		}
 		return 0, groupName, fmt.Errorf("applying route %s/%s: %w", ref.Namespace, ref.Name, err)
@@ -785,7 +806,12 @@ func reconcileHTTPRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 		}
 		if sw != nil && hr != nil {
 			if err := sw.SetAccepted(ctx, hr, true, "Synced", "Successfully synced to Vrata"); err != nil {
-				slog.Warn("failed to write Accepted status", slog.String("error", err.Error()))
+				logger.Warn("failed to write Accepted status", slog.String("error", err.Error()))
+			}
+		}
+		if sw != nil && shr != nil {
+			if err := sw.SetSuperHTTPRouteAccepted(ctx, shr, true, "Synced", "Successfully synced to Vrata"); err != nil {
+				logger.Warn("failed to write SuperHTTPRoute Accepted status", slog.String("error", err.Error()))
 			}
 		}
 		if m != nil {
@@ -870,7 +896,7 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 								"cross-namespace backendRef %s/%s denied: no matching ReferenceGrant",
 								br.ServiceNamespace, br.ServiceName,
 							)); err != nil {
-								slog.Warn("failed to write GRPCRoute ResolvedRefs status", slog.String("error", err.Error()))
+								logger.Warn("failed to write GRPCRoute ResolvedRefs status", slog.String("error", err.Error()))
 							}
 						}
 						break
