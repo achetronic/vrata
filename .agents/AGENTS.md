@@ -102,6 +102,21 @@ make docker-build   # Docker image
 make deps           # Install dev tools
 ```
 
+### Running e2e tests locally
+
+E2e tests require a running Vrata control plane on `:8080`. The `TestMain` in
+`server/test/e2e/main_test.go` creates a shared proxy listener on `:3000`
+automatically. STICKY tests additionally require Redis on `:6379`.
+
+```bash
+# Terminal 1: start the server
+rm -f /tmp/vrata-e2e/vrata.db
+./vrata --config /tmp/vrata-e2e/config.yaml
+
+# Terminal 2: run the tests
+cd server && go test -v -timeout 600s ./test/e2e/
+```
+
 ## Dependencies
 
 | Library                               | Purpose                      |

@@ -272,4 +272,66 @@ All 7 mandatory conventions verified and passing:
 **Converging.** 7 bugs found and fixed. No remaining action items in this audit — all design concerns are documented trade-offs. A follow-up audit should validate convergence.
 
 ---
+
+## Audit 8: Live Server E2E Verification
+*Status: Completed*
+*Date: 2026-03-31*
+*Auditor: Claude Opus 4 via Crush*
+
+Full end-to-end verification against a live Vrata server. Unlike audits 1–7 (code review only), this audit runs real HTTP requests against a running control plane + proxy and verifies actual behaviour.
+
+### Infrastructure Fix
+- **`main_test.go` (new)**: Added `TestMain` that creates a shared listener on `:3000` via the API before any tests run. This fixed all existing proxy e2e tests that assumed a pre-existing listener — they now create their own infrastructure.
+
+### New Test Battery: `massive_test.go` (48 tests)
+All tests run against a live server, create their own entities, and clean up after themselves.
+
+| Category | Tests | Coverage |
+|----------|-------|----------|
+| API CRUD validation | 8 | Route action mutual exclusivity, destination weights, invalid JSON on all 6 resources, 404 on all 7 resources (GET+DELETE), listener validation (6 cases), middleware type validation (4 cases), secret CRUD lifecycle, update on nonexistent IDs |
+| Snapshot lifecycle | 5 | Create/activate/delete cycle, activate nonexistent, validation warnings (bad regex), secret resolution in snapshot, fail on missing secret reference |
+| Proxy routing | 9 | pathPrefix, pathExact, pathRegex, multi-method, header regex, query param regex, hostname, gRPC content-type, CEL expression |
+| Route actions | 7 | directResponse, redirect (4 status codes), forward with header propagation |
+| Forward features | 6 | prefix rewrite, regex rewrite, host rewrite, retry (gateway-error), request timeout, mirror |
+| Group composition | 3 | pathPrefix composition, hostname merge, regex composition |
+| Middlewares | 4 | CORS (preflight + normal), headers (request + response injection), rate limit (trigger 429), disable per-route via override |
+| Proxy errors | 3 | no_route (JSON format), connection_refused, JSON Content-Type verification |
+| Stress testing | 2 | 100 concurrent proxy requests, 20 concurrent API CRUD operations |
+| Weighted distribution | 1 | 1000 requests verifying ~70/30 split across 2 destinations |
+| InlineAuthz | 1 | CEL-based allow/deny with defaultAction |
+| Config dump | 1 | Validates all 5 keys present in dump response |
+| SSE sync | 2 | No active snapshot (stream stays open), active snapshot (stream contains data) |
+
+### Full Suite Results
+
+| Suite | Pass | Fail | Notes |
+|-------|------|------|-------|
+| Existing e2e tests | 86 | 4 | All 4 failures are STICKY tests requiring Redis |
+| New massive battery | 48 | 0 | All pass |
+| **Total** | **134** | **4** | 97% pass rate; failures are infra-dependent (Redis) |
+
+### Verified Features (no bugs found)
+Every feature verified by a passing e2e test is confirmed functional in a live server:
+- All 6 CRUD resources (create, read, update, delete, list, validation)
+- All 9 route match types (path prefix/exact/regex, method, header, query param, hostname, gRPC, CEL)
+- All 3 route actions (forward, redirect, directResponse)
+- Forward features: prefix rewrite, regex rewrite, host rewrite, retry, timeout, mirror
+- Group composition: prefix, hostname, regex
+- Middlewares: CORS, headers, rate limit, inlineAuthz, disable per-route
+- Snapshot lifecycle: create, activate, delete, warnings, secret resolution, missing secret rejection
+- Proxy error format: JSON with correct Content-Type and error classification
+- SSE sync endpoint: serves active snapshot data
+- Concurrent safety: 100 parallel proxy requests + 20 parallel API operations
+
+### Sticky Session Failures (Redis required)
+4 tests fail without Redis. These test the STICKY balancing algorithm which requires an external session store. They are correctly guarded with `requireRedis(t)` in some places but not all:
+- `TestE2E_Proxy_Sticky_ZeroDisruption`
+- `TestE2E_Endpoint_Sticky_ZeroDisruption`
+- `TestE2E_Endpoint_Sticky_Concurrent`
+- `TestE2E_Endpoint_CombinedL1Sticky_L2Sticky`
+
+### Verdict
+**Validated via live server.** 134/138 e2e tests pass. The 4 failures are all Redis-dependent STICKY tests — not code bugs. All features claimed in `SERVER_FEATURES.md` that can be verified without external infrastructure (Redis, k8s cluster) are confirmed working against a real server.
+
+---
 *Future audits will be appended to this document as new architectural phases are completed.*

@@ -245,13 +245,14 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Controller (all packages)                                          | 170     | 170     |
 | **Unit total**                                                     | **546** | **546** |
 | E2E (proxy, live)                                                  | 74      | 74      |
+| E2E (massive battery — live server)                                | 48      | 48      |
 | E2E (metrics)                                                      | 5       | 5       |
 | E2E (proxy errors)                                                 | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
 | E2E (TLS + auth, kind × 3 modes)                                   | 24      | 24      |
 | E2E (controller)                                                   | 23      | 23      |
-| **E2E total**                                                      | **146** | **146** |
+| **E2E total**                                                      | **194** | **190** |
 
 ## Known Remaining Issues
 
-None.
+- 4 STICKY e2e tests fail without Redis (session store dependency). Tests: `Proxy_Sticky_ZeroDisruption`, `Endpoint_Sticky_ZeroDisruption`, `Endpoint_Sticky_Concurrent`, `Endpoint_CombinedL1Sticky_L2Sticky`.
