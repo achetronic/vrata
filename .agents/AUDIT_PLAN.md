@@ -333,5 +333,36 @@ Every feature verified by a passing e2e test is confirmed functional in a live s
 ### Verdict
 **Validated via live server.** 134/138 e2e tests pass. The 4 failures are all Redis-dependent STICKY tests — not code bugs. All features claimed in `SERVER_FEATURES.md` that can be verified without external infrastructure (Redis, k8s cluster) are confirmed working against a real server.
 
+### Gap Coverage Extension (same audit, second pass)
+
+22 additional e2e tests targeting features that previously had only unit tests or "Code review" coverage. Each test spins up its own infrastructure (gRPC servers, TLS certs, h2c listeners) inline.
+
+| Test | Feature | Infra |
+|------|---------|-------|
+| `TestGap_CELBodyJSON_RouteMatch` | CEL `request.body.json` in route match | POST body |
+| `TestGap_CELBodyRaw_RouteMatch` | CEL `request.body.raw` in route match | POST body |
+| `TestGap_CELBody_InlineAuthz` | CEL body access in inlineAuthz rules | POST body + upstream |
+| `TestGap_IncludeAttemptCount` | `X-Request-Attempt-Count` header on retries | Retry upstream |
+| `TestGap_Redirect_SchemeOnly` | Redirect with scheme-only override | — |
+| `TestGap_Redirect_HostOnly` | Redirect with host-only override | — |
+| `TestGap_Redirect_PathReplace` | Redirect with path replacement | — |
+| `TestGap_Redirect_StripQuery` | Redirect with query string stripping | — |
+| `TestGap_MiddlewareOverride_Headers` | Per-route header middleware override merge | Upstream |
+| `TestGap_CircuitBreaker` | Circuit breaker opens after failures | 500-returning upstream |
+| `TestGap_ConfigDump_ContainsEntities` | Config dump includes created entities | — |
+| `TestGap_mTLS_CEL_TLSAccess` | mTLS listener + XFCC header injection | In-process CA + certs |
+| `TestGap_ExtProc_gRPC` | ExtProc gRPC mode with header injection | Inline gRPC server |
+| `TestGap_SSE_PushOnActivate` | SSE stream receives data on snapshot activate | Streaming reader |
+| `TestGap_OutlierDetection` | Consecutive 5xx ejects endpoint | Multi-endpoint destination |
+| `TestGap_HealthCheck` | Active health check marks endpoint down/up | Controllable `/healthz` |
+| `TestGap_H2C_Downstream` | h2c cleartext HTTP/2 downstream | h2c client |
+| `TestGap_H2C_Upstream` | h2c cleartext HTTP/2 upstream | h2c server |
+| `TestGap_TLS_Upstream` | TLS destination with CA verification | In-process TLS server |
+| `TestGap_ListenerTimeout_ClientHeader` | Slowloris protection (clientHeader timeout) | Raw TCP connection |
+| `TestGap_MaxGRPCTimeout` | gRPC timeout clamping | grpc-timeout header |
+| `TestGap_ExtAuthz_gRPC` | ExtAuthz gRPC mode allow/deny | Inline gRPC authorizer |
+
+**All 22 pass.** Combined with the first pass: **156/160 e2e tests pass** (4 STICKY/Redis).
+
 ---
 *Future audits will be appended to this document as new architectural phases are completed.*

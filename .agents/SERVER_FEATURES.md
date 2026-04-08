@@ -246,12 +246,13 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | **Unit total**                                                     | **546** | **546** |
 | E2E (proxy, live)                                                  | 74      | 74      |
 | E2E (massive battery — live server)                                | 48      | 48      |
+| E2E (gap coverage — infra-heavy)                                   | 22      | 22      |
 | E2E (metrics)                                                      | 5       | 5       |
 | E2E (proxy errors)                                                 | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
 | E2E (TLS + auth, kind × 3 modes)                                   | 24      | 24      |
 | E2E (controller)                                                   | 23      | 23      |
-| **E2E total**                                                      | **194** | **190** |
+| **E2E total**                                                      | **216** | **212** |
 
 ## Known Remaining Issues
 
