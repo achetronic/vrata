@@ -18,6 +18,7 @@ import (
 // an embedded token bucket per client IP. Returns the middleware and a stop
 // function to halt the background eviction goroutine.
 func RateLimitMiddleware(cfg *model.RateLimitConfig) Middleware {
+	// Stop func discarded — callers that need cleanup use RateLimitMiddlewareWithStop.
 	m, _ := RateLimitMiddlewareWithStop(cfg)
 	return m
 }

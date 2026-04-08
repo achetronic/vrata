@@ -80,13 +80,12 @@ func (s *Store) GetRoute(_ context.Context, id string) (model.Route, error) {
 // SaveRoute creates or replaces the route identified by route.ID.
 func (s *Store) SaveRoute(_ context.Context, route model.Route) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	evt := store.EventUpdated
 	if _, ok := s.routes[route.ID]; !ok {
 		evt = store.EventCreated
 	}
 	s.routes[route.ID] = route
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceRoute, ID: route.ID})
 	return nil
 }
@@ -94,12 +93,12 @@ func (s *Store) SaveRoute(_ context.Context, route model.Route) error {
 // DeleteRoute removes the route with the given ID.
 func (s *Store) DeleteRoute(_ context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.routes[id]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("route %q: %w", id, model.ErrNotFound)
 	}
 	delete(s.routes, id)
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceRoute, ID: id})
 	return nil
 }
@@ -135,13 +134,12 @@ func (s *Store) GetGroup(_ context.Context, id string) (model.RouteGroup, error)
 // SaveGroup creates or replaces the group identified by group.ID.
 func (s *Store) SaveGroup(_ context.Context, group model.RouteGroup) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	evt := store.EventUpdated
 	if _, ok := s.groups[group.ID]; !ok {
 		evt = store.EventCreated
 	}
 	s.groups[group.ID] = group
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceGroup, ID: group.ID})
 	return nil
 }
@@ -149,12 +147,12 @@ func (s *Store) SaveGroup(_ context.Context, group model.RouteGroup) error {
 // DeleteGroup removes the group with the given ID.
 func (s *Store) DeleteGroup(_ context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.groups[id]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("group %q: %w", id, model.ErrNotFound)
 	}
 	delete(s.groups, id)
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceGroup, ID: id})
 	return nil
 }
@@ -190,13 +188,12 @@ func (s *Store) GetMiddleware(_ context.Context, id string) (model.Middleware, e
 // SaveMiddleware creates or replaces the filter identified by filter.ID.
 func (s *Store) SaveMiddleware(_ context.Context, f model.Middleware) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	evt := store.EventUpdated
 	if _, ok := s.middlewares[f.ID]; !ok {
 		evt = store.EventCreated
 	}
 	s.middlewares[f.ID] = f
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceMiddleware, ID: f.ID})
 	return nil
 }
@@ -204,12 +201,12 @@ func (s *Store) SaveMiddleware(_ context.Context, f model.Middleware) error {
 // DeleteMiddleware removes the filter with the given ID.
 func (s *Store) DeleteMiddleware(_ context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.middlewares[id]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("middleware %q: %w", id, model.ErrNotFound)
 	}
 	delete(s.middlewares, id)
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceMiddleware, ID: id})
 	return nil
 }
@@ -245,13 +242,12 @@ func (s *Store) GetListener(_ context.Context, id string) (model.Listener, error
 // SaveListener creates or replaces the listener identified by listener.ID.
 func (s *Store) SaveListener(_ context.Context, l model.Listener) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	evt := store.EventUpdated
 	if _, ok := s.listeners[l.ID]; !ok {
 		evt = store.EventCreated
 	}
 	s.listeners[l.ID] = l
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceListener, ID: l.ID})
 	return nil
 }
@@ -259,12 +255,12 @@ func (s *Store) SaveListener(_ context.Context, l model.Listener) error {
 // DeleteListener removes the listener with the given ID.
 func (s *Store) DeleteListener(_ context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.listeners[id]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("listener %q: %w", id, model.ErrNotFound)
 	}
 	delete(s.listeners, id)
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceListener, ID: id})
 	return nil
 }
@@ -300,13 +296,12 @@ func (s *Store) GetDestination(_ context.Context, id string) (model.Destination,
 // SaveDestination creates or replaces the destination identified by d.ID.
 func (s *Store) SaveDestination(_ context.Context, d model.Destination) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	evt := store.EventUpdated
 	if _, ok := s.destinations[d.ID]; !ok {
 		evt = store.EventCreated
 	}
 	s.destinations[d.ID] = d
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceDestination, ID: d.ID})
 	return nil
 }
@@ -314,12 +309,12 @@ func (s *Store) SaveDestination(_ context.Context, d model.Destination) error {
 // DeleteDestination removes the destination with the given ID.
 func (s *Store) DeleteDestination(_ context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.destinations[id]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("destination %q: %w", id, model.ErrNotFound)
 	}
 	delete(s.destinations, id)
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceDestination, ID: id})
 	return nil
 }
@@ -355,13 +350,12 @@ func (s *Store) GetSecret(_ context.Context, id string) (model.Secret, error) {
 // SaveSecret creates or replaces the secret identified by s.ID.
 func (s *Store) SaveSecret(_ context.Context, sec model.Secret) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	evt := store.EventUpdated
 	if _, ok := s.secrets[sec.ID]; !ok {
 		evt = store.EventCreated
 	}
 	s.secrets[sec.ID] = sec
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceSecret, ID: sec.ID})
 	return nil
 }
@@ -369,12 +363,12 @@ func (s *Store) SaveSecret(_ context.Context, sec model.Secret) error {
 // DeleteSecret removes the secret with the given ID.
 func (s *Store) DeleteSecret(_ context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.secrets[id]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("secret %q: %w", id, model.ErrNotFound)
 	}
 	delete(s.secrets, id)
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceSecret, ID: id})
 	return nil
 }
@@ -415,13 +409,12 @@ func (s *Store) GetSnapshot(_ context.Context, id string) (model.VersionedSnapsh
 // SaveSnapshot creates or replaces a versioned snapshot.
 func (s *Store) SaveSnapshot(_ context.Context, vs model.VersionedSnapshot) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	evt := store.EventUpdated
 	if _, ok := s.snapshots[vs.ID]; !ok {
 		evt = store.EventCreated
 	}
 	s.snapshots[vs.ID] = vs
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: evt, Resource: store.ResourceSnapshot, ID: vs.ID})
 	return nil
 }
@@ -429,15 +422,15 @@ func (s *Store) SaveSnapshot(_ context.Context, vs model.VersionedSnapshot) erro
 // DeleteSnapshot removes the versioned snapshot with the given ID.
 func (s *Store) DeleteSnapshot(_ context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.snapshots[id]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
 	}
 	delete(s.snapshots, id)
 	if s.activeSnap == id {
 		s.activeSnap = ""
 	}
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: store.EventDeleted, Resource: store.ResourceSnapshot, ID: id})
 	return nil
 }
@@ -445,12 +438,12 @@ func (s *Store) DeleteSnapshot(_ context.Context, id string) error {
 // ActivateSnapshot sets the given snapshot ID as the active configuration.
 func (s *Store) ActivateSnapshot(_ context.Context, id string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if _, ok := s.snapshots[id]; !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("snapshot %q: %w", id, model.ErrNotFound)
 	}
 	s.activeSnap = id
+	s.mu.Unlock()
 	s.publish(store.StoreEvent{Type: store.EventUpdated, Resource: store.ResourceSnapshot, ID: id})
 	return nil
 }
@@ -499,7 +492,7 @@ func (s *Store) Subscribe(ctx context.Context) (<-chan store.StoreEvent, error) 
 }
 
 // publish sends an event to all current subscribers in a non-blocking manner.
-// May be called while holding s.mu; acquires s.subsMu internally.
+// Called after releasing s.mu to avoid holding both locks simultaneously.
 // Dropped events (slow subscriber) are silently discarded.
 func (s *Store) publish(ev store.StoreEvent) {
 	s.subsMu.Lock()

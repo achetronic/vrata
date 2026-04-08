@@ -26,6 +26,7 @@ import (
 // AccessLogMiddleware creates a middleware that logs request and response
 // as two separate log entries linked by a generated request ID.
 func AccessLogMiddleware(cfg *model.AccessLogConfig) Middleware {
+	// Stop func discarded — callers that need cleanup use AccessLogMiddlewareWithStop.
 	m, _ := AccessLogMiddlewareWithStop(cfg)
 	return m
 }

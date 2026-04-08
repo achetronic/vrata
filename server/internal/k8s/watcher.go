@@ -353,6 +353,7 @@ func (w *Watcher) watchExternalNameService(ctx context.Context, destID string, d
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// stopAll cancels all active endpoint watchers and clears state.
 func (w *Watcher) stopAll() {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -363,6 +364,7 @@ func (w *Watcher) stopAll() {
 	}
 }
 
+// isEDS returns true if the destination uses Kubernetes endpoint discovery.
 func isEDS(d model.Destination) bool {
 	return d.Options != nil &&
 		d.Options.Discovery != nil &&
@@ -385,6 +387,8 @@ func (w *Watcher) notifyChange(ctx context.Context, destID string) {
 	}
 }
 
+// parseFQDN splits a Kubernetes Service FQDN into namespace and service name.
+// For "my-svc.my-ns.svc.cluster.local" it returns ("my-ns", "my-svc", nil).
 func parseFQDN(host string) (namespace, service string, err error) {
 	parts := strings.Split(host, ".")
 	if len(parts) < 2 {

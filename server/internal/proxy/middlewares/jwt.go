@@ -30,6 +30,7 @@ import (
 
 // JWTMiddleware creates a JWT validation middleware.
 func JWTMiddleware(cfg *model.JWTConfig, services map[string]Service) Middleware {
+	// Stop func discarded — callers that need cleanup use JWTMiddlewareWithStop.
 	m, _ := JWTMiddlewareWithStop(cfg, services)
 	return m
 }

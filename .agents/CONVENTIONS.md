@@ -15,8 +15,8 @@
 - **Error bubbling** — functions return errors to their caller. Only handler-level code
   (and `main`) handles errors by logging and/or converting them to responses. Never discard
   an error with `_` unless there is an explicit, commented reason.
-- **Human-readable API errors** — HTTP error responses must be JSON with a clear `message`
-  field. Raw Go error strings must never reach the client.
+- **Human-readable API errors** — HTTP error responses must be JSON with a clear `error`
+  field (see `respond.ErrorBody`). Raw Go error strings must never reach the client.
 - **All symbols documented** — every exported type, function, method, and constant gets a
   Go doc comment. Unexported symbols that are non-obvious also get one. swag-go v2
   annotations are required on all HTTP handler functions.

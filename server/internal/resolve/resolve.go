@@ -19,6 +19,7 @@ import (
 
 // secretPattern matches {{secret:<source>:<ref>}} where source is one of
 // value, env, or file, and ref is the secret ID, env var name, or file path.
+// Compiled once at init, never reassigned — effectively immutable.
 var secretPattern = regexp.MustCompile(`\{\{secret:(value|env|file):([^}]+)\}\}`)
 
 // Secrets scans the JSON data for {{secret:...}} patterns and resolves them.

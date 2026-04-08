@@ -29,6 +29,7 @@ import (
 
 // ExtProcMiddleware creates an external processor middleware.
 func ExtProcMiddleware(cfg *model.ExtProcConfig, services map[string]Service) Middleware {
+	// Stop func discarded — callers that need cleanup use ExtProcMiddlewareWithStop.
 	m, _ := ExtProcMiddlewareWithStop(cfg, services)
 	return m
 }

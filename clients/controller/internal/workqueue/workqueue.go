@@ -217,8 +217,9 @@ func (q *Queue) HasBatch(name string) bool {
 	return ok
 }
 
-// parseSize parses the batch-size annotation value. Returns 0 on error.
+// parseSize parses the batch-size annotation value. Returns 0 on error or overflow.
 func parseSize(s, batchName string, logger *slog.Logger) int {
+	const maxBatchSize = 1_000_000
 	var n int
 	for _, c := range s {
 		if c < '0' || c > '9' {
@@ -229,6 +230,14 @@ func parseSize(s, batchName string, logger *slog.Logger) int {
 			return 0
 		}
 		n = n*10 + int(c-'0')
+		if n > maxBatchSize {
+			logger.Warn("workqueue: batch-size exceeds maximum, capping",
+				slog.String("batch", batchName),
+				slog.String("value", s),
+				slog.Int("max", maxBatchSize),
+			)
+			return maxBatchSize
+		}
 	}
 	return n
 }

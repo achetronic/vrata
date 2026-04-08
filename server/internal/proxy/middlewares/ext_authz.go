@@ -22,6 +22,7 @@ import (
 // external authorization service before forwarding to the upstream.
 // Supports both HTTP and gRPC modes.
 func ExtAuthzMiddleware(cfg *model.ExtAuthzConfig, services map[string]Service) Middleware {
+	// Stop func discarded — callers that need cleanup use ExtAuthzMiddlewareWithStop.
 	mw, _ := ExtAuthzMiddlewareWithStop(cfg, services)
 	return mw
 }

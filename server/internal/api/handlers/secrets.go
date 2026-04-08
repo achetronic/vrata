@@ -27,6 +27,7 @@ import (
 func (d *Dependencies) HandleListSecrets(w http.ResponseWriter, r *http.Request) {
 	secrets, err := d.Store.ListSecrets(r.Context())
 	if err != nil {
+		d.Logger.Error("listing secrets", slog.String("error", err.Error()))
 		respond.Error(w, http.StatusInternalServerError, "listing secrets", d.Logger)
 		return
 	}
@@ -66,6 +67,7 @@ func (d *Dependencies) HandleCreateSecret(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := d.Store.SaveSecret(r.Context(), sec); err != nil {
+		d.Logger.Error("saving secret", slog.String("error", err.Error()))
 		respond.Error(w, http.StatusInternalServerError, "saving secret", d.Logger)
 		return
 	}
@@ -98,6 +100,7 @@ func (d *Dependencies) HandleGetSecret(w http.ResponseWriter, r *http.Request) {
 			respond.Error(w, http.StatusNotFound, "secret not found", d.Logger)
 			return
 		}
+		d.Logger.Error("reading secret", slog.String("error", err.Error()))
 		respond.Error(w, http.StatusInternalServerError, "reading secret", d.Logger)
 		return
 	}
@@ -141,11 +144,13 @@ func (d *Dependencies) HandleUpdateSecret(w http.ResponseWriter, r *http.Request
 			respond.Error(w, http.StatusNotFound, "secret not found", d.Logger)
 			return
 		}
+		d.Logger.Error("reading secret", slog.String("error", err.Error()))
 		respond.Error(w, http.StatusInternalServerError, "reading secret", d.Logger)
 		return
 	}
 
 	if err := d.Store.SaveSecret(r.Context(), sec); err != nil {
+		d.Logger.Error("saving secret", slog.String("error", err.Error()))
 		respond.Error(w, http.StatusInternalServerError, "saving secret", d.Logger)
 		return
 	}
@@ -176,6 +181,7 @@ func (d *Dependencies) HandleDeleteSecret(w http.ResponseWriter, r *http.Request
 			respond.Error(w, http.StatusNotFound, "secret not found", d.Logger)
 			return
 		}
+		d.Logger.Error("deleting secret", slog.String("error", err.Error()))
 		respond.Error(w, http.StatusInternalServerError, "deleting secret", d.Logger)
 		return
 	}

@@ -128,6 +128,7 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				return nil, lastErr
 			}
 			if shouldRetry(resp.StatusCode, rt.retry) && attempt < maxAttempts-1 {
+				lastErr = fmt.Errorf("upstream returned retriable status %d", resp.StatusCode)
 				resp.Body.Close()
 				if !sleepWithContext(req.Context(), calcBackoff(baseBackoff, maxBackoff, attempt)) {
 					return nil, lastErr
@@ -153,6 +154,7 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		if shouldRetry(resp.StatusCode, rt.retry) && attempt < maxAttempts-1 {
+			lastErr = fmt.Errorf("upstream returned retriable status %d", resp.StatusCode)
 			resp.Body.Close()
 			if !sleepWithContext(req.Context(), calcBackoff(baseBackoff, maxBackoff, attempt)) {
 				return nil, lastErr

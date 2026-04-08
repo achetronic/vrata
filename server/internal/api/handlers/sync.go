@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -123,23 +124,23 @@ func sendActiveSnapshot(ctx context.Context, w http.ResponseWriter, flusher http
 func buildSnapshot(ctx context.Context, d *Dependencies) (*model.Snapshot, error) {
 	listeners, err := d.Store.ListListeners(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing listeners: %w", err)
 	}
 	routes, err := d.Store.ListRoutes(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing routes: %w", err)
 	}
 	groups, err := d.Store.ListGroups(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing groups: %w", err)
 	}
 	destinations, err := d.Store.ListDestinations(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing destinations: %w", err)
 	}
 	middlewares, err := d.Store.ListMiddlewares(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing middlewares: %w", err)
 	}
 
 	return &model.Snapshot{

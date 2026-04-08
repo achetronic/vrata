@@ -187,7 +187,7 @@ func (s *Store) ActivateSnapshot(ctx context.Context, id string) error {
 
 // apply encodes a command and applies it through the Raft log. If this node
 // is not the leader, it forwards the command to the leader transparently.
-func (s *Store) apply(ctx context.Context, cmdType string, id string, payload interface{}) error {
+func (s *Store) apply(ctx context.Context, cmdType rft.CommandType, id string, payload interface{}) error {
 	var rawPayload json.RawMessage
 	if payload != nil {
 		data, err := json.Marshal(payload)

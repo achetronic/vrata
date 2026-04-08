@@ -207,7 +207,9 @@ func buildTLSConfig(d model.Destination) (*tls.Config, error) {
 
 	if tlsOpts.CA != "" {
 		pool := x509.NewCertPool()
-		pool.AppendCertsFromPEM([]byte(tlsOpts.CA))
+		if !pool.AppendCertsFromPEM([]byte(tlsOpts.CA)) {
+			return nil, fmt.Errorf("no valid CA certificates found in destination CA PEM")
+		}
 		cfg.RootCAs = pool
 	}
 

@@ -299,6 +299,7 @@ func (m *MaglevBalancer) PickByHash(h uint32, dests []model.DestinationRef, endp
 // Falls back to client IP if no policy matches.
 func hashRequest(r *http.Request) uint32 {
 	// Default: hash by client IP.
+	// r.RemoteAddr is always host:port in net/http; error is unreachable.
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return crc32.ChecksumIEEE([]byte(host))
 }
@@ -331,10 +332,12 @@ func hashRequestWithPolicy(r *http.Request, w http.ResponseWriter, policies []mo
 			})
 			return crc32.ChecksumIEEE([]byte(sid + ":" + destID))
 		case hp.SourceIP != nil && hp.SourceIP.Enabled:
+			// r.RemoteAddr is always host:port in net/http; error is unreachable.
 			host, _, _ := net.SplitHostPort(r.RemoteAddr)
 			return crc32.ChecksumIEEE([]byte(host + ":" + destID))
 		}
 	}
+	// r.RemoteAddr is always host:port in net/http; error is unreachable.
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	return crc32.ChecksumIEEE([]byte(host + ":" + destID))
 }

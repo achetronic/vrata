@@ -18,7 +18,7 @@ import (
 )
 
 // CommandType identifies the store operation carried by a Raft log entry.
-type CommandType = string
+type CommandType string
 
 const (
 	// CmdSaveRoute creates or replaces a route.
@@ -84,7 +84,7 @@ func (f *FSM) Apply(entry *raft.Log) interface{} {
 		return fmt.Errorf("decoding command: %w", err)
 	}
 
-	if err := f.store.ApplyCommand(cmd.Type, cmd.ID, cmd.Payload); err != nil {
+	if err := f.store.ApplyCommand(string(cmd.Type), cmd.ID, cmd.Payload); err != nil {
 		return fmt.Errorf("applying command %s: %w", cmd.Type, err)
 	}
 

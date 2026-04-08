@@ -8,7 +8,7 @@ package store_test
 
 import (
 	"context"
-	"os"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -288,20 +288,11 @@ func assertIs(t *testing.T, err, target error) {
 	if err == nil {
 		t.Fatalf("expected error wrapping %v, got nil", target)
 	}
-	if !os.IsNotExist(err) {
-		// Use string check since bolt wraps with fmt.Errorf
-		if target == model.ErrNotFound {
-			if !containsErr(err, target) {
-				t.Fatalf("expected error wrapping %v, got: %v", target, err)
-			}
-			return
-		}
-		if target == model.ErrNoActiveSnapshot {
-			if !containsErr(err, target) {
-				t.Fatalf("expected error wrapping %v, got: %v", target, err)
-			}
-			return
-		}
+	if errors.Is(err, target) {
+		return
+	}
+	if !containsErr(err, target) {
+		t.Fatalf("expected error wrapping %v, got: %v", target, err)
 	}
 }
 
