@@ -50,6 +50,8 @@ func (d *Dependencies) HandleSyncSnapshot(w http.ResponseWriter, r *http.Request
 			d.Logger.Error("sync: initial snapshot failed",
 				slog.String("error", err.Error()),
 			)
+			fmt.Fprintf(w, "event: error\ndata: initial snapshot failed\n\n")
+			flusher.Flush()
 			return
 		}
 	}
@@ -59,6 +61,8 @@ func (d *Dependencies) HandleSyncSnapshot(w http.ResponseWriter, r *http.Request
 		d.Logger.Error("sync: subscribing to store",
 			slog.String("error", err.Error()),
 		)
+		fmt.Fprintf(w, "event: error\ndata: subscription failed\n\n")
+		flusher.Flush()
 		return
 	}
 

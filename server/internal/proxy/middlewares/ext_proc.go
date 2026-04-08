@@ -78,11 +78,11 @@ func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Ser
 		target := strings.TrimPrefix(strings.TrimPrefix(svc.BaseURL, "http://"), "https://")
 		conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
-			slog.Error("extproc: failed to create gRPC connection", slog.String("error", err.Error()))
-		} else {
-			ep.grpcConn = conn
-			cleanups = append(cleanups, func() { _ = conn.Close() }) // Best-effort gRPC connection cleanup
+			slog.Error("extproc: failed to create gRPC connection, skipping middleware", slog.String("error", err.Error()))
+			return passthrough, func() {}
 		}
+		ep.grpcConn = conn
+		cleanups = append(cleanups, func() { _ = conn.Close() }) // Best-effort gRPC connection cleanup
 	}
 
 	if cfg.ObserveMode != nil && cfg.ObserveMode.Enabled {
@@ -247,11 +247,10 @@ func (ep *extProc) handle(next http.Handler, w http.ResponseWriter, r *http.Requ
 	if captureHeaders {
 		resp, err := ep.processResponseHeaders(capturedStatus, w.Header(), len(capturedBody) == 0)
 		if err != nil {
-			if !ep.cfg.AllowOnError {
-				slog.Error("extproc: response headers processing failed",
-					slog.String("error", err.Error()),
-				)
-			}
+			slog.Error("extproc: response headers processing failed",
+				slog.String("error", err.Error()),
+				slog.Bool("allowOnError", ep.cfg.AllowOnError),
+			)
 		} else if resp != nil {
 			if ha := resp.GetResponseHeaders(); ha != nil {
 				applyHeadersAction(w.Header(), ha, ep.cfg.AllowedMutations)
@@ -263,11 +262,10 @@ func (ep *extProc) handle(next http.Handler, w http.ResponseWriter, r *http.Requ
 	if captureBody && len(capturedBody) > 0 {
 		resp, err := ep.processResponseBody(capturedBody)
 		if err != nil {
-			if !ep.cfg.AllowOnError {
-				slog.Error("extproc: response body processing failed",
-					slog.String("error", err.Error()),
-				)
-			}
+			slog.Error("extproc: response body processing failed",
+				slog.String("error", err.Error()),
+				slog.Bool("allowOnError", ep.cfg.AllowOnError),
+			)
 		} else if resp != nil {
 			if ba := resp.GetResponseBody(); ba != nil {
 				capturedBody = applyResponseBodyAction(capturedBody, ba)
@@ -468,10 +466,14 @@ func (ep *extProc) sendAsync(req *extprocv1.ProcessingRequest) {
 	ctx, cancel := context.WithTimeout(context.Background(), ep.timeout)
 	defer cancel()
 
+	var err error
 	if ep.cfg.Mode == "http" {
-		ep.doHTTP(ctx, req)
+		_, err = ep.doHTTP(ctx, req)
 	} else {
-		ep.doGRPC(ctx, req)
+		_, err = ep.doGRPC(ctx, req)
+	}
+	if err != nil {
+		slog.Warn("extproc: observe-only send failed", slog.String("error", err.Error()))
 	}
 }
 

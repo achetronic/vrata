@@ -85,7 +85,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Feature                                                                                      | Status | Tests     |
 | -------------------------------------------------------------------------------------------- | ------ | --------- |
 | Structured JSON error responses (all proxy errors)                                           | 100%   | Unit (4)  |
-| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep, unknown, no_route, headers_too_large) | 100% | Unit (12) |
+| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep, unknown, no_route, headers_too_large) | 100% | Unit (12) + E2E |
 | Per-listener detail level (minimal / standard / full)                                        | 100%   | Unit (4)  |
 | Default detail level is standard (via context)                                               | 100%   | Unit      |
 
@@ -103,7 +103,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | ExtAuthz (HTTP + gRPC modes)                                 | 100%   | Unit (10) + E2E     |
 | ExtProc HTTP (buffered + bufferedPartial + streamed)         | 100%   | Unit (19) + E2E (2) |
 | ExtProc gRPC                                                 | 100%   | Unit                |
-| Middleware chain ordering                                    | 100%   | Unit                |
+| Middleware chain ordering                                    | 100%   | Unit + E2E          |
 | Middleware skipWhen (CEL condition to skip)                  | 100%   | E2E (3)             |
 | Middleware onlyWhen (CEL condition to activate)              | 100%   | E2E (3)             |
 | Middleware disable per-route                                 | 100%   | Unit + E2E          |
@@ -131,7 +131,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | HTTP/2 (ALPN configured)                                       | 100%   | Unit       |
 | h2c downstream (cleartext HTTP/2 via h2c.NewHandler)           | 100%   | Code review |
 | h2c upstream (cleartext HTTP/2 via http2.Transport{AllowHTTP})  | 100%   | Code review |
-| Streaming flush (FlushInterval -1 on reverse proxy)            | 100%   | Code review |
+| Streaming flush (FlushInterval -1 on reverse proxy)            | 100%   | Code review + E2E |
 | mTLS client auth (none/optional/require + CA verification)     | 100%   | Unit (6)   |
 | XFCC header injection (strip + inject from client cert URIs)   | 100%   | Unit (8)   |
 | Client IP resolution (direct/xff/header, hot-swap on listener) | 100%  | Unit (20) + E2E (7) |
@@ -247,13 +247,15 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | E2E (proxy, live)                                                  | 74      | 74      |
 | E2E (massive battery — live server)                                | 48      | 48      |
 | E2E (gap coverage — infra-heavy)                                   | 22      | 22      |
+| E2E (audit pass1 — new coverage)                                   | 5       | 5       |
 | E2E (metrics)                                                      | 5       | 5       |
 | E2E (proxy errors)                                                 | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
 | E2E (TLS + auth, kind × 3 modes)                                   | 24      | 24      |
 | E2E (controller)                                                   | 23      | 23      |
-| **E2E total**                                                      | **216** | **212** |
+| **E2E total**                                                      | **221** | **217** |
 
 ## Known Remaining Issues
 
 - 4 STICKY e2e tests fail without Redis (session store dependency). Tests: `Proxy_Sticky_ZeroDisruption`, `Endpoint_Sticky_ZeroDisruption`, `Endpoint_Sticky_Concurrent`, `Endpoint_CombinedL1Sticky_L2Sticky`.
+- `TestE2E_Metrics_MiddlewareTracking` is fragile: checks absolute Prometheus counter values, fails if the server has stale entities from previous runs. Should use counter deltas.
