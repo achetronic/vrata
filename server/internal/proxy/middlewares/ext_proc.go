@@ -290,7 +290,12 @@ func (ep *extProc) onError(w http.ResponseWriter) bool {
 	if ep.cfg.AllowOnError {
 		return true
 	}
-	http.Error(w, http.StatusText(ep.statusOnError), ep.statusOnError)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(ep.statusOnError)
+	json.NewEncoder(w).Encode(map[string]any{
+		"error":  "ext_proc_error",
+		"status": ep.statusOnError,
+	})
 	return false
 }
 

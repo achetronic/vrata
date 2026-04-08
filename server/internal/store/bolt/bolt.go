@@ -148,10 +148,11 @@ func (s *Store) ListRoutes(_ context.Context) ([]model.Route, error) {
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketRoutes))
-		return b.ForEach(func(_, v []byte) error {
+		return b.ForEach(func(k, v []byte) error {
 			var r model.Route
 			if err := json.Unmarshal(v, &r); err != nil {
-				return fmt.Errorf("unmarshalling route: %w", err)
+				slog.Error("store: skipping corrupt route", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			routes = append(routes, r)
 			return nil
@@ -246,10 +247,11 @@ func (s *Store) ListGroups(_ context.Context) ([]model.RouteGroup, error) {
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketGroups))
-		return b.ForEach(func(_, v []byte) error {
+		return b.ForEach(func(k, v []byte) error {
 			var g model.RouteGroup
 			if err := json.Unmarshal(v, &g); err != nil {
-				return fmt.Errorf("unmarshalling group: %w", err)
+				slog.Error("store: skipping corrupt group", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			groups = append(groups, g)
 			return nil
@@ -344,10 +346,11 @@ func (s *Store) ListMiddlewares(_ context.Context) ([]model.Middleware, error) {
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketMiddlewares))
-		return b.ForEach(func(_, v []byte) error {
+		return b.ForEach(func(k, v []byte) error {
 			var f model.Middleware
 			if err := json.Unmarshal(v, &f); err != nil {
-				return fmt.Errorf("unmarshalling filter: %w", err)
+				slog.Error("store: skipping corrupt middleware", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			filters = append(filters, f)
 			return nil
@@ -442,10 +445,11 @@ func (s *Store) ListListeners(_ context.Context) ([]model.Listener, error) {
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketListeners))
-		return b.ForEach(func(_, v []byte) error {
+		return b.ForEach(func(k, v []byte) error {
 			var l model.Listener
 			if err := json.Unmarshal(v, &l); err != nil {
-				return fmt.Errorf("unmarshalling listener: %w", err)
+				slog.Error("store: skipping corrupt listener", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			listeners = append(listeners, l)
 			return nil
@@ -540,10 +544,11 @@ func (s *Store) ListDestinations(_ context.Context) ([]model.Destination, error)
 
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucketDestinations))
-		return b.ForEach(func(_, v []byte) error {
+		return b.ForEach(func(k, v []byte) error {
 			var d model.Destination
 			if err := json.Unmarshal(v, &d); err != nil {
-				return fmt.Errorf("unmarshalling destination: %w", err)
+				slog.Error("store: skipping corrupt destination", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			destinations = append(destinations, d)
 			return nil
@@ -640,11 +645,13 @@ func (s *Store) ListSecrets(_ context.Context) ([]model.SecretSummary, error) {
 		return b.ForEach(func(k, v []byte) error {
 			plain, err := s.decryptValue(v)
 			if err != nil {
-				return fmt.Errorf("decrypting secret %q: %w", string(k), err)
+				slog.Error("store: skipping corrupt secret", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			var sec model.Secret
 			if err := json.Unmarshal(plain, &sec); err != nil {
-				return fmt.Errorf("decoding secret %q: %w", string(k), err)
+				slog.Error("store: skipping corrupt secret", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			summaries = append(summaries, model.SecretSummary{ID: sec.ID, Name: sec.Name})
 			return nil
@@ -745,14 +752,16 @@ func (s *Store) ListSnapshots(_ context.Context) ([]model.SnapshotSummary, error
 		}
 
 		b := tx.Bucket([]byte(bucketSnapshots))
-		return b.ForEach(func(_, v []byte) error {
+		return b.ForEach(func(k, v []byte) error {
 			plain, err := s.decryptValue(v)
 			if err != nil {
-				return fmt.Errorf("decrypting snapshot: %w", err)
+				slog.Error("store: skipping corrupt snapshot", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			var vs model.VersionedSnapshot
 			if err := json.Unmarshal(plain, &vs); err != nil {
-				return fmt.Errorf("unmarshalling snapshot: %w", err)
+				slog.Error("store: skipping corrupt snapshot", slog.String("key", string(k)), slog.String("error", err.Error()))
+				return nil
 			}
 			summaries = append(summaries, model.SnapshotSummary{
 				ID:        vs.ID,

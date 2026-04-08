@@ -526,7 +526,8 @@ func forwardHandler(fwd *model.ForwardAction, pools map[string]*DestinationPool,
 
 		if transportErr != nil && !headerWritten {
 			errType := classifyError(transportErr)
-			pe := &ProxyError{Type: errType, Status: statusForErrorType(errType), Destination: destID, Endpoint: endpoint.ID, Message: transportErr.Error()}
+			slog.Error("proxy: upstream transport error", slog.String("destination", destID), slog.String("endpoint", endpoint.ID), slog.String("error", transportErr.Error()))
+			pe := &ProxyError{Type: errType, Status: statusForErrorType(errType), Destination: destID, Endpoint: endpoint.ID, Message: userMessageForErrorType(errType)}
 			writeProxyError(w, r, pe)
 			recordEndpointResult(endpoint, pool, pe.Status, collectors, upstreamDur)
 			return

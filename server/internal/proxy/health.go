@@ -189,6 +189,7 @@ func (hc *HealthChecker) checkEndpoint(ctx context.Context, ep *Endpoint, d mode
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
+		slog.Error("health check: invalid request URL", slog.String("url", url), slog.String("error", err.Error()))
 		return false
 	}
 

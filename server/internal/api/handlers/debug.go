@@ -30,7 +30,7 @@ func (d *Dependencies) HandleGetConfigDump(w http.ResponseWriter, r *http.Reques
 	listeners, err := d.Store.ListListeners(ctx)
 	if err != nil {
 		d.Logger.Error("config dump: listing listeners", slog.String("error", err.Error()))
-		errs = append(errs, "listeners: "+err.Error())
+		errs = append(errs, "failed to load listeners")
 	} else {
 		dump["listeners"] = listeners
 	}
@@ -38,7 +38,7 @@ func (d *Dependencies) HandleGetConfigDump(w http.ResponseWriter, r *http.Reques
 	destinations, err := d.Store.ListDestinations(ctx)
 	if err != nil {
 		d.Logger.Error("config dump: listing destinations", slog.String("error", err.Error()))
-		errs = append(errs, "destinations: "+err.Error())
+		errs = append(errs, "failed to load destinations")
 	} else {
 		dump["destinations"] = destinations
 	}
@@ -46,7 +46,7 @@ func (d *Dependencies) HandleGetConfigDump(w http.ResponseWriter, r *http.Reques
 	routes, err := d.Store.ListRoutes(ctx)
 	if err != nil {
 		d.Logger.Error("config dump: listing routes", slog.String("error", err.Error()))
-		errs = append(errs, "routes: "+err.Error())
+		errs = append(errs, "failed to load routes")
 	} else {
 		dump["routes"] = routes
 	}
@@ -54,7 +54,7 @@ func (d *Dependencies) HandleGetConfigDump(w http.ResponseWriter, r *http.Reques
 	groups, err := d.Store.ListGroups(ctx)
 	if err != nil {
 		d.Logger.Error("config dump: listing groups", slog.String("error", err.Error()))
-		errs = append(errs, "groups: "+err.Error())
+		errs = append(errs, "failed to load groups")
 	} else {
 		dump["groups"] = groups
 	}
@@ -62,7 +62,7 @@ func (d *Dependencies) HandleGetConfigDump(w http.ResponseWriter, r *http.Reques
 	middlewares, err := d.Store.ListMiddlewares(ctx)
 	if err != nil {
 		d.Logger.Error("config dump: listing middlewares", slog.String("error", err.Error()))
-		errs = append(errs, "middlewares: "+err.Error())
+		errs = append(errs, "failed to load middlewares")
 	} else {
 		dump["middlewares"] = middlewares
 	}

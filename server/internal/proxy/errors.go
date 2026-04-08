@@ -176,3 +176,32 @@ func statusForErrorType(t model.ProxyErrorType) int {
 		return http.StatusBadGateway
 	}
 }
+
+// userMessageForErrorType returns a human-readable message for a proxy error
+// type without exposing raw Go error strings to the client.
+func userMessageForErrorType(t model.ProxyErrorType) string {
+	switch t {
+	case model.ProxyErrConnectionRefused:
+		return "upstream connection refused"
+	case model.ProxyErrConnectionReset:
+		return "upstream connection reset"
+	case model.ProxyErrDNSFailure:
+		return "upstream hostname could not be resolved"
+	case model.ProxyErrTimeout:
+		return "request timeout"
+	case model.ProxyErrTLSHandshakeFailure:
+		return "upstream TLS handshake failed"
+	case model.ProxyErrCircuitOpen:
+		return "circuit breaker is open"
+	case model.ProxyErrNoDestination:
+		return "no healthy destination available"
+	case model.ProxyErrNoEndpoint:
+		return "no healthy endpoint available"
+	case model.ProxyErrNoRoute:
+		return "no matching route"
+	case model.ProxyErrRequestHeadersTooLarge:
+		return "request headers too large"
+	default:
+		return "upstream error"
+	}
+}

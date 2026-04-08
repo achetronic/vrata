@@ -20,18 +20,18 @@ Method: Line-by-line source audit + unit tests + e2e tests
 
 ## Versioned Snapshots
 
-| Feature                    | Status | Tests      |
-| -------------------------- | ------ | ---------- |
-| Create                     | 100%   | Unit + E2E |
-| List (with active flag)    | 100%   | Unit + E2E |
-| Get                        | 100%   | Unit + E2E |
-| Delete (clears active)     | 100%   | Unit + E2E |
-| Activate                   | 100%   | Unit + E2E |
-| SSE serves active snapshot | 100%   | Unit + E2E |
-| SSE pushes on activate     | 100%   | Unit       |
-| No event without active    | 100%   | Unit + E2E |
-| Proxy reconnects           | 100%   | Unit       |
-| Structural validation (warnings) | 100% | Unit (29) + Integration (2) |
+| Feature                          | Status | Tests                       |
+| -------------------------------- | ------ | --------------------------- |
+| Create                           | 100%   | Unit + E2E                  |
+| List (with active flag)          | 100%   | Unit + E2E                  |
+| Get                              | 100%   | Unit + E2E                  |
+| Delete (clears active)           | 100%   | Unit + E2E                  |
+| Activate                         | 100%   | Unit + E2E                  |
+| SSE serves active snapshot       | 100%   | Unit + E2E                  |
+| SSE pushes on activate           | 100%   | Unit                        |
+| No event without active          | 100%   | Unit + E2E                  |
+| Proxy reconnects                 | 100%   | Unit                        |
+| Structural validation (warnings) | 100%   | Unit (29) + Integration (2) |
 
 ## Proxy Routing
 
@@ -57,7 +57,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Direct response    | 100%   | Unit + E2E |
 | Redirect           | 100%   | Unit + E2E |
 | Forward            | 100%   | Unit + E2E |
-| Mutual exclusivity | 100%   | Unit       |
+| Mutual exclusivity | 100%   | Unit + E2E |
 
 ## Forward Action Features
 
@@ -72,6 +72,7 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Host rewrite                                                        | 100%   | Unit                 |
 | Retry with backoff + perAttemptTimeout                              | 100%   | Unit + E2E           |
 | Request timeout                                                     | 100%   | E2E                  |
+| Request timeout fallback (route → destination)                      | 100%   | E2E (2)              |
 | Idle timeout (safe unwrap)                                          | 100%   | Unit                 |
 | Request mirror (body cloned)                                        | 100%   | E2E                  |
 | Hash policy (ring hash, maglev)                                     | 100%   | Unit                 |
@@ -82,12 +83,12 @@ Method: Line-by-line source audit + unit tests + e2e tests
 
 ## Proxy Error Responses
 
-| Feature                                                                                      | Status | Tests     |
-| -------------------------------------------------------------------------------------------- | ------ | --------- |
-| Structured JSON error responses (all proxy errors)                                           | 100%   | Unit (4)  |
-| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep, unknown, no_route, headers_too_large) | 100% | Unit (12) + E2E |
-| Per-listener detail level (minimal / standard / full)                                        | 100%   | Unit (4)  |
-| Default detail level is standard (via context)                                               | 100%   | Unit      |
+| Feature                                                                                                                            | Status | Tests           |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ------ | --------------- |
+| Structured JSON error responses (all proxy errors)                                                                                 | 100%   | Unit (4)        |
+| Error classification (connection_refused, reset, dns, timeout, tls, circuit, no_dest, no_ep, unknown, no_route, headers_too_large) | 100%   | Unit (12) + E2E |
+| Per-listener detail level (minimal / standard / full)                                                                              | 100%   | Unit (4)        |
+| Default detail level is standard (via context)                                                                                     | 100%   | Unit            |
 
 ## Middlewares
 
@@ -109,63 +110,63 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | Middleware disable per-route                                 | 100%   | Unit + E2E          |
 | Middleware override merge                                    | 100%   | Unit                |
 | Middleware override Headers (per-route header config merge)  | 100%   | Code review         |
-| Middleware override ExtProc (per-route phases/allowOnError)  | 100%   | Code review         |
+| Middleware override ExtProc (per-route phases/allowOnError)  | 100%   | E2E (2)             |
 | ExtProc MetricsPrefix (custom metric label name)             | 100%   | Code review         |
 | Cleanup on table swap (JWT refresh, rate limiter)            | 100%   | Code review         |
 | InlineAuthz (CEL rules, first-match-wins, body+TLS access)   | 100%   | Unit (14) + E2E     |
 
 ## Proxy Infrastructure
 
-| Feature                                                        | Status | Tests      |
-| -------------------------------------------------------------- | ------ | ---------- |
-| Atomic routing table swap (with cleanup callbacks)             | 100%   | Unit + E2E |
-| Listener management (detects TLS + timeout changes)                | 100%   | Unit (6) + E2E |
-| Circuit breaker (configurable failureThreshold + openDuration) | 100%   | Unit       |
-| Circuit breaker MaxPendingRequests + MaxRetries                | 100%   | Unit (3)   |
-| Health checks (thresholds, per-dest interval)                  | 100%   | Unit       |
-| Outlier detection (wired via OnResponse, race-free)            | 100%   | Unit       |
-| Outlier detection Interval + MaxEjectionPercent                | 100%   | Code review |
-| LeastRequest ChoiceCount (power-of-two-choices)                | 100%   | Unit (3)   |
-| TLS upstream                                                   | 100%   | Unit       |
-| TLS downstream                                                 | 100%   | Unit       |
-| HTTP/2 (ALPN configured)                                       | 100%   | Unit       |
-| h2c downstream (cleartext HTTP/2 via h2c.NewHandler)           | 100%   | Code review |
-| h2c upstream (cleartext HTTP/2 via http2.Transport{AllowHTTP})  | 100%   | Code review |
-| Streaming flush (FlushInterval -1 on reverse proxy)            | 100%   | Code review + E2E |
-| mTLS client auth (none/optional/require + CA verification)     | 100%   | Unit (6)   |
-| XFCC header injection (strip + inject from client cert URIs)   | 100%   | Unit (8)   |
-| Client IP resolution (direct/xff/header, hot-swap on listener) | 100%  | Unit (20) + E2E (7) |
-| PROXY protocol v1/v2 (trusted CIDRs, USE/IGNORE policy)       | 100%  | Unit (7) + E2E (2)  |
+| Feature                                                        | Status | Tests               |
+| -------------------------------------------------------------- | ------ | ------------------- |
+| Atomic routing table swap (with cleanup callbacks)             | 100%   | Unit + E2E          |
+| Listener management (detects TLS + timeout changes)            | 100%   | Unit (6) + E2E      |
+| Circuit breaker (configurable failureThreshold + openDuration) | 100%   | Unit                |
+| Circuit breaker MaxPendingRequests + MaxRetries                | 100%   | Unit (3) + E2E      |
+| Health checks (thresholds, per-dest interval)                  | 100%   | Unit                |
+| Outlier detection (wired via OnResponse, race-free)            | 100%   | Unit                |
+| Outlier detection Interval + MaxEjectionPercent                | 100%   | Code review         |
+| LeastRequest ChoiceCount (power-of-two-choices)                | 100%   | Unit (3)            |
+| TLS upstream                                                   | 100%   | Unit                |
+| TLS downstream                                                 | 100%   | Unit                |
+| HTTP/2 (ALPN configured)                                       | 100%   | Unit                |
+| h2c downstream (cleartext HTTP/2 via h2c.NewHandler)           | 100%   | Code review         |
+| h2c upstream (cleartext HTTP/2 via http2.Transport{AllowHTTP}) | 100%   | Code review         |
+| Streaming flush (FlushInterval -1 on reverse proxy)            | 100%   | Code review + E2E   |
+| mTLS client auth (none/optional/require + CA verification)     | 100%   | Unit (6)            |
+| XFCC header injection (strip + inject from client cert URIs)   | 100%   | Unit (8)            |
+| Client IP resolution (direct/xff/header, hot-swap on listener) | 100%   | Unit (20) + E2E (7) |
+| PROXY protocol v1/v2 (trusted CIDRs, USE/IGNORE policy)        | 100%   | Unit (7) + E2E (2)  |
 
 ## Timeouts
 
-| Feature                                                                                                                  | Status | Tests       |
-| ------------------------------------------------------------------------------------------------------------------------ | ------ | ----------- |
-| Listener timeouts (clientHeader, clientRequest, clientResponse, idleBetweenRequests)                                     | 100%   | Unit (4)    |
-| Destination timeouts (request, connect, dualStackFallback, tlsHandshake, responseHeader, expectContinue, idleConnection) | 100%   | Unit (6)    |
-| Destination request timeout fallback (route → destination)                                                               | 100%   | Code review |
-| parseDurationOrDefault generic helper                                                                                    | 100%   | Unit (4)    |
-| ExtAuthz decisionTimeout (renamed from timeout)                                                                          | 100%   | Unit + E2E  |
-| ExtProc phaseTimeout (renamed from timeout)                                                                              | 100%   | Unit + E2E  |
-| JWT jwksRetrievalTimeout (new, was hardcoded 10s)                                                                        | 100%   | E2E         |
-| JWT jwksPath (renamed from jwksUri)                                                                                      | 100%   | E2E         |
+| Feature                                                                                                                  | Status | Tests      |
+| ------------------------------------------------------------------------------------------------------------------------ | ------ | ---------- |
+| Listener timeouts (clientHeader, clientRequest, clientResponse, idleBetweenRequests)                                     | 100%   | Unit (4)   |
+| Destination timeouts (request, connect, dualStackFallback, tlsHandshake, responseHeader, expectContinue, idleConnection) | 100%   | Unit (6)   |
+| Destination request timeout fallback (route → destination)                                                               | 100%   | E2E (2)    |
+| parseDurationOrDefault generic helper                                                                                    | 100%   | Unit (4)   |
+| ExtAuthz decisionTimeout (renamed from timeout)                                                                          | 100%   | Unit + E2E |
+| ExtProc phaseTimeout (renamed from timeout)                                                                              | 100%   | Unit + E2E |
+| JWT jwksRetrievalTimeout (new, was hardcoded 10s)                                                                        | 100%   | E2E        |
+| JWT jwksPath (renamed from jwksUri)                                                                                      | 100%   | E2E        |
 
 ## Prometheus Metrics
 
-| Feature                                                              | Status | Tests      |
-| -------------------------------------------------------------------- | ------ | ---------- |
-| Per-listener metrics config (path, collect, histograms)              | 100%   | Unit + E2E |
-| Route metrics (requests, duration, size, inflight, retries, mirrors) | 100%   | Unit + E2E |
+| Feature                                                              | Status | Tests       |
+| -------------------------------------------------------------------- | ------ | ----------- |
+| Per-listener metrics config (path, collect, histograms)              | 100%   | Unit + E2E  |
+| Route metrics (requests, duration, size, inflight, retries, mirrors) | 100%   | Unit + E2E  |
 | Route size histograms (SizeBuckets wired)                            | 100%   | Code review |
-| Destination metrics (requests, duration, inflight, circuit breaker)  | 100%   | Unit + E2E |
-| Endpoint metrics (requests, duration, healthy, consecutive 5xx)      | 100%   | Unit + E2E |
-| Middleware metrics (duration, passed, rejections)                    | 100%   | Unit + E2E |
-| Listener metrics (connections, active, TLS errors)                   | 100%   | Unit       |
-| Endpoint disabled by default (high cardinality opt-in)               | 100%   | Unit + E2E |
-| Custom scrape endpoint path                                          | 100%   | E2E        |
-| Isolated prometheus.Registry per listener                            | 100%   | Unit       |
-| Gauge scraper goroutine (health, circuit, 5xx)                       | 100%   | Unit       |
-| Context-based collector injection (zero overhead when disabled)      | 100%   | Unit       |
+| Destination metrics (requests, duration, inflight, circuit breaker)  | 100%   | Unit + E2E  |
+| Endpoint metrics (requests, duration, healthy, consecutive 5xx)      | 100%   | Unit + E2E  |
+| Middleware metrics (duration, passed, rejections)                    | 100%   | Unit + E2E  |
+| Listener metrics (connections, active, TLS errors)                   | 100%   | Unit + E2E  |
+| Endpoint disabled by default (high cardinality opt-in)               | 100%   | Unit + E2E  |
+| Custom scrape endpoint path                                          | 100%   | E2E         |
+| Isolated prometheus.Registry per listener                            | 100%   | Unit        |
+| Gauge scraper goroutine (health, circuit, 5xx)                       | 100%   | Unit        |
+| Context-based collector injection (zero overhead when disabled)      | 100%   | Unit        |
 
 ## Kubernetes Discovery
 
@@ -205,21 +206,21 @@ Method: Line-by-line source audit + unit tests + e2e tests
 
 ## Control Plane
 
-| Feature                    | Status | Tests  |
-| -------------------------- | ------ | ------ |
-| Request logger (httpsnoop) | 100%   | Unit   |
-| Panic recovery             | 100%   | Unit   |
-| Respond helpers            | 100%   | Unit   |
-| Gateway rebuild            | 100%   | Unit   |
-| Swagger UI                 | 100%   | Manual |
-| TLS server (inline PEM + file path) | 100% | Unit (5) + Integration (7) |
-| mTLS client auth (none/optional/require) | 100% | Integration (3) |
-| API key authentication (Bearer token) | 100% | Unit (5) + Integration (3) + E2E kind (8×3 modes) |
-| Auth middleware chain (Recovery → Auth → Logger) | 100% | Unit (7) |
-| TLS config validation      | 100%   | Unit (5) |
-| Secret CRUD (list summary, get with value, create, update, delete) | 100% | Unit + E2E (3) |
-| Secret resolution in snapshots (`{{secret:value/env/file}}`) | 100% | Unit (11) + E2E (2) |
-| Snapshot fails on unresolved secret references | 100% | Unit (3) + E2E (1) |
+| Feature                                                            | Status | Tests                                             |
+| ------------------------------------------------------------------ | ------ | ------------------------------------------------- |
+| Request logger (httpsnoop)                                         | 100%   | Unit                                              |
+| Panic recovery                                                     | 100%   | Unit                                              |
+| Respond helpers                                                    | 100%   | Unit                                              |
+| Gateway rebuild                                                    | 100%   | Unit                                              |
+| Swagger UI                                                         | 100%   | Manual                                            |
+| TLS server (inline PEM + file path)                                | 100%   | Unit (5) + Integration (7)                        |
+| mTLS client auth (none/optional/require)                           | 100%   | Integration (3)                                   |
+| API key authentication (Bearer token)                              | 100%   | Unit (5) + Integration (3) + E2E kind (8×3 modes) |
+| Auth middleware chain (Recovery → Auth → Logger)                   | 100%   | Unit (7)                                          |
+| TLS config validation                                              | 100%   | Unit (5)                                          |
+| Secret CRUD (list summary, get with value, create, update, delete) | 100%   | Unit + E2E (3)                                    |
+| Secret resolution in snapshots (`{{secret:value/env/file}}`)       | 100%   | Unit (11) + E2E (2)                               |
+| Snapshot fails on unresolved secret references                     | 100%   | Unit (3) + E2E (1)                                |
 
 ## Test Summary
 
@@ -248,12 +249,13 @@ Method: Line-by-line source audit + unit tests + e2e tests
 | E2E (massive battery — live server)                                | 48      | 48      |
 | E2E (gap coverage — infra-heavy)                                   | 22      | 22      |
 | E2E (audit pass1 — new coverage)                                   | 5       | 5       |
+| E2E (audit pass2 — convention validation)                          | 7       | 7       |
 | E2E (metrics)                                                      | 5       | 5       |
 | E2E (proxy errors)                                                 | 4       | 4       |
 | E2E (cluster, kind)                                                | 8       | 8       |
 | E2E (TLS + auth, kind × 3 modes)                                   | 24      | 24      |
 | E2E (controller)                                                   | 23      | 23      |
-| **E2E total**                                                      | **221** | **217** |
+| **E2E total**                                                      | **228** | **224** |
 
 ## Known Remaining Issues
 
