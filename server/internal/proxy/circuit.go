@@ -101,12 +101,12 @@ func (cb *CircuitBreaker) Allow() bool {
 			if cb.state.CompareAndSwap(int32(CircuitOpen), int32(CircuitHalfOpen)) {
 				cb.halfOpenAllowed.Store(1)
 			}
-			return cb.halfOpenAllowed.Add(-1) >= 0
+			return cb.halfOpenAllowed.CompareAndSwap(1, 0)
 		}
 		return false
 
 	case CircuitHalfOpen:
-		return cb.halfOpenAllowed.Add(-1) >= 0
+		return cb.halfOpenAllowed.CompareAndSwap(1, 0)
 	}
 
 	if cb.activeConnections.Load() >= int64(cb.maxConnections) {

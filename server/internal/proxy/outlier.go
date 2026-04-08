@@ -16,13 +16,14 @@ import (
 // OutlierDetector tracks error rates per endpoint and ejects those
 // that exceed the configured thresholds.
 type OutlierDetector struct {
-	mu         sync.Mutex
+	mu         sync.RWMutex
 	trackers   map[string]*outlierTracker
 	logger     *slog.Logger
 	cancel     context.CancelFunc
 	updateCh   chan struct{}
 }
 
+// outlierTracker tracks consecutive errors for a single endpoint.
 type outlierTracker struct {
 	consecutive5xx     atomic.Int64
 	consecutiveGateway atomic.Int64
@@ -31,6 +32,7 @@ type outlierTracker struct {
 	ejectionCount      int
 	cfg                *model.OutlierDetectionOptions
 	endpoint           *Endpoint
+	destID             string
 }
 
 // NewOutlierDetector creates an OutlierDetector.
@@ -62,6 +64,7 @@ func (od *OutlierDetector) Update(pools map[string]*DestinationPool) {
 				newTrackers[key] = &outlierTracker{
 					cfg:      d.Options.OutlierDetection,
 					endpoint: ep,
+					destID:   d.ID,
 				}
 			}
 		}
@@ -78,9 +81,9 @@ func (od *OutlierDetector) Update(pools map[string]*DestinationPool) {
 // destID is the Destination ID and epID is the endpoint ID (host:port).
 func (od *OutlierDetector) RecordResponse(destID, epID string, statusCode int) {
 	key := destID + "/" + epID
-	od.mu.Lock()
+	od.mu.RLock()
 	t, ok := od.trackers[key]
-	od.mu.Unlock()
+	od.mu.RUnlock()
 	if !ok {
 		return
 	}
@@ -146,14 +149,10 @@ func (od *OutlierDetector) maxEjectionReached(destID string, cfg *model.OutlierD
 	total := 0
 	ejected := 0
 	for _, t := range od.trackers {
-		key := destID + "/"
-		if len(t.endpoint.ID) > 0 {
-			k := destID + "/" + t.endpoint.ID
-			if len(k) >= len(key) && k[:len(key)] == key {
-				total++
-				if t.ejected.Load() {
-					ejected++
-				}
+		if t.destID == destID {
+			total++
+			if t.ejected.Load() {
+				ejected++
 			}
 		}
 	}

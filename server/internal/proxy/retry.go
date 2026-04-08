@@ -15,6 +15,10 @@ import (
 	"github.com/achetronic/vrata/internal/model"
 )
 
+// retryMaxBodySize is the maximum request body size (32 MB) that the retry
+// transport will buffer for replay. Requests exceeding this are not retried.
+const retryMaxBodySize = 32 << 20
+
 // retryTransport wraps an http.RoundTripper with retry logic.
 type retryTransport struct {
 	inner          http.RoundTripper
@@ -38,15 +42,27 @@ func (rt *retryTransport) Unwrap() http.RoundTripper {
 }
 
 func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Buffer the body so we can replay it on retries.
+	// Buffer the body so we can replay it on retries. Bodies exceeding
+	// retryMaxBodySize are not buffered — the request proceeds without
+	// retry capability rather than risking OOM.
 	var bodyBytes []byte
+	var canRetryBody bool
 	if req.Body != nil {
+		lr := io.LimitReader(req.Body, retryMaxBodySize+1)
 		var err error
-		bodyBytes, err = io.ReadAll(req.Body)
+		bodyBytes, err = io.ReadAll(lr)
 		if err != nil {
+			req.Body.Close()
 			return nil, err
 		}
+		if int64(len(bodyBytes)) > retryMaxBodySize {
+			req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), req.Body))
+			return rt.inner.RoundTrip(req)
+		}
 		req.Body.Close()
+		canRetryBody = true
+	} else {
+		canRetryBody = true
 	}
 
 	maxAttempts := int(rt.retry.Attempts) + 1 // original + retries
@@ -86,7 +102,7 @@ func (rt *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 				rt.onRetry(req, attempt)
 			}
 		}
-		if bodyBytes != nil {
+		if canRetryBody && bodyBytes != nil {
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 
