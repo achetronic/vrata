@@ -16,7 +16,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListMiddlewares returns all middlewares stored in the database.
+// HandleListMiddlewares returns all middlewares stored in the database.
 //
 // @Summary     List middlewares
 // @Description Returns the full list of middlewares.
@@ -34,7 +34,7 @@ func (d *Dependencies) HandleListMiddlewares(w http.ResponseWriter, r *http.Requ
 	respond.JSON(w, http.StatusOK, middlewares, d.Logger)
 }
 
-// CreateMiddleware creates a new middleware and persists it in the database.
+// HandleCreateMiddleware creates a new middleware and persists it in the database.
 //
 // @Summary     Create a middleware
 // @Description Creates a new middleware.
@@ -70,7 +70,7 @@ func (d *Dependencies) HandleCreateMiddleware(w http.ResponseWriter, r *http.Req
 	respond.JSON(w, http.StatusCreated, mw, d.Logger)
 }
 
-// GetMiddleware returns the middleware identified by middlewareId.
+// HandleGetMiddleware returns the middleware identified by middlewareId.
 //
 // @Summary     Get a middleware
 // @Description Returns the middleware with the given ID.
@@ -92,7 +92,7 @@ func (d *Dependencies) HandleGetMiddleware(w http.ResponseWriter, r *http.Reques
 	respond.JSON(w, http.StatusOK, mw, d.Logger)
 }
 
-// UpdateMiddleware replaces an existing middleware.
+// HandleUpdateMiddleware replaces an existing middleware.
 //
 // @Summary     Update a middleware
 // @Description Replaces the middleware with the given ID.
@@ -134,7 +134,7 @@ func (d *Dependencies) HandleUpdateMiddleware(w http.ResponseWriter, r *http.Req
 	respond.JSON(w, http.StatusOK, mw, d.Logger)
 }
 
-// DeleteMiddleware removes the middleware identified by middlewareId.
+// HandleDeleteMiddleware removes the middleware identified by middlewareId.
 //
 // @Summary     Delete a middleware
 // @Description Deletes the middleware with the given ID.

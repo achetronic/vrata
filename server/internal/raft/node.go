@@ -102,9 +102,9 @@ func NewNode(ctx context.Context, cfg *config.RaftConfig, dataDir string, store 
 
 	r, err := raft.NewRaft(raftCfg, fsm, logStore, stableStore, snapshotStore, transport)
 	if err != nil {
-		logStore.Close()
-		stableStore.Close()
-		transport.Close()
+		_ = logStore.Close()    // Best-effort cleanup on raft init failure
+		_ = stableStore.Close() // Best-effort cleanup on raft init failure
+		_ = transport.Close()   // Best-effort cleanup on raft init failure
 		return nil, fmt.Errorf("creating raft node: %w", err)
 	}
 
@@ -218,9 +218,9 @@ func (n *Node) Shutdown() error {
 	if err := n.raft.Shutdown().Error(); err != nil {
 		return err
 	}
-	n.transport.Close()
-	n.logStore.Close()
-	n.stableStore.Close()
+	_ = n.transport.Close()   // Best-effort cleanup on shutdown
+	_ = n.logStore.Close()    // Best-effort cleanup on shutdown
+	_ = n.stableStore.Close() // Best-effort cleanup on shutdown
 	return nil
 }
 

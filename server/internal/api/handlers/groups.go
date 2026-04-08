@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListGroups returns all groups stored in the database.
+// HandleListGroups returns all groups stored in the database.
 //
 // @Summary     List groups
 // @Description Returns the full list of route groups.
@@ -35,7 +35,7 @@ func (d *Dependencies) HandleListGroups(w http.ResponseWriter, r *http.Request) 
 	respond.JSON(w, http.StatusOK, groups, d.Logger)
 }
 
-// CreateGroup creates a new route group.
+// HandleCreateGroup creates a new route group.
 //
 // @Summary     Create a group
 // @Description Creates a new group referencing existing routes by ID.
@@ -71,7 +71,7 @@ func (d *Dependencies) HandleCreateGroup(w http.ResponseWriter, r *http.Request)
 	respond.JSON(w, http.StatusCreated, group, d.Logger)
 }
 
-// GetGroup returns the group identified by groupId.
+// HandleGetGroup returns the group identified by groupId.
 //
 // @Summary     Get a group
 // @Description Returns the group with the given ID.
@@ -93,7 +93,7 @@ func (d *Dependencies) HandleGetGroup(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, group, d.Logger)
 }
 
-// UpdateGroup replaces an existing group.
+// HandleUpdateGroup replaces an existing group.
 //
 // @Summary     Update a group
 // @Description Replaces the group with the given ID.
@@ -135,7 +135,7 @@ func (d *Dependencies) HandleUpdateGroup(w http.ResponseWriter, r *http.Request)
 	respond.JSON(w, http.StatusOK, group, d.Logger)
 }
 
-// DeleteGroup removes the group identified by groupId.
+// HandleDeleteGroup removes the group identified by groupId.
 //
 // @Summary     Delete a group
 // @Description Deletes the group with the given ID.

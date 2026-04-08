@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListSecrets returns summary metadata (ID + Name) for all secrets.
+// HandleListSecrets returns summary metadata (ID + Name) for all secrets.
 // The Value field is never included in the list response.
 //
 // @Summary     List secrets
@@ -33,7 +33,7 @@ func (d *Dependencies) HandleListSecrets(w http.ResponseWriter, r *http.Request)
 	respond.JSON(w, http.StatusOK, secrets, d.Logger)
 }
 
-// CreateSecret creates a new secret.
+// HandleCreateSecret creates a new secret.
 //
 // @Summary     Create a secret
 // @Description Creates a new secret entity. One secret = one value.
@@ -78,7 +78,7 @@ func (d *Dependencies) HandleCreateSecret(w http.ResponseWriter, r *http.Request
 	respond.JSON(w, http.StatusCreated, model.SecretSummary{ID: sec.ID, Name: sec.Name}, d.Logger)
 }
 
-// GetSecret returns the secret with the given ID, including its Value.
+// HandleGetSecret returns the secret with the given ID, including its Value.
 //
 // @Summary     Get a secret
 // @Description Returns the secret with its value. Requires authentication.
@@ -104,7 +104,7 @@ func (d *Dependencies) HandleGetSecret(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, sec, d.Logger)
 }
 
-// UpdateSecret replaces the secret identified by secretId.
+// HandleUpdateSecret replaces the secret identified by secretId.
 //
 // @Summary     Update a secret
 // @Description Replaces the secret with the given ID.
@@ -158,7 +158,7 @@ func (d *Dependencies) HandleUpdateSecret(w http.ResponseWriter, r *http.Request
 	respond.JSON(w, http.StatusOK, model.SecretSummary{ID: sec.ID, Name: sec.Name}, d.Logger)
 }
 
-// DeleteSecret removes the secret with the given ID.
+// HandleDeleteSecret removes the secret with the given ID.
 //
 // @Summary     Delete a secret
 // @Description Removes the secret. Entities referencing it will fail at next snapshot build.

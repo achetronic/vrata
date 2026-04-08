@@ -202,7 +202,7 @@ func run() error {
 				<-ctx.Done()
 				shutCtx, shutCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer shutCancel()
-				_ = srv.Shutdown(shutCtx)
+				_ = srv.Shutdown(shutCtx) // Best-effort shutdown on signal
 			}()
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 				logger.Error("metrics server failed", slog.String("error", err.Error()))
@@ -930,7 +930,7 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 				)
 				if sw != nil && gr != nil {
 					if err := sw.SetGRPCRouteAccepted(ctx, gr, false, "OverlappingRoute", msg); err != nil {
-						slog.Warn("failed to write GRPCRoute Accepted status", slog.String("error", err.Error()))
+						logger.Warn("failed to write GRPCRoute Accepted status", slog.String("error", err.Error()))
 					}
 				}
 				return 0, groupName, nil
@@ -943,7 +943,7 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 	if err != nil {
 		if sw != nil {
 			if sErr := sw.SetGRPCRouteAccepted(ctx, gr, false, "SyncFailed", err.Error()); sErr != nil {
-				slog.Warn("failed to write GRPCRoute Accepted status", slog.String("error", sErr.Error()))
+				logger.Warn("failed to write GRPCRoute Accepted status", slog.String("error", sErr.Error()))
 			}
 		}
 		return 0, groupName, fmt.Errorf("applying grpc route %s/%s: %w", ref.Namespace, ref.Name, err)
@@ -954,7 +954,7 @@ func reconcileGRPCRoute(ctx context.Context, c cache.Cache, rec *reconciler.Reco
 		}
 		if sw != nil {
 			if err := sw.SetGRPCRouteAccepted(ctx, gr, true, "Synced", "Successfully synced to Vrata"); err != nil {
-				slog.Warn("failed to write GRPCRoute Accepted status", slog.String("error", err.Error()))
+				logger.Warn("failed to write GRPCRoute Accepted status", slog.String("error", err.Error()))
 			}
 		}
 		if m != nil {

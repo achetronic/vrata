@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListDestinations returns all destinations stored in the database.
+// HandleListDestinations returns all destinations stored in the database.
 //
 // @Summary     List destinations
 // @Description Returns the full list of destinations.
@@ -33,7 +33,7 @@ func (d *Dependencies) HandleListDestinations(w http.ResponseWriter, r *http.Req
 	respond.JSON(w, http.StatusOK, destinations, d.Logger)
 }
 
-// CreateDestination creates a new destination and persists it in the database.
+// HandleCreateDestination creates a new destination and persists it in the database.
 //
 // @Summary     Create a destination
 // @Description Creates a new upstream destination entity.
@@ -69,7 +69,7 @@ func (d *Dependencies) HandleCreateDestination(w http.ResponseWriter, r *http.Re
 	respond.JSON(w, http.StatusCreated, destination, d.Logger)
 }
 
-// GetDestination returns the destination identified by destinationId.
+// HandleGetDestination returns the destination identified by destinationId.
 //
 // @Summary     Get a destination
 // @Description Returns the destination with the given ID.
@@ -91,7 +91,7 @@ func (d *Dependencies) HandleGetDestination(w http.ResponseWriter, r *http.Reque
 	respond.JSON(w, http.StatusOK, destination, d.Logger)
 }
 
-// UpdateDestination replaces an existing destination.
+// HandleUpdateDestination replaces an existing destination.
 //
 // @Summary     Update a destination
 // @Description Replaces the destination with the given ID.
@@ -133,7 +133,7 @@ func (d *Dependencies) HandleUpdateDestination(w http.ResponseWriter, r *http.Re
 	respond.JSON(w, http.StatusOK, destination, d.Logger)
 }
 
-// DeleteDestination removes the destination identified by destinationId.
+// HandleDeleteDestination removes the destination identified by destinationId.
 //
 // @Summary     Delete a destination
 // @Description Deletes the destination with the given ID.

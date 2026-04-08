@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListRoutes returns all routes stored in the database.
+// HandleListRoutes returns all routes stored in the database.
 //
 // @Summary     List routes
 // @Description Returns the full list of routes.
@@ -33,7 +33,7 @@ func (d *Dependencies) HandleListRoutes(w http.ResponseWriter, r *http.Request) 
 	respond.JSON(w, http.StatusOK, routes, d.Logger)
 }
 
-// CreateRoute creates a new route and persists it in the database.
+// HandleCreateRoute creates a new route and persists it in the database.
 //
 // @Summary     Create a route
 // @Description Creates a new independent route.
@@ -69,7 +69,7 @@ func (d *Dependencies) HandleCreateRoute(w http.ResponseWriter, r *http.Request)
 	respond.JSON(w, http.StatusCreated, route, d.Logger)
 }
 
-// GetRoute returns the route identified by routeId.
+// HandleGetRoute returns the route identified by routeId.
 //
 // @Summary     Get a route
 // @Description Returns the route with the given ID.
@@ -91,7 +91,7 @@ func (d *Dependencies) HandleGetRoute(w http.ResponseWriter, r *http.Request) {
 	respond.JSON(w, http.StatusOK, route, d.Logger)
 }
 
-// UpdateRoute replaces an existing route.
+// HandleUpdateRoute replaces an existing route.
 //
 // @Summary     Update a route
 // @Description Replaces the route with the given ID.
@@ -163,7 +163,7 @@ func validateRouteAction(route model.Route) error {
 	return nil
 }
 
-// DeleteRoute removes the route identified by routeId.
+// HandleDeleteRoute removes the route identified by routeId.
 //
 // @Summary     Delete a route
 // @Description Deletes the route with the given ID.

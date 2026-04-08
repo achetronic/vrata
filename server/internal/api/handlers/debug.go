@@ -9,7 +9,7 @@ import (
 	"github.com/achetronic/vrata/internal/api/respond"
 )
 
-// GetConfigDump returns the complete current configuration: all listeners,
+// HandleGetConfigDump returns the complete current configuration: all listeners,
 // destinations, routes, groups, and middlewares in a single JSON response.
 //
 // @Summary     Get config dump

@@ -68,7 +68,7 @@ func parseTrustedProxies(cidrs []string) []*net.IPNet {
 // clientIP extracts the client IP, only trusting X-Forwarded-For when the
 // direct connection comes from a trusted proxy.
 func clientIP(r *http.Request, trusted []*net.IPNet) string {
-	directIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+	directIP, _, _ := net.SplitHostPort(r.RemoteAddr) // Error ignored: RemoteAddr is always host:port
 
 	if len(trusted) > 0 && r.Header.Get("X-Forwarded-For") != "" {
 		ip := net.ParseIP(directIP)

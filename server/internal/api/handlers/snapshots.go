@@ -17,7 +17,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListSnapshots returns summary metadata for all versioned snapshots.
+// HandleListSnapshots returns summary metadata for all versioned snapshots.
 //
 // @Summary     List snapshots
 // @Description Returns summary metadata (id, name, createdAt, active) for all versioned snapshots.
@@ -35,7 +35,7 @@ func (d *Dependencies) HandleListSnapshots(w http.ResponseWriter, r *http.Reques
 	respond.JSON(w, http.StatusOK, summaries, d.Logger)
 }
 
-// CreateSnapshot captures the current live configuration as an immutable
+// HandleCreateSnapshot captures the current live configuration as an immutable
 // versioned snapshot.
 //
 // @Summary     Create a snapshot
@@ -104,7 +104,7 @@ func (d *Dependencies) HandleCreateSnapshot(w http.ResponseWriter, r *http.Reque
 	}, d.Logger)
 }
 
-// GetSnapshot returns the versioned snapshot with the given ID.
+// HandleGetSnapshot returns the versioned snapshot with the given ID.
 //
 // @Summary     Get a snapshot
 // @Description Returns the full versioned snapshot with the given ID, including all configuration entities.
@@ -126,7 +126,7 @@ func (d *Dependencies) HandleGetSnapshot(w http.ResponseWriter, r *http.Request)
 	respond.JSON(w, http.StatusOK, vs, d.Logger)
 }
 
-// DeleteSnapshot removes the versioned snapshot with the given ID.
+// HandleDeleteSnapshot removes the versioned snapshot with the given ID.
 // If the deleted snapshot was the active one, the active pointer is cleared
 // and proxies will stop receiving configuration until a new snapshot is activated.
 //
@@ -150,7 +150,7 @@ func (d *Dependencies) HandleDeleteSnapshot(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// ActivateSnapshot marks the given snapshot as the active configuration.
+// HandleActivateSnapshot marks the given snapshot as the active configuration.
 // The SSE stream will immediately start serving this snapshot to all
 // connected proxies.
 //

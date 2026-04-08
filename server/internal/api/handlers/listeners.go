@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// ListListeners returns all listeners stored in the database.
+// HandleListListeners returns all listeners stored in the database.
 //
 // @Summary     List listeners
 // @Description Returns the full list of listeners.
@@ -33,7 +33,7 @@ func (d *Dependencies) HandleListListeners(w http.ResponseWriter, r *http.Reques
 	respond.JSON(w, http.StatusOK, listeners, d.Logger)
 }
 
-// CreateListener creates a new listener and persists it in the database.
+// HandleCreateListener creates a new listener and persists it in the database.
 //
 // @Summary     Create a listener
 // @Description Creates a new listener.
@@ -73,7 +73,7 @@ func (d *Dependencies) HandleCreateListener(w http.ResponseWriter, r *http.Reque
 	respond.JSON(w, http.StatusCreated, listener, d.Logger)
 }
 
-// GetListener returns the listener identified by listenerId.
+// HandleGetListener returns the listener identified by listenerId.
 //
 // @Summary     Get a listener
 // @Description Returns the listener with the given ID.
@@ -95,7 +95,7 @@ func (d *Dependencies) HandleGetListener(w http.ResponseWriter, r *http.Request)
 	respond.JSON(w, http.StatusOK, listener, d.Logger)
 }
 
-// UpdateListener replaces an existing listener.
+// HandleUpdateListener replaces an existing listener.
 //
 // @Summary     Update a listener
 // @Description Replaces the listener with the given ID.
@@ -141,7 +141,7 @@ func (d *Dependencies) HandleUpdateListener(w http.ResponseWriter, r *http.Reque
 	respond.JSON(w, http.StatusOK, listener, d.Logger)
 }
 
-// DeleteListener removes the listener identified by listenerId.
+// HandleDeleteListener removes the listener identified by listenerId.
 //
 // @Summary     Delete a listener
 // @Description Deletes the listener with the given ID.

@@ -48,33 +48,35 @@ type Validator func(snap *model.Snapshot) []Warning
 // structurally sound and will compile cleanly on any proxy.
 func Snapshot(snap *model.Snapshot) []Warning {
 	var warnings []Warning
-	for _, v := range validators {
+	for _, v := range validators() {
 		warnings = append(warnings, v(snap)...)
 	}
 	return warnings
 }
 
-// validators is the ordered list of validation functions. New validators
+// validators returns the ordered list of validation functions. New validators
 // are appended here — no other wiring is needed.
-var validators = []Validator{
-	validateRouteRegexes,
-	validateRouteCEL,
-	validateRouteRewriteRegex,
-	validateHeaderRegexes,
-	validateQueryParamRegexes,
-	validateGroupRegexes,
-	validateListenerTLS,
-	validateDestinationTLS,
-	validateRouteDestinationRefs,
-	validateRouteMirrorRefs,
-	validateGroupRouteRefs,
-	validateMiddlewareDestinationRefs,
-	validateRouteMiddlewareRefs,
-	validateGroupMiddlewareRefs,
-	validateMiddlewareOverrideCEL,
-	validateCORSOriginRegexes,
-	validateJWTAssertClaimsCEL,
-	validateJWTClaimToHeadersCEL,
+func validators() []Validator {
+	return []Validator{
+		validateRouteRegexes,
+		validateRouteCEL,
+		validateRouteRewriteRegex,
+		validateHeaderRegexes,
+		validateQueryParamRegexes,
+		validateGroupRegexes,
+		validateListenerTLS,
+		validateDestinationTLS,
+		validateRouteDestinationRefs,
+		validateRouteMirrorRefs,
+		validateGroupRouteRefs,
+		validateMiddlewareDestinationRefs,
+		validateRouteMiddlewareRefs,
+		validateGroupMiddlewareRefs,
+		validateMiddlewareOverrideCEL,
+		validateCORSOriginRegexes,
+		validateJWTAssertClaimsCEL,
+		validateJWTClaimToHeadersCEL,
+	}
 }
 
 // ── Regex compilation ───────────────────────────────────────────────────────

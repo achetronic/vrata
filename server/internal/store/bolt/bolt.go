@@ -65,13 +65,13 @@ func New(path string, cipher *encrypt.Cipher) (*Store, error) {
 		return nil
 	})
 	if err != nil {
-		_ = db.Close()
+		_ = db.Close() // Best-effort cleanup on bucket init failure
 		return nil, fmt.Errorf("initialising buckets: %w", err)
 	}
 
 	st := &Store{db: db, cipher: cipher}
 	if err := st.checkEncryptionMode(); err != nil {
-		_ = db.Close()
+		_ = db.Close() // Best-effort cleanup on encryption check failure
 		return nil, err
 	}
 
@@ -97,7 +97,7 @@ func (s *Store) checkEncryptionMode() error {
 	dataEncrypted := len(marker) > 0 && string(marker) == "true"
 
 	if s.cipher == nil && dataEncrypted {
-		return fmt.Errorf("data is encrypted but no encryption key is configured")
+		return fmt.Errorf("data is encrypted but no encryption key is configured: set controlPlane.encryption.key")
 	}
 	if s.cipher != nil && !dataEncrypted {
 		hasData := false
@@ -113,7 +113,7 @@ func (s *Store) checkEncryptionMode() error {
 			return fmt.Errorf("checking existing data: %w", err)
 		}
 		if hasData {
-			return fmt.Errorf("data is not encrypted but an encryption key is configured")
+			return fmt.Errorf("data is not encrypted but an encryption key is configured: remove controlPlane.encryption.key or start with a fresh database")
 		}
 		return s.db.Update(func(tx *bolt.Tx) error {
 			return tx.Bucket([]byte(bucketMeta)).Put([]byte(metaEncrypted), []byte("true"))

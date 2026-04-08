@@ -11,7 +11,7 @@ import (
 	"github.com/achetronic/vrata/internal/api/respond"
 )
 
-// RaftApply receives a serialised Raft command from a follower node and
+// HandleRaftApply receives a serialised Raft command from a follower node and
 // applies it through the local Raft log. This is the write-forwarding
 // mechanism that allows any control plane node to accept writes: followers
 // forward the command to the leader via this endpoint, the leader replicates

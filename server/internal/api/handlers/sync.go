@@ -15,7 +15,7 @@ import (
 	"github.com/achetronic/vrata/internal/model"
 )
 
-// SyncSnapshot streams the active versioned snapshot to proxy-mode instances
+// HandleSyncSnapshot streams the active versioned snapshot to proxy-mode instances
 // via Server-Sent Events (SSE). On connect, the proxy receives the current
 // active snapshot immediately. After that, every snapshot activation triggers
 // a new push. If no snapshot is active, the stream stays open and waits.

@@ -384,9 +384,9 @@ func (lm *ListenerManager) startListener(l model.Listener) {
 		// Serve blocks until the server is shut down. The returned error is
 		// http.ErrServerClosed on graceful shutdown, which is expected.
 		if srv.TLSConfig != nil {
-			_ = srv.ServeTLS(ln, "", "")
+			_ = srv.ServeTLS(ln, "", "") // Returns http.ErrServerClosed on graceful shutdown
 		} else {
-			_ = srv.Serve(ln)
+			_ = srv.Serve(ln) // Returns http.ErrServerClosed on graceful shutdown
 		}
 	}()
 }

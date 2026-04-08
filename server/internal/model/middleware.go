@@ -127,7 +127,6 @@ type CORSOrigin struct {
 // JWT
 // ────────────────────────────────────────────────────────────────────────────
 
-// JWTConfig holds the configuration for JWT authentication.
 // JWTConfig holds the configuration for a single JWT validation middleware.
 // Each middleware validates tokens from one issuer. Use multiple JWT
 // middlewares with skipWhen/onlyWhen for multi-provider setups.

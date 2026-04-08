@@ -231,6 +231,6 @@ func clientIPFromRequest(r *http.Request) string {
 		}
 		return strings.TrimSpace(xff)
 	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	host, _, _ := net.SplitHostPort(r.RemoteAddr) // Error ignored: RemoteAddr is always host:port
 	return host
 }

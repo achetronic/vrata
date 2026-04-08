@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +26,10 @@ import (
 	"github.com/achetronic/vrata/internal/store"
 	boltstore "github.com/achetronic/vrata/internal/store/bolt"
 )
+
+// ErrNoLeader is returned when a write is attempted but no Raft leader is
+// available (e.g. during an election or when the cluster has lost quorum).
+var ErrNoLeader = errors.New("no raft leader available")
 
 // Store wraps a bolt store with Raft consensus. All writes go through the
 // Raft log; reads are served from the local bolt database.
@@ -209,7 +214,7 @@ func (s *Store) apply(ctx context.Context, cmdType string, id string, payload in
 func (s *Store) forwardToLeader(ctx context.Context, data []byte) error {
 	leaderHTTP := s.node.LeaderHTTPAddr()
 	if leaderHTTP == "" {
-		return fmt.Errorf("no raft leader available")
+		return ErrNoLeader
 	}
 
 	scheme := "http"

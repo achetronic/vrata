@@ -120,7 +120,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("ping: %w", err)
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body) // Best-effort drain
 	resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("ping: server returned %d", resp.StatusCode)
@@ -360,7 +360,7 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) // Best-effort error body read
 		return &APIError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
 	if out != nil {
@@ -391,7 +391,7 @@ func (c *Client) post(ctx context.Context, path string, body any, out any) error
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(resp.Body) // Best-effort error body read
 		return &APIError{StatusCode: resp.StatusCode, Body: string(b)}
 	}
 	if out != nil {
@@ -418,10 +418,10 @@ func (c *Client) put(ctx context.Context, path string, body any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) // Best-effort error body read
 		return &APIError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body) // Best-effort drain
 	return nil
 }
 
@@ -438,9 +438,9 @@ func (c *Client) del(ctx context.Context, path string) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) // Best-effort error body read
 		return &APIError{StatusCode: resp.StatusCode, Body: string(body)}
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	_, _ = io.Copy(io.Discard, resp.Body) // Best-effort drain
 	return nil
 }

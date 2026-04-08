@@ -80,7 +80,7 @@ func ExtProcMiddlewareWithStop(cfg *model.ExtProcConfig, services map[string]Ser
 			slog.Error("extproc: failed to create gRPC connection", slog.String("error", err.Error()))
 		} else {
 			ep.grpcConn = conn
-			cleanups = append(cleanups, func() { conn.Close() })
+			cleanups = append(cleanups, func() { _ = conn.Close() }) // Best-effort gRPC connection cleanup
 		}
 	}
 
