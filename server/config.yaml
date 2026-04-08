@@ -13,19 +13,19 @@ controlPlane:
   # storePath is the root directory for all control plane state.
   # Vrata places the bbolt database at <storePath>/vrata.db and, when Raft is
   # enabled, Raft logs and snapshots at <storePath>/raft/.
-  storePath: "/data"
+  storePath: "./data"
 
   # raft enables multi-node HA replication via embedded Raft consensus.
   # When absent, the control plane runs in single-node mode.
-  raft:
+  #raft:
     # nodeId is the unique identifier for this node in the Raft cluster.
-    nodeId: "cp-0"
+    #nodeId: "cp-0"
     
     # bindAddress is the host:port this node listens on for Raft peer-to-peer communication.
-    bindAddress: ":7000"
+    #bindAddress: ":7000"
     
     # advertiseAddress is the host:port that other nodes use to reach this node.
-    advertiseAddress: "${POD_IP}:7000"
+    #advertiseAddress: "127.0.0.1:7000"
     
     # peers is the explicit list of all cluster members. Used when DNS discovery is not configured.
     # peers:
@@ -33,26 +33,25 @@ controlPlane:
     #   - "cp-1=10.0.0.2:7000"
     
     # discovery configures automatic peer discovery (e.g. headless service in k8s).
-    discovery:
-      dns: "vrata-headless.vrata-system.svc.cluster.local"
+    #discovery:
+    #  dns: "vrata-headless.vrata-system.svc.cluster.local"
 
   # tls configures TLS for the HTTP API server.
-  tls:
+  #tls:
     # cert is the path to the PEM-encoded TLS certificate.
-    cert: "/etc/vrata/certs/tls.crt"
+    #cert: "/etc/vrata/certs/tls.crt"
     # key is the path to the PEM-encoded private key.
-    key: "/etc/vrata/certs/tls.key"
+    #key: "/etc/vrata/certs/tls.key"
     # clientAuth configures mutual TLS for client verification.
-    clientAuth:
-      mode: "require" # none, optional, require
-      ca: "/etc/vrata/certs/ca.crt"
+    #clientAuth: "require" # none, optional, require
+    #ca: "/etc/vrata/certs/ca.crt"
 
   # auth configures client authentication for the REST API.
-  auth:
+  #auth:
     # apiKeys is a list of acceptable Bearer tokens.
-    apiKeys:
-      - name: "admin"
-        key: "secret-token-123"
+    #apiKeys:
+      #- name: "admin"
+        #key: "secret-token-123"
 
   # encryption configures at-rest encryption for sensitive data in bbolt.
   encryption:
@@ -79,8 +78,8 @@ log:
 
 # sessionStore configures the external session backend used by the STICKY balancing algorithm.
 sessionStore:
-  # type selects the backend type. Currently only "redis".
-  type: "redis"
+  # type selects the backend type. "redis" or "memory".
+  type: "memory"
   
   # redis holds settings for the Redis backend.
   redis:

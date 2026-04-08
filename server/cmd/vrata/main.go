@@ -44,6 +44,7 @@ import (
 	"github.com/achetronic/vrata/internal/k8s"
 	"github.com/achetronic/vrata/internal/proxy"
 	raftnode "github.com/achetronic/vrata/internal/raft"
+	sessionmemory "github.com/achetronic/vrata/internal/session/memory"
 	sessionredis "github.com/achetronic/vrata/internal/session/redis"
 	"github.com/achetronic/vrata/internal/store"
 	boltstore "github.com/achetronic/vrata/internal/store/bolt"
@@ -372,6 +373,10 @@ func buildSessionStore(cfg *config.Config, logger *slog.Logger) (proxy.SessionSt
 		return nil, nil
 	}
 	switch cfg.SessionStore.Type {
+	case config.SessionStoreMemory:
+		store := sessionmemory.New()
+		logger.Info("session store connected", slog.String("type", "memory"))
+		return store, nil
 	case config.SessionStoreRedis:
 		if cfg.SessionStore.Redis == nil {
 			return nil, fmt.Errorf("sessionStore.redis config is required when type is %q", config.SessionStoreRedis)

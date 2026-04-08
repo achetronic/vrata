@@ -177,6 +177,9 @@ type LogConfig struct {
 type SessionStoreType string
 
 const (
+	// SessionStoreMemory uses an in-memory map as the session store backend.
+	SessionStoreMemory SessionStoreType = "memory"
+
 	// SessionStoreRedis uses Redis as the session store backend.
 	SessionStoreRedis SessionStoreType = "redis"
 )

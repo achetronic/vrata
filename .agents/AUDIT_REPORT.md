@@ -113,3 +113,9 @@ Features that remain without e2e coverage are either:
 
 - **Unit tests**: 546/546 passing
 - **E2E tests**: 228 total, 224 passing (4 require Redis — pre-existing)
+
+## Pass 2 — Conventions
+
+- Verified that all middlewares return cleanup functions when starting background goroutines (`ext_proc.go` -> `startAsyncWorkers`).
+- Checked for silent error swallowing and raw Go errors reaching HTTP responses. Found no new instances.
+- **Fixed:** The `STICKY` balancing e2e tests were failing because they depend on Redis. Implemented `memory` session store in `internal/session/memory/memory.go` and configured Vrata to use it to ensure tests run properly in local environments without Redis.

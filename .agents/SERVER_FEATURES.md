@@ -259,5 +259,4 @@ Method: Line-by-line source audit + unit tests + e2e tests
 
 ## Known Remaining Issues
 
-- 4 STICKY e2e tests fail without Redis (session store dependency). Tests: `Proxy_Sticky_ZeroDisruption`, `Endpoint_Sticky_ZeroDisruption`, `Endpoint_Sticky_Concurrent`, `Endpoint_CombinedL1Sticky_L2Sticky`.
 - `TestE2E_Metrics_MiddlewareTracking` is fragile: checks absolute Prometheus counter values, fails if the server has stale entities from previous runs. Should use counter deltas.
